@@ -80,7 +80,7 @@ function workspaceDocument(
     workspaceId,
     workspaceType: "short",
     stageId: "character_design",
-    shortAgentId: "character_design",
+    shortAgentId: "short",
     catalogContentLoaded: true,
     ...patch
   };
@@ -122,19 +122,19 @@ function createHarness(options: HarnessOptions = {}) {
     workspaceDocument("character-overview"),
     workspaceDocument(directory.id, "book-1", {
       stageId: "draft",
-      shortAgentId: "expert_draft_coordinator"
+      shortAgentId: "short"
     }),
     ...directory.sections.flatMap((section) => [
       workspaceDocument(section.bodyDocumentId, "book-1", {
         stageId: "draft",
-        shortAgentId: "expert_draft_coordinator",
+        shortAgentId: "short",
         expertSectionId: section.id,
         draftDirectoryId: directory.id,
         draftFileKind: "body"
       }),
       workspaceDocument(section.characterStateDocumentId, "book-1", {
         stageId: "draft",
-        shortAgentId: "expert_draft_coordinator",
+        shortAgentId: "short",
         expertSectionId: section.id,
         draftDirectoryId: directory.id,
         draftFileKind: "character-state"
@@ -174,12 +174,14 @@ function createHarness(options: HarnessOptions = {}) {
     id: directory.id,
     label: "正文",
     workspaceType: "short",
-    shortAgentId: "expert_draft_coordinator",
+    shortAgentId: "short",
+    stageCategoryId: "draft",
     children: directory.sections.map((section) => ({
       id: `${directory.id}:${section.id}`,
       label: section.title,
       workspaceType: "short",
-      shortAgentId: "expert_draft_coordinator",
+      shortAgentId: "short",
+      stageCategoryId: "draft",
       expertSectionId: section.id
     }))
   };

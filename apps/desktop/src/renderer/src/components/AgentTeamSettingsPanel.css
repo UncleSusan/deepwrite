@@ -105,6 +105,9 @@
   gap: 20px;
   align-items: start;
 }
+.team-layout.is-single-column {
+  grid-template-columns: minmax(0, 1fr);
+}
 .parent-agent-tabs {
   position: sticky;
   top: 0;

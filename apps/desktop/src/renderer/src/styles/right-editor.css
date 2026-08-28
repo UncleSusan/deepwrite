@@ -249,8 +249,7 @@ html[data-platform="darwin"] .editor-header {
   background: var(--theme-line);
 }
 
-.toolbar-spacer,
-.footer-spacer {
+.toolbar-spacer {
   flex: 1;
 }
 
@@ -558,6 +557,8 @@ html[data-theme="dark"] .document-editor:focus-visible {
 .editor-footer {
   display: flex;
   align-items: center;
+  min-width: 0;
+  overflow: hidden;
   gap: 10px;
   padding: 0 13px;
   border-top: 1px solid var(--line-soft);
@@ -566,15 +567,33 @@ html[data-theme="dark"] .document-editor:focus-visible {
   font-size: 0.678571rem;
 }
 
-.editor-footer > span {
+.editor-footer-meta {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  gap: 10px;
+}
+
+.editor-footer-meta > span {
   white-space: nowrap;
+}
+
+.editor-footer-meta > span:first-child {
+  flex: 0 0 auto;
 }
 
 .editor-footer .library-entry-limit-hint,
 .editor-footer .editor-save-status {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.editor-footer .library-entry-limit-hint {
+  flex-shrink: 2;
 }
 
 .editor-footer .limit-warning {
@@ -583,6 +602,7 @@ html[data-theme="dark"] .document-editor:focus-visible {
 
 .save-button {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 5px;
   height: 26px;

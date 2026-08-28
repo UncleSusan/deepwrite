@@ -86,6 +86,25 @@ describe("App general settings integration", () => {
     expect(swappedLayoutStyles.match(/grid-row:\s*1/g)).toHaveLength(2);
   });
 
+  it("persists and applies the default text view mode to every editor", () => {
+    expect(coordinatorSource).toContain(
+      "function updateDefaultTextViewMode(mode: TextViewMode)"
+    );
+    expect(source).toContain(
+      '@update-default-text-view-mode="updateDefaultTextViewMode"'
+    );
+    expect(source).toContain(
+      "defaultViewMode: generalSettings.value.defaultTextViewMode"
+    );
+    expect(source).toContain(
+      ':default-text-view-mode="generalSettings.defaultTextViewMode"'
+    );
+    expect(writingWorkspaceSource).toContain('| "defaultViewMode"');
+    expect(longWorkspaceSource).toContain(
+      ':default-view-mode="defaultTextViewMode"'
+    );
+  });
+
   it("reveals text without expanding a collapsed right-side agent", () => {
     expect(source).toContain("function revealTextPane(): void");
     expect(source).toContain(

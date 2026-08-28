@@ -72,7 +72,7 @@ import {
 } from "./composables/useLongWorkspaceSessionCoordinator";
 import { useSettingsFeatureCoordinator } from "./composables/useSettingsFeatureCoordinator";
 import { useShortConversationCoordinator } from "./composables/useShortConversationCoordinator";
-import { useShortWorkspaceStructureCoordinator } from "./composables/useShortWorkspaceStructureCoordinator";
+import { useShortWorkspaceStructureCoordinatorWithContext } from "./composables/useShortWorkspaceStructureCoordinatorWithContext";
 import { useWorkspaceResourceCoordinator } from "./composables/useWorkspaceResourceCoordinator";
 import { useWorkspaceResourceTreeCoordinator } from "./composables/useWorkspaceResourceTreeCoordinator";
 import { useWorkspaceDialogModuleCoordinator } from "./composables/useWorkspaceDialogModuleCoordinator";
@@ -80,6 +80,7 @@ import { useWorkspaceFeatureHostCoordinator } from "./composables/useWorkspaceFe
 import { useChatAssistant } from "./features/chat-assistant/useChatAssistant";
 import { uiMessage } from "./ui-feedback";
 import { resourceSections } from "./data/demoWorkspace";
+import { EMPTY_WORKSPACE_DOCUMENT } from "./data/emptyWorkspaceDocument";
 import {
   MATERIAL_STAGE_LABELS,
   resolveBookWorkspaceId,
@@ -108,28 +109,16 @@ import {
 import type { ApprovalNavigationTarget } from "./utils/approvalNavigation";
 import { loadGeneralPreferences } from "./utils/generalPreferences";
 import { longNavigationNodeId } from "./utils/longWorkspaceResourceTree";
+import { withShortBookDefaultPlotStages } from "./utils/shortBookDefaultPlotStages";
 import {
   LEFT_PANE_MAX,
   LEFT_PANE_MIN,
-  RIGHT_PANE_MAX,
-  RIGHT_PANE_MIN,
   useLayoutStore
 } from "./stores/layoutStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useCatalogIndexStore } from "./stores/catalogIndexStore";
 import { useConversationStore } from "./stores/conversationStore";
 import { useLongWorkspaceStore } from "./stores/longWorkspaceStore";
-
-const EMPTY_WORKSPACE_DOCUMENT: WorkspaceDocument = {
-  id: "deepwrite-empty-workspace",
-  domain: "creation",
-  title: "尚未打开书籍",
-  eyebrow: "创作空间",
-  path: ["尚未打开书籍"],
-  content: "请从左侧点击“新建书籍”，或打开一个已存在的 DeepWrite 书籍文件夹。",
-  readOnly: true,
-  format: "设定"
-};
 
 useAppearance();
 
@@ -143,9 +132,9 @@ const {
   rightCollapsed,
   desktopShell,
   leftPaneWidth,
-  rightPaneWidth,
   shellClasses,
-  shellStyle
+  shellStyle,
+  writingRightPaneViewModel
 } = storeToRefs(layoutStore);
 const {
   reconcilePaneWidths,
@@ -312,7 +301,9 @@ const {
 const {
   dispose: disposeGeneralSettings,
   load: loadGeneralSettings,
+  updateAutoApproveCrossStageOperations,
   updateAutoSave: updateEditorAutoSave,
+  updateDefaultTextViewMode,
   updateLanguage: updateAppLanguage,
   updatePermissionMode,
   updateShowInMenuBar,
@@ -480,6 +471,9 @@ const conversationRuntimeRegistry = useConversationRuntimeRegistryCoordinator({
   createController: (hooks) =>
     useAgentConversation({
       api: () => window.deepwrite,
+      autoApproveCrossStageOperations: () =>
+        generalSettings.value.autoApproveCrossStageOperations,
+      onContextWarning: (message) => uiMessage.warning(message),
       ...hooks
     }),
   resumeRecovered: (controllers) =>
@@ -622,7 +616,6 @@ const {
   documentHasWriteBarrier
 } = longWorkspacePresentation;
 documentHasAgentRunWriteBarrier = documentHasWriteBarrier;
-
 const {
   workspaceProposals: longWorkspaceProposals,
   activeConversationProposalItems: activeLongConversationProposalItems,
@@ -637,6 +630,7 @@ const {
   rejectProposal: rejectLongProposal,
   retryProposalPreview: retryLongProposalPreview,
   locateAcceptedProposal: locateAcceptedLongProposal,
+  discardAcceptedProposal: discardAcceptedLongProposal,
   dispose: disposeLongProposalRuntime
 } = useLongProposalRuntimeCoordinator({
   state: {
@@ -673,7 +667,6 @@ const {
 longWorkspacePresentation.bindWorkflow({
   activeConversationProposalItems: activeLongConversationProposalItems
 });
-
 const {
   editor: longWorkspaceEditor,
   loadBookList: loadLongBookList,
@@ -1060,6 +1053,10 @@ const {
 const {
   plotStructureBookId,
   plotStructureBook,
+  writingContext,
+  writingContextLoading,
+  writingContextPending,
+  saveWritingContext,
   characterItemDialog,
   pendingExpertSectionCreation,
   pendingExpertSectionDeletion,
@@ -1087,7 +1084,7 @@ const {
   closeRemoveExpertSectionDialog,
   confirmRemoveExpertSection,
   dispose: disposeShortWorkspaceStructure
-} = useShortWorkspaceStructureCoordinator({
+} = useShortWorkspaceStructureCoordinatorWithContext({
   api: () => window.deepwrite?.catalog,
   state: {
     documents,
@@ -1376,7 +1373,10 @@ const workspaceDialogModule = useWorkspaceDialogModuleCoordinator({
     expertDeletion: pendingExpertSectionDeletion,
     characterDialog: characterItemDialog,
     plotBookId: plotStructureBookId,
-    plotBook: plotStructureBook
+    plotBook: plotStructureBook,
+    writingContext,
+    writingContextLoading,
+    writingContextPending
   },
   longStructure: {
     characterCreation: longCharacterCreate,
@@ -1454,6 +1454,7 @@ const {
   setOfficialModelEnabled,
   saveModelSettings,
   refreshFreeModels,
+  setFreeModelEnabled,
   testModel,
   loadShortAndScriptAgentSettings,
   loadLongAgentSettings,
@@ -1465,6 +1466,8 @@ const {
   createAgentTeam,
   renameAgentTeam,
   deleteAgentTeam,
+  downloadAgentTeam,
+  installAgentTeam,
   setAgentTeamEnabled,
   saveAgentTeamSettings,
   loadLibraryAgentSettings,
@@ -1557,6 +1560,9 @@ const {
   notifications: uiMessage
 });
 const hasDesktopRuntime = computed(() => Boolean(window.deepwrite));
+const proposalEditQueueBridge = {
+  hasQueued: (): boolean => false
+};
 const {
   activeConversation,
   conversationContext: writingConversationContext,
@@ -1602,7 +1608,7 @@ const {
   edits: {
     acceptingDocumentIds: acceptingAgentEditDocumentIds,
     acceptingWorkspaceIds: acceptingAgentEditWorkspaceIds,
-    hasQueued: () => hasQueuedAgentEdits(),
+    hasQueued: () => proposalEditQueueBridge.hasQueued(),
     schedule: (predicate) => scheduleQueuedAgentEdits(predicate),
     resumeRecovered: (conversations) =>
       resumeRecoveredAutomaticAgentEditsIfNeeded(conversations)
@@ -1697,6 +1703,7 @@ const writingEditorViewModel = computed(() => ({
   saving: editorSaving.value,
   manualSaving: manualSavingDocumentIds.value.has(activeDocument.value.id),
   autoSaveEnabled: editorAutoSaveEnabled.value,
+  defaultViewMode: generalSettings.value.defaultTextViewMode,
   boundToCurrentBook: activeLibraryBoundToBook.value,
   sectionTabs: activeEditorSectionTabs.value,
   activeSectionId: activeEditorSectionId.value,
@@ -1707,13 +1714,6 @@ const writingEditorViewModel = computed(() => ({
   canDeleteSection: canDeleteEditorSection.value,
   deleteSectionLabel: editorDeleteSectionLabel.value
 }));
-const writingRightPaneViewModel = computed(() => ({
-  collapsed: rightCollapsed.value,
-  minWidth: RIGHT_PANE_MIN,
-  maxWidth: RIGHT_PANE_MAX,
-  width: rightPaneWidth.value
-}));
-
 async function prepareLibraryProjectsForDuplicate(
   libraryIds: ReadonlySet<string>
 ): Promise<boolean> {
@@ -1768,11 +1768,9 @@ function deleteEditorSection(): void {
   }
   removeExpertSectionFromEditor();
 }
-
 function closeShortStructureDialog(): void {
   if (!catalogMutationPending.value) closePlotStructureDialog();
 }
-
 function disposeLibraryConversation(
   domain: "material" | "skill",
   libraryId: string
@@ -1781,12 +1779,10 @@ function disposeLibraryConversation(
   conversationStore.removeController(key);
   removeAgentRunPreferences(key);
 }
-
 function closeCreateBookDialog(): void {
   if (catalogMutationPending.value || longMutationPending.value) return;
   createBookDialogOpen.value = false;
 }
-
 function openCreateBookDialog(): void {
   if (!window.deepwrite) {
     uiMessage.warning("浏览器预览不能保存作品，请使用桌面客户端创建。");
@@ -1794,7 +1790,6 @@ function openCreateBookDialog(): void {
   }
   createBookDialogOpen.value = true;
 }
-
 async function createCreativeBook(
   input: CreateCreativeBookPayload
 ): Promise<void> {
@@ -1807,9 +1802,14 @@ async function createCreativeBook(
     });
     return;
   }
-  await shortBookLifecycle.createBook(input);
+  await shortBookLifecycle.createBook(
+    withShortBookDefaultPlotStages(
+      input,
+      workspaceAgentSettings.value,
+      catalogSnapshot.value?.creativePlotStages ?? []
+    )
+  );
 }
-
 async function handleResourceAction(
   payload: ResourceSectionActionPayload
 ): Promise<void> {
@@ -2244,12 +2244,13 @@ function rememberWorkspaceMutationEvent(eventId: string): boolean {
   }
   return true;
 }
-
 const {
   resumeRecoveredAutomaticAgentEdits,
   hasQueuedAgentEdits,
   reviewAgentEdit,
   reviewLongAgentEdit,
+  discardAgentEdit,
+  discardLongAgentEdit,
   scheduleQueuedAgentEdits,
   stageAgentEditProposal,
   stageLibraryEditProposal,
@@ -2307,6 +2308,7 @@ const {
     rightCollapsed
   }
 });
+proposalEditQueueBridge.hasQueued = hasQueuedAgentEdits;
 
 function navigateToWorkspaceStage(
   event: Extract<SystemEventEnvelope, { type: "workspace.stage_selection" }>
@@ -2486,10 +2488,14 @@ onBeforeUnmount(() => {
     :left-collapsed="leftCollapsed"
     @back="closeSettings"
     @update-permission-mode="updatePermissionMode"
+    @update-auto-approve-cross-stage-operations="
+      updateAutoApproveCrossStageOperations
+    "
     @update-auto-save="updateEditorAutoSave"
     @update-language="updateAppLanguage"
     @update-show-in-menu-bar="updateShowInMenuBar"
     @update-workspace-pane-layout="updateWorkspacePaneLayout"
+    @update-default-text-view-mode="updateDefaultTextViewMode"
     @save-workspace-agents="saveWorkspaceAgentSettings"
     @retry-long-agents="loadLongAgentSettings"
     @save-long-agents="saveLongAgentSettings"
@@ -2505,6 +2511,8 @@ onBeforeUnmount(() => {
     @save-official-token="saveOfficialToken"
     @clear-official-token="clearOfficialToken"
     @set-official-model-enabled="setOfficialModelEnabled"
+    @refresh-free-models="refreshFreeModels"
+    @set-free-model-enabled="setFreeModelEnabled"
   />
 
   <div
@@ -2567,11 +2575,12 @@ onBeforeUnmount(() => {
       @create-agent-team="createAgentTeam"
       @rename-agent-team="renameAgentTeam"
       @delete-agent-team="deleteAgentTeam"
+      @download-agent-team="downloadAgentTeam"
+      @install-agent-team="installAgentTeam"
       @set-agent-team-enabled="setAgentTeamEnabled"
       @save-agent-team="saveAgentTeamSettings"
       @choose-workspace-directory="chooseWorkspaceDirectory"
       @save-models="saveModelSettings"
-      @refresh-free-models="refreshFreeModels"
       @test-model="testModel"
       @open-official-models="openOfficialModelsSettings"
       @refresh-catalog="loadCatalogSnapshot"
@@ -2602,6 +2611,7 @@ onBeforeUnmount(() => {
       :left-collapsed="leftCollapsed"
       :right-pane="writingRightPaneViewModel"
       :pane-layout="generalSettings.workspacePaneLayout"
+      :default-text-view-mode="generalSettings.defaultTextViewMode"
       @update:draft="updateLongComposerDraft"
       @editor-port-change="updateLongWorkspaceEditorPort"
       @expand-left="leftCollapsed = false"
@@ -2621,10 +2631,12 @@ onBeforeUnmount(() => {
       @select-approval="selectLongApprovalMode"
       @review-edit="reviewLongAgentEdit"
       @locate-edit-proposal="locateAcceptedEditProposal"
+      @discard-edit-proposal="discardLongAgentEdit"
       @approve-long-proposal="approveLongProposal"
       @reject-long-proposal="rejectLongProposal"
       @retry-long-proposal-preview="retryLongProposalPreview"
       @locate-long-proposal="locateAcceptedLongProposal"
+      @discard-long-proposal="discardAcceptedLongProposal"
       @retry-workspace-refresh="retryActiveLongWorkspaceRefresh"
       @saved="handleLongDocumentSaved"
       @context-change="handleLongFileContextChange"
@@ -2666,6 +2678,7 @@ onBeforeUnmount(() => {
       @select-approval="selectApprovalMode"
       @review-edit="reviewAgentEdit"
       @locate-edit-proposal="locateAcceptedEditProposal"
+      @discard-edit-proposal="discardAgentEdit"
       @clear-editor-references="clearEditorSelectionReferences"
       @remove-editor-reference="removeEditorSelectionReference"
       @locate-editor-reference="locateEditorSelectionReference"
@@ -2719,6 +2732,7 @@ onBeforeUnmount(() => {
     @close-plot-structure="closeShortStructureDialog"
     @plot-structure-mutation="mutatePlotStructure"
     @character-structure-mutation="mutateCharacterStructure"
+    @save-writing-context="saveWritingContext"
     @close-character-item="closeCharacterItemDialog"
     @submit-character-item="submitCharacterItemDialog"
     @close-export-short="closeBookExportDialog"

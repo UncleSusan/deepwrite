@@ -13,7 +13,8 @@ import {
   type LongFileRevision,
   type LongReadDocumentResult,
   type LongWorkspaceFileReference,
-  type LongWriteDocumentResult
+  type LongWriteDocumentResult,
+  type TextViewMode
 } from "@deepwrite/contracts";
 import { uiMessage } from "../ui-feedback";
 import {
@@ -81,7 +82,7 @@ export function useLongEditorDocumentSession(options: {
   currentIsStructuredText: ComputedRef<boolean>;
   currentIsWorldbuildingList: ComputedRef<boolean>;
   currentStaleRecovery: ComputedRef<LongEditorRecoveryRecord | null>;
-  viewMode: Ref<"edit" | "preview">;
+  viewMode: Ref<TextViewMode>;
   editorInput: Ref<HTMLTextAreaElement | null>;
   activeWorldbuildingItemId: Ref<string | null>;
   activeBookLineVolumeId: Ref<string | null>;

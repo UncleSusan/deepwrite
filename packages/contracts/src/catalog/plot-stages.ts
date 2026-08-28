@@ -144,11 +144,16 @@ export function createDefaultCreativePlotStages(): CreativePlotStage[] {
 export function createDefaultBookPlotStages(options?: {
   /** Existing books migrate with every stage enabled. */
   allEnabled?: boolean;
+  /** New books may override the built-in enabled-stage defaults. */
+  enabledStageIds?: ReadonlySet<string> | readonly string[];
 }): BookPlotStage[] {
   const allEnabled = options?.allEnabled === true;
+  const enabledStageIds = new Set(
+    options?.enabledStageIds ?? DEFAULT_NEW_BOOK_ENABLED_PLOT_STAGE_IDS
+  );
   return DEFAULT_CREATIVE_PLOT_STAGES.map((stage) => ({
     ...stage,
-    enabled: allEnabled || DEFAULT_NEW_BOOK_ENABLED_PLOT_STAGE_IDS.has(stage.id)
+    enabled: allEnabled || enabledStageIds.has(stage.id)
   }));
 }
 

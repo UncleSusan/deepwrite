@@ -10,26 +10,23 @@ import type {
   LibraryAgentDomain,
   LibraryAgentSettingsInput,
   LongAgentSettingsInput,
-  ModelConfigInput,
-  ModelSettings,
-  ModelSettingsInput,
-  ModelUsageQueryInput,
   WorkspaceAgentSettingsInput
 } from "@deepwrite/contracts";
 import { useSettingsStore } from "../stores/settingsStore";
+import {
+  useModelSettingsCoordinator,
+  type ModelSettingsNotifications
+} from "./useModelSettingsCoordinator";
 
-export interface SettingsFeatureNotifications {
-  error(message: string): void;
-  info(message: string): void;
-  success(message: string): void;
-  warning(message: string): void;
-}
+export type SettingsFeatureNotifications = ModelSettingsNotifications;
 
 export interface SettingsFeatureCoordinatorContext {
   api(): DeepWriteApi | undefined;
   settingsStore: ReturnType<typeof useSettingsStore>;
   notifications: SettingsFeatureNotifications;
-  onModelsLoaded(settings: ModelSettings): void;
+  onModelsLoaded: Parameters<
+    typeof useModelSettingsCoordinator
+  >[0]["onModelsLoaded"];
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -40,260 +37,7 @@ export function useSettingsFeatureCoordinator(
   context: SettingsFeatureCoordinatorContext
 ) {
   const { settingsStore, notifications: uiMessage } = context;
-  let modelUsageRequestSequence = 0;
-  let lastPublishedModelSettings: ModelSettings | null = null;
-
-  function applyLoadedModelSettings(settings: ModelSettings): void {
-    if (settingsStore.modelSettings !== settings) {
-      settingsStore.markLoaded("models", settings);
-    }
-    if (lastPublishedModelSettings === settings) return;
-    lastPublishedModelSettings = settings;
-    context.onModelsLoaded(settings);
-  }
-
-  async function loadModelSettings(): Promise<void> {
-    const api = context.api();
-    if (!api) return;
-    try {
-      const settings = await settingsStore.ensureModelsLoaded(() =>
-        api.models.list()
-      );
-      applyLoadedModelSettings(settings);
-    } catch {
-      // The store retains a retriable error for the active feature surface.
-    }
-  }
-
-  async function loadAppAlerts(): Promise<void> {
-    const api = context.api()?.appAlerts;
-    if (!api) return;
-    try {
-      const snapshot = await api.get();
-      settingsStore.modelAlertMessages = [...snapshot.modelMessages];
-      if (snapshot.shouldShowDesktop) {
-        settingsStore.startupAlertMessages = [...snapshot.desktopMessages];
-        settingsStore.startupAlertRevision = snapshot.desktopRevision;
-      }
-    } catch (error: unknown) {
-      console.warn(
-        "DeepWrite app alerts could not be loaded:",
-        errorMessage(error, "unknown error")
-      );
-    }
-  }
-
-  function closeStartupAlert(): void {
-    const revision = settingsStore.startupAlertRevision;
-    settingsStore.startupAlertMessages = [];
-    settingsStore.startupAlertRevision = "";
-    const api = context.api()?.appAlerts;
-    if (!revision || !api) return;
-    void api.acknowledgeDesktop(revision).catch((error: unknown) => {
-      console.warn(
-        "DeepWrite desktop alert acknowledgement could not be saved:",
-        errorMessage(error, "unknown error")
-      );
-    });
-  }
-
-  async function loadModelUsage(
-    input: ModelUsageQueryInput = settingsStore.modelUsageQuery
-  ): Promise<void> {
-    const api = context.api()?.modelUsage;
-    if (!api) return;
-    const query = {
-      ...(input.startAt ? { startAt: input.startAt } : {}),
-      ...(input.endAt ? { endAt: input.endAt } : {}),
-      ...(input.modelConfigIds?.length
-        ? { modelConfigIds: [...input.modelConfigIds] }
-        : {}),
-      ...(input.managedBy ? { managedBy: input.managedBy } : {}),
-      ...(input.modules?.length ? { modules: [...input.modules] } : {})
-    } satisfies ModelUsageQueryInput;
-    const requestSequence = ++modelUsageRequestSequence;
-    settingsStore.modelUsageLoading = true;
-    settingsStore.modelUsageError = null;
-    try {
-      const dashboard = await api.query(query);
-      if (requestSequence !== modelUsageRequestSequence) return;
-      settingsStore.modelUsageDashboard = dashboard;
-      settingsStore.modelUsageQuery = query;
-    } catch (error: unknown) {
-      if (requestSequence !== modelUsageRequestSequence) return;
-      settingsStore.modelUsageError = errorMessage(error, "加载模型用量失败。");
-      uiMessage.warning(settingsStore.modelUsageError);
-    } finally {
-      if (requestSequence === modelUsageRequestSequence) {
-        settingsStore.modelUsageLoading = false;
-      }
-    }
-  }
-
-  async function queryOfficialModelUsage(api: DeepWriteApi) {
-    return api.modelUsage.query({ managedBy: "deepwrite-official" });
-  }
-
-  async function queryOfficialBalance(api: DeepWriteApi) {
-    try {
-      return await api.models.queryOfficialBalance();
-    } catch (error: unknown) {
-      uiMessage.warning(errorMessage(error, "查询官方模型消费信息失败。"));
-      return null;
-    }
-  }
-
-  async function loadOfficialModels(): Promise<void> {
-    const api = context.api();
-    if (!api) return;
-    try {
-      const snapshot = await settingsStore.ensureOfficialModelsLoaded(
-        async () => {
-          const settings = await api.models.refreshOfficial();
-          const [usageDashboard, balance] = await Promise.all([
-            queryOfficialModelUsage(api),
-            queryOfficialBalance(api)
-          ]);
-          return { settings, usageDashboard, balance };
-        }
-      );
-      applyLoadedModelSettings(snapshot.settings);
-    } catch (error: unknown) {
-      uiMessage.error(errorMessage(error, "加载官方模型失败。"));
-    }
-  }
-
-  async function saveOfficialToken(apiKey: string): Promise<void> {
-    const api = context.api();
-    if (!api || settingsStore.officialModelsSaving) return;
-    settingsStore.officialModelsSaving = true;
-    try {
-      const settings = await api.models.saveOfficialToken(apiKey);
-      const [usageDashboard, balance] = await Promise.all([
-        queryOfficialModelUsage(api),
-        queryOfficialBalance(api)
-      ]);
-      settingsStore.markLoaded("officialModels", {
-        settings,
-        usageDashboard,
-        balance
-      });
-      applyLoadedModelSettings(settings);
-      uiMessage.success("官方令牌已安全保存，官方模型现在可以直接使用。");
-    } catch (error: unknown) {
-      uiMessage.error(errorMessage(error, "保存官方令牌失败。"));
-    } finally {
-      settingsStore.officialModelsSaving = false;
-    }
-  }
-
-  async function clearOfficialToken(): Promise<void> {
-    const api = context.api();
-    if (!api || settingsStore.officialModelsSaving) return;
-    settingsStore.officialModelsSaving = true;
-    try {
-      const settings = await api.models.clearOfficialToken();
-      const [usageDashboard, balance] = await Promise.all([
-        queryOfficialModelUsage(api),
-        queryOfficialBalance(api)
-      ]);
-      settingsStore.markLoaded("officialModels", {
-        settings,
-        usageDashboard,
-        balance
-      });
-      applyLoadedModelSettings(settings);
-      uiMessage.info("官方令牌已移除，历史用量仍保留在本机账本中。");
-    } catch (error: unknown) {
-      uiMessage.error(errorMessage(error, "移除官方令牌失败。"));
-    } finally {
-      settingsStore.officialModelsSaving = false;
-    }
-  }
-
-  async function setOfficialModelEnabled(
-    modelId: string,
-    enabled: boolean
-  ): Promise<void> {
-    const api = context.api();
-    if (!api || settingsStore.officialModelsSaving) return;
-    settingsStore.officialModelsSaving = true;
-    try {
-      const settings = await api.models.setOfficialModelEnabled(
-        modelId,
-        enabled
-      );
-      settingsStore.markLoaded("officialModels", {
-        settings,
-        usageDashboard: settingsStore.officialModelUsageDashboard,
-        balance: settingsStore.officialModelBalance
-      });
-      applyLoadedModelSettings(settings);
-      uiMessage.success(
-        enabled
-          ? "模型已启用，并显示在模型配置中。"
-          : "模型已停用，并从模型配置中隐藏。"
-      );
-    } catch (error: unknown) {
-      uiMessage.error(errorMessage(error, "更新模型启用状态失败。"));
-    } finally {
-      settingsStore.officialModelsSaving = false;
-    }
-  }
-
-  async function saveModelSettings(
-    settings: ModelSettingsInput
-  ): Promise<void> {
-    const api = context.api();
-    if (!api || settingsStore.modelSaving) return;
-    settingsStore.modelSaving = true;
-    settingsStore.modelError = null;
-    settingsStore.modelTestMessage = null;
-    try {
-      const saved = await api.models.save(settings);
-      applyLoadedModelSettings(saved);
-      settingsStore.modelTestMessage = "模型配置已保存，并已同步到后续对话。";
-    } catch (error: unknown) {
-      settingsStore.modelError = errorMessage(error, "保存模型配置失败。");
-    } finally {
-      settingsStore.modelSaving = false;
-    }
-  }
-
-  async function refreshFreeModels(): Promise<void> {
-    const api = context.api();
-    if (!api || settingsStore.freeModelsRefreshing) return;
-    settingsStore.freeModelsRefreshing = true;
-    settingsStore.modelError = null;
-    settingsStore.modelTestMessage = null;
-    try {
-      const settings = await api.models.refreshFree();
-      applyLoadedModelSettings(settings);
-      settingsStore.modelTestMessage = "免费模型配置已刷新。";
-    } catch (error: unknown) {
-      settingsStore.modelError = errorMessage(error, "刷新免费模型配置失败。");
-    } finally {
-      settingsStore.freeModelsRefreshing = false;
-    }
-  }
-
-  async function testModel(model: ModelConfigInput): Promise<void> {
-    const api = context.api();
-    if (!api || settingsStore.testingModelId) return;
-    settingsStore.testingModelId = model.id;
-    settingsStore.modelError = null;
-    settingsStore.modelTestMessage = null;
-    try {
-      const result = await api.models.test(model);
-      settingsStore.modelTestMessage = result.message;
-    } catch (error: unknown) {
-      settingsStore.modelError = errorMessage(error, "模型连接测试失败。");
-      uiMessage.error(settingsStore.modelError);
-    } finally {
-      settingsStore.testingModelId = null;
-    }
-  }
-
+  const modelSettingsCoordinator = useModelSettingsCoordinator(context);
   async function loadShortAndScriptAgentSettings(): Promise<void> {
     const api = context.api();
     if (!api) return;
@@ -465,6 +209,41 @@ export function useSettingsFeatureCoordinator(
     );
   }
 
+  async function downloadAgentTeam(
+    input: AgentTeamProfileTargetInput
+  ): Promise<void> {
+    const api = context.api();
+    if (!api || settingsStore.agentTeamSaving) return;
+    settingsStore.agentTeamSaving = true;
+    try {
+      const result = await api.agentTeams.download(input);
+      if (result.status === "saved") {
+        uiMessage.success("智能体团队压缩包已下载。");
+      }
+    } catch (error: unknown) {
+      uiMessage.error(errorMessage(error, "下载智能体团队失败。"));
+    } finally {
+      settingsStore.agentTeamSaving = false;
+    }
+  }
+
+  async function installAgentTeam(): Promise<void> {
+    const api = context.api();
+    if (!api || settingsStore.agentTeamSaving) return;
+    settingsStore.agentTeamSaving = true;
+    try {
+      const result = await api.agentTeams.install();
+      if (result.status === "installed") {
+        settingsStore.markLoaded("agentTeams", result.catalog);
+        uiMessage.success(`智能体团队“${result.teamName}”已安装。`);
+      }
+    } catch (error: unknown) {
+      uiMessage.error(errorMessage(error, "安装智能体团队失败。"));
+    } finally {
+      settingsStore.agentTeamSaving = false;
+    }
+  }
+
   async function loadLibraryAgentSettings(): Promise<void> {
     const api = context.api();
     if (!api) return;
@@ -560,17 +339,7 @@ export function useSettingsFeatureCoordinator(
   }
 
   return {
-    loadModelSettings,
-    loadAppAlerts,
-    closeStartupAlert,
-    loadModelUsage,
-    loadOfficialModels,
-    saveOfficialToken,
-    clearOfficialToken,
-    setOfficialModelEnabled,
-    saveModelSettings,
-    refreshFreeModels,
-    testModel,
+    ...modelSettingsCoordinator,
     loadShortAndScriptAgentSettings,
     loadLongAgentSettings,
     ensureLongAgentSettingsLoaded,
@@ -583,6 +352,8 @@ export function useSettingsFeatureCoordinator(
     deleteAgentTeam,
     setAgentTeamEnabled,
     saveAgentTeamSettings,
+    downloadAgentTeam,
+    installAgentTeam,
     loadLibraryAgentSettings,
     saveLibraryAgentSettings,
     resetLibraryAgentSettings,

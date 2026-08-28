@@ -55,9 +55,7 @@ describe("TreeNodeItem actions", () => {
   });
 
   it("places add on the draft parent and ordering plus delete in each section menu", () => {
-    expect(source).toContain(
-      'props.node.shortAgentId === "expert_draft_coordinator"'
-    );
+    expect(source).toContain('props.node.stageCategoryId === "draft"');
     expect(source).toContain("!props.node.expertSectionId");
     expect(source).toContain("Boolean(props.node.expertSectionId)");
     expect(source).toContain('emit("createExpertSection", props.node)');

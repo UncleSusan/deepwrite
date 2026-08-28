@@ -312,18 +312,9 @@ describe("unified long-form tools: mutations", () => {
         chapter_id: "chapter_one"
       }
     );
-    expect(continuity.details).toMatchObject({
-      kind: "long-mutation-proposal",
-      batch: {
-        operations: [
-          {
-            type: "chapterContinuity.character.delete",
-            chapterCardId: "chapter_one",
-            characterId: "character_alice"
-          }
-        ]
-      }
-    });
+    expect(continuity.details).toEqual({ kind: "none" });
+    expect(resultText(continuity)).toContain("committed_prefix_protected");
+    expect(resultText(continuity)).toContain("不会生成审批卡");
   });
 
   it("asks before every cross-stage create, edit, and delete mutation", async () => {
@@ -404,6 +395,34 @@ describe("unified long-form tools: mutations", () => {
     });
 
     expect(requestUserInput).toHaveBeenCalledTimes(2);
+  });
+
+  it("auto-approves cross-stage mutations without requesting user input", async () => {
+    const requestUserInput = vi.fn(async () => {
+      throw new Error("cross-stage input should have been auto-approved");
+    });
+    const create = toolByName(
+      longTools({
+        executor: documentExecutor(fixtureIndex()),
+        activeRoot: "character_design",
+        autoApproveCrossStageOperations: true,
+        requestUserInput
+      }),
+      "create"
+    );
+
+    const result = await create.execute("create-auto-approved-volume", {
+      kind: "volume",
+      meta: { title: "自动批准卷" }
+    });
+
+    expect(requestUserInput).not.toHaveBeenCalled();
+    expect(result.details).toMatchObject({
+      kind: "long-mutation-proposal",
+      batch: {
+        operations: [expect.objectContaining({ type: "volume.create" })]
+      }
+    });
   });
 
   it("uses approval-canonical titles for cross-stage continuity proposals", async () => {

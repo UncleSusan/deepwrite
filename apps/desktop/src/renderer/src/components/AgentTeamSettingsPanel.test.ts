@@ -66,14 +66,29 @@ describe("AgentTeamSettingsPanel", () => {
     expect(longSource).toContain('@click="saveSettings"');
   });
 
-  it("keeps the same three parent agents for short and script", () => {
-    for (const label of ["人设", "剧情", "正文"]) {
-      expect(source).toContain(`label: "${label}"`);
-    }
+  it("uses one parent team for short and script workspaces", () => {
+    expect(source).toContain('id: "short"');
+    expect(source).toContain('label: "短篇智能体"');
+    expect(source).toContain('id: "script"');
+    expect(source).toContain('label: "剧本智能体"');
+    expect(source).toContain('v-if="visibleParentAgents.length > 1"');
+    expect(source).toContain("SCRIPT_PARENT_AGENTS");
+    expect(source).toContain("SHORT_PARENT_AGENT");
+    expect(source).toContain("activeSubagentLimit");
+    expect(source).toContain("SCRIPT_AGENT_SUBAGENT_MAX_COUNT");
+    expect(source).not.toContain('label: "人设"');
+    expect(source).not.toContain('label: "剧情"');
+    expect(source).not.toContain('label: "正文"');
     expect(source).not.toContain('label: "大纲"');
     expect(source).not.toContain('label: "分节"');
     expect(source).toContain("不能继续创建子智能体");
     expect(source).toContain("默认跟随所属主智能体的模型");
+  });
+
+  it("expands the editor when the single parent navigation is hidden", () => {
+    expect(templateSource).toContain(
+      `:class="{ 'is-single-column': visibleParentAgents.length === 1 }"`
+    );
   });
 
   it("supports model mode inherit or custom with PopupSelect", () => {

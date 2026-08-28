@@ -70,6 +70,20 @@ export interface AgentEditProposal {
   statusMessage?: string;
   createdAt: string;
   updatedAt: string;
+  /** Immutable state needed to safely restore an accepted edit. */
+  discardSnapshot?: {
+    beforeText?: string;
+    beforeTitle?: string;
+    beforeDescription?: string;
+    appliedProjectRevision?: number;
+    longUndoBatch?: LongWorkspaceOperationBatch;
+  };
+  /** Presentation and retry state for restoring an accepted edit. */
+  discardState?: {
+    status: "discarding" | "discarded" | "conflict" | "error";
+    message: string;
+    updatedAt: string;
+  };
   libraryTarget?: {
     operation: "create" | "edit" | "edit-overview";
     domain: "material" | "skill";
@@ -110,6 +124,8 @@ export interface AgentEditProposal {
       title: string;
       wordCountRequirement: string;
       provisionalSectionId: string;
+      bodyContent?: string;
+      characterStateContent?: string;
       /** Persisted after atomic creation so recovery can rebuild the mapping. */
       realSectionId?: string;
     }>;
@@ -134,6 +150,25 @@ export interface AgentEditProposal {
   };
   characterStructureTarget?: {
     mutation: CharacterStructureMutation;
+    initialContent?: string;
+    baseProjectRevision?: number;
+  };
+  plotStructureTarget?: {
+    mutation:
+      | {
+          type: "create";
+          title: string;
+          description: string;
+          provisionalStageId: string;
+          content: string;
+        }
+      | {
+          type: "update";
+          stageId: ShortWorkspaceStageId;
+          previousTitle: string;
+          title: string;
+          description: string;
+        };
     baseProjectRevision?: number;
   };
   /** True when this file mutation targets a same-run provisional section. */
@@ -286,6 +321,11 @@ export interface ConversationHistoryItem {
   messageCount: number;
   turnCount: number;
   current: boolean;
+}
+
+export interface ConversationMessageRewriteRequest {
+  messageId: string;
+  content: string;
 }
 
 export interface ComposerReferenceOption {

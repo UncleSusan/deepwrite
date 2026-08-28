@@ -32,11 +32,13 @@ export interface AgentRunInput {
   sessionId: string;
   prompt: string;
   conversationHistory?: SessionConversationHistoryMessage[];
+  conversationHistoryMode?: "replace";
   mode?: SessionMode;
   attachments?: UserPromptAttachment[];
   chatAssistantRuntimeContext?: ChatAssistantRuntimeContext;
   webSearchEnabled?: boolean;
   writeApprovalMode?: AgentWriteApprovalMode;
+  autoApproveCrossStageOperations?: boolean;
   thinkingLevel?: ConfiguredThinkingLevel;
   temperature?: number;
   runtimeConfig?: AgentProviderRuntimeConfig;
@@ -281,6 +283,8 @@ export type AgentRuntimeEvent =
                 title: string;
                 wordCountRequirement: string;
                 provisionalSectionId: string;
+                bodyContent?: string;
+                characterStateContent?: string;
               }>;
               afterSectionId?: string;
             }
@@ -302,9 +306,17 @@ export type AgentRuntimeEvent =
             }
           | {
               kind: "character-structure";
+              initialContent?: string;
               mutation: Extract<
                 ShortWorkspaceToolDetails,
                 { kind: "workspace-character-structure-mutation" }
+              >["mutation"];
+            }
+          | {
+              kind: "plot-structure";
+              mutation: Extract<
+                ShortWorkspaceToolDetails,
+                { kind: "workspace-plot-structure-mutation" }
               >["mutation"];
             };
         baseRevision: string;

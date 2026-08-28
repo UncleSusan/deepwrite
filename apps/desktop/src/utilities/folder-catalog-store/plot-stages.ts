@@ -49,9 +49,6 @@ export function mergeCreativePlotStageDefinitions(
   >
 ): CreativePlotStage[] {
   const definitions = new Map<string, CreativePlotStage>();
-  for (const stage of createDefaultCreativePlotStages()) {
-    definitions.set(stage.id, stage);
-  }
   for (const group of groups) {
     for (const stage of group) {
       if (!definitions.has(stage.id)) {
@@ -62,6 +59,9 @@ export function mergeCreativePlotStageDefinitions(
         });
       }
     }
+  }
+  for (const stage of createDefaultCreativePlotStages()) {
+    if (!definitions.has(stage.id)) definitions.set(stage.id, stage);
   }
   return CreativePlotStagesSchema.parse([...definitions.values()]);
 }
@@ -84,7 +84,8 @@ export function sameCreativePlotStageDefinitions(
 
 export function applyGlobalPlotStagesToNewBook<Resource extends Book>(
   book: Resource,
-  globalStages: readonly CreativePlotStage[]
+  globalStages: readonly CreativePlotStage[],
+  defaultPlotStageIds?: readonly string[]
 ): Resource {
   const definitions =
     globalStages.length > 0
@@ -93,9 +94,18 @@ export function applyGlobalPlotStagesToNewBook<Resource extends Book>(
   const existingDocuments = new Map(
     book.documents.map((document) => [document.id, document])
   );
+  const existingStages = new Map(
+    book.plotStages.map((stage) => [stage.id, stage])
+  );
+  const configuredStageIds = defaultPlotStageIds
+    ? new Set(defaultPlotStageIds)
+    : undefined;
   const plotStages: BookPlotStage[] = definitions.map((stage) => ({
     ...stage,
-    enabled: DEFAULT_NEW_BOOK_ENABLED_PLOT_STAGE_IDS.has(stage.id)
+    enabled:
+      configuredStageIds?.has(stage.id) ??
+      existingStages.get(stage.id)?.enabled ??
+      DEFAULT_NEW_BOOK_ENABLED_PLOT_STAGE_IDS.has(stage.id)
   }));
   const documents = [
     ...(existingDocuments.get("character_design")
@@ -150,7 +160,7 @@ export async function mutatePlotStructure(
     const now = store.now();
     const mutation = input.mutation;
 
-    if (mutation.type === "move" || mutation.type === "setEnabled") {
+    if (mutation.type === "move") {
       const plotStages = manifest.plotStages.map((stage) => ({ ...stage }));
       const stageIndex = plotStages.findIndex(
         ({ id }) => id === mutation.stageId
@@ -158,28 +168,54 @@ export async function mutatePlotStructure(
       if (stageIndex < 0) {
         throw new Error("该剧情结构已删除或不存在。");
       }
-      if (mutation.type === "move") {
-        const targetIndex =
-          mutation.direction === "up" ? stageIndex - 1 : stageIndex + 1;
-        if (targetIndex < 0 || targetIndex >= plotStages.length) {
-          throw new Error("该剧情结构已经位于列表边界。");
-        }
-        const [stage] = plotStages.splice(stageIndex, 1);
-        plotStages.splice(targetIndex, 0, stage!);
-      } else {
-        if (
-          !mutation.enabled &&
-          !plotStages.some(
-            (stage, index) => index !== stageIndex && stage.enabled
-          )
-        ) {
-          throw new Error("至少需要保留一个启用的剧情结构项。");
-        }
-        plotStages[stageIndex] = {
-          ...plotStages[stageIndex]!,
-          enabled: mutation.enabled
-        };
+      const targetIndex =
+        mutation.direction === "up" ? stageIndex - 1 : stageIndex + 1;
+      if (targetIndex < 0 || targetIndex >= plotStages.length) {
+        throw new Error("该剧情结构已经位于列表边界。");
       }
+      const [stage] = plotStages.splice(stageIndex, 1);
+      plotStages.splice(targetIndex, 0, stage!);
+      const definitionsById = new Map(
+        registry.creativePlotStages.map((definition) => [
+          definition.id,
+          definition
+        ])
+      );
+      registry.creativePlotStages = CreativePlotStagesSchema.parse([
+        ...plotStages.flatMap((item) => {
+          const definition = definitionsById.get(item.id);
+          return definition ? [definition] : [];
+        }),
+        ...registry.creativePlotStages.filter(
+          (definition) => !plotStages.some(({ id }) => id === definition.id)
+        )
+      ]);
+      await applyGlobalPlotStageOrder(store, registry, now);
+      await bumpRegistry(store, registry, now);
+      return (await readProject(store, projectDirectory, "book", input.bookId))
+        .resource as Book;
+    }
+
+    if (mutation.type === "setEnabled") {
+      const plotStages = manifest.plotStages.map((stage) => ({ ...stage }));
+      const stageIndex = plotStages.findIndex(
+        ({ id }) => id === mutation.stageId
+      );
+      if (stageIndex < 0) {
+        throw new Error("该剧情结构已删除或不存在。");
+      }
+      if (
+        !mutation.enabled &&
+        !plotStages.some(
+          (stage, index) => index !== stageIndex && stage.enabled
+        )
+      ) {
+        throw new Error("至少需要保留一个启用的剧情结构项。");
+      }
+      plotStages[stageIndex] = {
+        ...plotStages[stageIndex]!,
+        enabled: mutation.enabled
+      };
       const nextManifest = FolderCurrentBookProjectManifestSchema.parse({
         ...manifest,
         revision: manifest.revision + 1,
@@ -284,6 +320,51 @@ export async function mutatePlotStructure(
     return (await readProject(store, projectDirectory, "book", input.bookId))
       .resource as Book;
   });
+}
+
+export async function applyGlobalPlotStageOrder(
+  store: FolderCatalogStoreContext,
+  registry: FolderCatalogRegistry,
+  now: string
+): Promise<void> {
+  const order = new Map(
+    registry.creativePlotStages.map(({ id }, index) => [id, index])
+  );
+  for (const registration of registry.projects.filter(
+    (project) => project.domain === "book"
+  )) {
+    const projectDirectory = await secureProjectRoot(
+      registration.projectDirectory
+    );
+    const manifest = await readCurrentBookManifest(
+      store,
+      projectDirectory,
+      registration.id
+    );
+    const plotStages = [...manifest.plotStages].sort(
+      (left, right) =>
+        (order.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+        (order.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+    );
+    if (
+      plotStages.every(
+        (stage, index) => stage.id === manifest.plotStages[index]?.id
+      )
+    ) {
+      continue;
+    }
+    const nextManifest = FolderCurrentBookProjectManifestSchema.parse({
+      ...manifest,
+      revision: manifest.revision + 1,
+      plotStages: BookPlotStagesSchema.parse(plotStages),
+      updatedAt: now
+    });
+    await atomicWriteJson(
+      join(projectDirectory, MANIFEST_FILE),
+      nextManifest,
+      store.maxManifestBytes
+    );
+  }
 }
 
 export async function applyGlobalPlotStageCreate(

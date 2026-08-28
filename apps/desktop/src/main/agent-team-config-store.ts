@@ -1,6 +1,8 @@
 import { join } from "node:path";
 import {
+  AGENT_TEAM_PROFILE_NAME_MAX_LENGTH,
   AgentTeamCatalogSnapshotSchema,
+  AgentTeamProfileSchema,
   AgentTeamProfileCreateInputSchema,
   AgentTeamProfileRenameInputSchema,
   AgentTeamProfileSaveInputSchema,
@@ -26,8 +28,9 @@ import {
   createAgentTeamProfile,
   createCatalogFromLegacyFiles,
   invalidAgentTeamConfig,
-  migrateVersionOneCatalog,
   readAgentTeamJson,
+  tryMigrateCombinedCatalog,
+  tryMigrateStandaloneCatalog,
   type AgentTeamDiskCatalog
 } from "./agent-team-config-migration";
 
@@ -68,20 +71,22 @@ export class AgentTeamConfigStore {
       return snapshot;
     }
     if (!raw || typeof raw !== "object") throw invalidAgentTeamConfig();
-    const version = (raw as { version?: unknown }).version;
-    if (version === 1) {
-      const { version: _version, ...legacy } = raw as Record<string, unknown>;
-      const snapshot = migrateVersionOneCatalog(legacy);
+    const { version, ...stored } = raw as Record<string, unknown>;
+    const current = AgentTeamCatalogSnapshotSchema.safeParse(stored);
+    if (current.success) {
+      if (version !== AGENT_TEAM_CATALOG_DISK_VERSION) {
+        await this.writeSnapshot(current.data);
+      }
+      return current.data;
+    }
+    const migrated =
+      tryMigrateCombinedCatalog(stored) ?? tryMigrateStandaloneCatalog(stored);
+    if (migrated) {
+      const snapshot = migrated;
       await this.writeSnapshot(snapshot);
       return snapshot;
     }
-    if (version !== AGENT_TEAM_CATALOG_DISK_VERSION) {
-      throw new Error("智能体团队目录版本无效，已停止加载以避免覆盖原文件。");
-    }
-    const { version: _version, ...snapshot } = raw as AgentTeamDiskCatalog;
-    const parsed = AgentTeamCatalogSnapshotSchema.safeParse(snapshot);
-    if (!parsed.success) throw invalidAgentTeamConfig(parsed.error.issues[0]);
-    return parsed.data;
+    throw invalidAgentTeamConfig(current.error.issues[0]);
   }
 
   private async writeSnapshot(
@@ -189,6 +194,34 @@ export class AgentTeamConfigStore {
     });
   }
 
+  async exportProfile(
+    rawInput: AgentTeamProfileTargetInput
+  ): Promise<AgentTeamProfile> {
+    const input = AgentTeamProfileTargetInputSchema.parse(rawInput);
+    return structuredClone(this.requireTeam(await this.list(), input.teamId));
+  }
+
+  async installProfile(rawProfile: AgentTeamProfile): Promise<{
+    catalog: AgentTeamCatalogSnapshot;
+    team: AgentTeamProfile;
+  }> {
+    const profile = AgentTeamProfileSchema.parse(rawProfile);
+    let installedId = "";
+    const catalog = await this.mutate((snapshot) => {
+      const installed = createAgentTeamProfile(
+        profile.workspaceType,
+        this.availableImportedName(snapshot, profile.name),
+        profile.settings
+      );
+      installedId = installed.id;
+      snapshot.teams.push(installed);
+    });
+    return {
+      catalog,
+      team: structuredClone(this.requireTeam(catalog, installedId))
+    };
+  }
+
   async resolve(
     workspaceType: AgentTeamWorkspaceType,
     rawParentAgentId: WorkspaceAgentId | "long"
@@ -233,6 +266,24 @@ export class AgentTeamConfigStore {
       )
     ) {
       throw new Error(`智能体团队名称“${name}”已存在。`);
+    }
+  }
+
+  private availableImportedName(
+    snapshot: AgentTeamCatalogSnapshot,
+    sourceName: string
+  ): string {
+    const names = new Set(
+      snapshot.teams.map((team) => team.name.toLocaleLowerCase())
+    );
+    if (!names.has(sourceName.toLocaleLowerCase())) return sourceName;
+    for (let copy = 2; ; copy += 1) {
+      const suffix = ` (${copy})`;
+      const base = sourceName
+        .slice(0, AGENT_TEAM_PROFILE_NAME_MAX_LENGTH - suffix.length)
+        .trimEnd();
+      const candidate = `${base}${suffix}`;
+      if (!names.has(candidate.toLocaleLowerCase())) return candidate;
     }
   }
 }

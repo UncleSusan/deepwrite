@@ -77,6 +77,14 @@ export function useLazyProposalCoordinator(
     enqueue((loaded) => loaded.reviewLongAgentEdit(...args)).catch(
       reportFailure
     );
+  const discardAgentEdit: ProposalCoordinator["discardAgentEdit"] = (...args) =>
+    enqueue((loaded) => loaded.discardAgentEdit(...args)).catch(reportFailure);
+  const discardLongAgentEdit: ProposalCoordinator["discardLongAgentEdit"] = (
+    ...args
+  ) =>
+    enqueue((loaded) => loaded.discardLongAgentEdit(...args)).catch(
+      reportFailure
+    );
   const scheduleQueuedAgentEdits: ProposalCoordinator["scheduleQueuedAgentEdits"] =
     (...args) => {
       enqueueVoid((loaded) => loaded.scheduleQueuedAgentEdits(...args));
@@ -138,6 +146,8 @@ export function useLazyProposalCoordinator(
     hasQueuedAgentEdits,
     reviewAgentEdit,
     reviewLongAgentEdit,
+    discardAgentEdit,
+    discardLongAgentEdit,
     scheduleQueuedAgentEdits,
     stageAgentEditProposal,
     stageLibraryEditProposal,

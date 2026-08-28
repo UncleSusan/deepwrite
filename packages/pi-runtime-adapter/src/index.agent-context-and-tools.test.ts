@@ -83,15 +83,13 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
   });
 
   it("injects spawn_subagent only when the active short agent has enabled definitions", async () => {
-    const agentProfile = DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.find(
-      ({ id }) => id === "character_design"
-    )!;
+    const agentProfile = DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES[0]!;
     const shortWorkspace = {
       id: "short-subagent-test",
       title: "雾港回声",
       categories: ["悬疑"],
       activeStageId: "character_design" as const,
-      activeAgentId: "character_design" as const,
+      activeAgentId: "short" as const,
       characterStructure: { format: "text" as const },
       plotStages: createDefaultCreativePlotStages(),
       expertDraft: {
@@ -160,12 +158,12 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
     ).conversationAgents;
     expect(
       cache
-        .get("session_with_subagent:character_design")
+        .get("session_with_subagent:short")
         ?.state.tools.map(({ name }) => name)
     ).toContain("spawn_subagent");
     expect(
       cache
-        .get("session_without_subagent:character_design")
+        .get("session_without_subagent:short")
         ?.state.tools.map(({ name }) => name)
     ).not.toContain("spawn_subagent");
   });
@@ -649,9 +647,7 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
         )
     ).toBe(true);
     expect(
-      captured?.payload.snapshot.tools.find(
-        (tool) => tool.name === "write_draft_section"
-      )
+      captured?.payload.snapshot.tools.find((tool) => tool.name === "write")
     ).toMatchObject({
       label: expect.any(String),
       description: expect.any(String),

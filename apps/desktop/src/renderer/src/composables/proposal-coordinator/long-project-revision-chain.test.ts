@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEditProposal } from "../../types/conversation";
+import coordinatorSource from "../useProposalCoordinator.ts?raw";
+import extractedDraftLaneSource from "./long-draft-lane.ts?raw";
 import { longProjectRevisionMatchesProposalChain } from "./long-project-revision-chain";
 
 function proposal(
@@ -28,6 +30,44 @@ function proposal(
 }
 
 describe("longProjectRevisionMatchesProposalChain", () => {
+  it("allows different chapters in one run to follow the last accepted chapter revision", () => {
+    const firstChapter = proposal("chapter-eleven", {
+      status: "accepted",
+      stageId: "long-draft",
+      documentId: "longfile_chapter-eleven_body",
+      longDraftTarget: {
+        appliedProjectRevision: 11
+      } as NonNullable<AgentEditProposal["longDraftTarget"]>
+    });
+    const secondChapter = proposal("chapter-fifteen", {
+      stageId: "long-draft",
+      documentId: "longfile_chapter-fifteen_body"
+    });
+
+    expect(
+      longProjectRevisionMatchesProposalChain({
+        proposals: [firstChapter, secondChapter],
+        proposal: secondChapter,
+        baseProjectRevision: 10,
+        latestProjectRevision: 11
+      })
+    ).toBe(true);
+  });
+
+  it("uses the run-wide revision chain in both long-draft implementations", () => {
+    for (const source of [coordinatorSource, extractedDraftLaneSource]) {
+      const acceptance = source.split(
+        "async function acceptLongDraftProposal("
+      )[1];
+
+      expect(acceptance).toContain("longProjectRevisionMatchesProposalChain({");
+      expect(acceptance).toContain(
+        "proposals: conversation.listEditProposals(request.runId)"
+      );
+      expect(acceptance).not.toContain("predecessorProjectRevision");
+    }
+  });
+
   it("accepts the revision produced by earlier worldbuilding create and edit proposals", () => {
     const worldbuildingCreate = proposal("worldbuilding-create", {
       status: "accepted",

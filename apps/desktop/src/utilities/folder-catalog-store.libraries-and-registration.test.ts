@@ -19,6 +19,42 @@ import {
 } from "./folder-catalog-store.test-support";
 
 describe("FolderCatalogStore: libraries-and-registration", () => {
+  it("uses the configured default plot stages when creating a short book", async () => {
+    const root = await makeTemporaryRoot("deepwrite-folder-default-stages-");
+    const store = new FolderCatalogStore({
+      userDataPath: join(root, "user-data")
+    });
+    const seed = await store.createShortBook(
+      { title: "默认阶段模板", genre: "其他" },
+      join(root, "projects")
+    );
+    const customized = await store.mutatePlotStructure({
+      bookId: seed.resource.id,
+      baseProjectRevision: 0,
+      mutation: {
+        type: "create",
+        title: "自定义剧情阶段",
+        description: "验证设置可以引用结构管理中的动态阶段。"
+      }
+    });
+    const customStageId = customized.plotStages.at(-1)!.id;
+
+    const opened = await store.createShortBook(
+      {
+        title: "自定义默认阶段",
+        genre: "其他",
+        defaultPlotStageIds: [customStageId]
+      },
+      join(root, "projects")
+    );
+
+    expect(
+      opened.resource.plotStages
+        .filter((stage) => stage.enabled)
+        .map(({ id }) => id)
+    ).toEqual([customStageId]);
+  });
+
   it("initializes an imported legacy book as a current manifest and Markdown project", async () => {
     const root = await makeTemporaryRoot("deepwrite-folder-import-legacy-");
     const parentDirectory = join(root, "工作目录", "books");

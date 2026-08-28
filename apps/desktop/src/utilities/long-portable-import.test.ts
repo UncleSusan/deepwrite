@@ -29,6 +29,10 @@ function revision(content: string): string {
   return `v2:${Buffer.byteLength(content, "utf8")}:${sha256(content)}`;
 }
 
+function legacyRevision(content: string): string {
+  return `v1:${Buffer.byteLength(content, "utf8")}:${sha256(content).slice(0, 8)}`;
+}
+
 function serializeJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
@@ -292,6 +296,22 @@ describe("long portable import parser", () => {
     expect(() => parseLongPortableExportBundle(mismatched)).toThrow(
       /v4 连续性账本的文件清单与章节索引不一致/u
     );
+  });
+
+  it("accepts an equivalent legacy revision in a historical v4 audit", () => {
+    const compatible = portableTextFileCommitFixture();
+    const chapter = compatible.index.value.chapters[0]!;
+    const characterState = compatible.files.find(
+      ({ id }) => id === chapter.characterState.id
+    )!;
+    rehashLedgerMutation(compatible, (record) => {
+      const continuityFiles = record.continuityFiles as Array<
+        Record<string, unknown>
+      >;
+      continuityFiles[0]!.revision = legacyRevision(characterState.content);
+    });
+
+    expect(() => parseLongPortableExportBundle(compatible)).not.toThrow();
   });
 
   it("accepts a v4 commit without a foreshadowing file audit when the chapter has no touchpoints", () => {

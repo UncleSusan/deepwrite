@@ -23,6 +23,8 @@ type WritingConversationContext = Readonly<
   Pick<
     AgentConversationPublicProps,
     | "runtimeAvailable"
+    | "canRewriteHistory"
+    | "submitEditedMessage"
     | "contextTitle"
     | "bookTitle"
     | "stageLabel"
@@ -53,6 +55,7 @@ type WritingEditorViewModel = Readonly<
     | "saving"
     | "manualSaving"
     | "autoSaveEnabled"
+    | "defaultViewMode"
     | "boundToCurrentBook"
     | "sectionTabs"
     | "activeSectionId"
@@ -102,6 +105,7 @@ const emit = defineEmits<{
     }
   ];
   locateEditProposal: [payload: { runId: string; proposalId: string }];
+  discardEditProposal: [payload: { runId: string; proposalId: string }];
   collapse: [];
   save: [payload: { id: string; title: string; content: string }];
   liveChange: [payload: { id: string; title: string; content: string }];
@@ -149,6 +153,7 @@ const emit = defineEmits<{
     @select-approval="emit('selectApproval', $event)"
     @review-edit="emit('reviewEdit', $event)"
     @locate-edit-proposal="emit('locateEditProposal', $event)"
+    @discard-edit-proposal="emit('discardEditProposal', $event)"
     @clear-editor-references="emit('clearEditorReferences')"
     @remove-editor-reference="emit('removeEditorReference', $event)"
     @locate-editor-reference="emit('locateEditorReference', $event)"

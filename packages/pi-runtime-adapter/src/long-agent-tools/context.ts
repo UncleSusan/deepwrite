@@ -70,7 +70,8 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
   const fullyReadDocuments = new Map<string, FullyReadDocumentEntry>();
   /** Index-backed entities have no file, so their read credential is the body text. */
   const fullyReadRecords = new Map<string, string>();
-  const proposalOverlay = createProposalOverlay();
+  const proposalOverlay =
+    input.sharedState?.proposalOverlay ?? createProposalOverlay();
 
   const execute = async (
     command: LongQueryCommandEnvelope,
@@ -210,7 +211,7 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
     const { index, projectRevision } = await reloadIndex(signal);
     const activeChapterCardId = chapterCardId ?? workspace.activeChapterCardId;
     if (!activeChapterCardId) {
-      throw new Error("需要指定 chapter_card_id，或先选中一张待记录章卡。");
+      throw new Error("需要指定 chapter_card_id，或先选中一张待提交章卡。");
     }
     // Send-time workspace/project revisions can lag after in-run file writes or
     // a manuscript autosave. The live index is authoritative for the commit.

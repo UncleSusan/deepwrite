@@ -1,5 +1,6 @@
 import { AgentEvaluationSnapshotSchema } from "@deepwrite/contracts";
 import type { SystemEventEnvelope } from "@deepwrite/contracts";
+import { finalizeUnfinishedMessageTools } from "./attempt-state";
 import type { AgentConversationContext } from "./context";
 import { rememberBounded } from "./shared";
 import {
@@ -428,6 +429,11 @@ export function handleEvent(
       "error",
       event.timestamp,
       "父智能体运行已完成，但子任务未返回完整终态。"
+    );
+    finalizeUnfinishedMessageTools(
+      message,
+      event.timestamp,
+      "智能体运行已完成，但工具调用未返回完整终态。"
     );
     message.status = "completed";
     message.activityOnly = false;

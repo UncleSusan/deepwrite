@@ -7,6 +7,7 @@ import {
   DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS,
   DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES,
   SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS,
+  SCRIPT_WORKSPACE_AGENT_IDS,
   SCRIPT_WORKSPACE_STAGE_IDS,
   SCRIPT_WORKSPACE_TEXT_STAGE_IDS,
   ScriptWorkspaceAgentSettingsInputSchema,
@@ -23,7 +24,9 @@ import {
   createDefaultCreativePlotStages,
   createExpertDraftDirectoryRevision,
   createShortWorkspaceContentRevision,
-  resolveScriptWorkspaceAgentIdForStage
+  resolveScriptWorkspaceAgentIdForStage,
+  resolveScriptWorkspaceConversationLaneIdForStage,
+  resolveScriptWorkspaceStageReadAccess
 } from "./index";
 
 function scriptDraftFile(documentId: string, title: string, content: string) {
@@ -89,7 +92,12 @@ describe("script workspace contracts", () => {
       "outline",
       "draft"
     ]);
-    expect(DEFAULT_SCRIPT_AGENT_READ_ACCESS.expert_draft_coordinator).toEqual({
+    expect(SCRIPT_WORKSPACE_AGENT_IDS).toEqual(["script"]);
+    expect(DEFAULT_SCRIPT_AGENT_READ_ACCESS.script).toEqual({
+      material: ["character", "gimmick", "plot", "draft", "other"],
+      skill: ["general", "plot", "style", "other"]
+    });
+    expect(resolveScriptWorkspaceStageReadAccess("draft")).toEqual({
       material: ["character", "gimmick", "plot", "draft", "other"],
       skill: ["style", "general", "other"]
     });
@@ -100,8 +108,14 @@ describe("script workspace contracts", () => {
     expect(
       ScriptWorkspaceAgentSettingsInputSchema.safeParse(legacy).success
     ).toBe(false);
-    expect(resolveScriptWorkspaceAgentIdForStage("plot_refine")).toBe(
-      "plot_design"
+    for (const stageId of SCRIPT_WORKSPACE_STAGE_IDS) {
+      expect(resolveScriptWorkspaceAgentIdForStage(stageId)).toBe("script");
+    }
+    expect(
+      resolveScriptWorkspaceConversationLaneIdForStage("plot_refine")
+    ).toBe("plot_design");
+    expect(resolveScriptWorkspaceConversationLaneIdForStage("draft")).toBe(
+      "expert_draft_coordinator"
     );
   });
 
@@ -115,26 +129,35 @@ describe("script workspace contracts", () => {
     expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).toContain(
       "成对的开始/结束标记"
     );
-    expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).toContain(
-      "write_draft_section"
-    );
-    expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).toContain(
-      "replace_draft_section_text"
-    );
+    expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).toContain("write");
+    expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).toContain("edit");
     expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).toContain("Markdown 表格");
     expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).toContain("分析标题");
     expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).toContain("格式讲解");
     expect(SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS).not.toContain(
-      ["write", "section", "body"].join("_")
+      "write_draft_section"
     );
 
-    const coordinator = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES.find(
-      ({ id }) => id === "expert_draft_coordinator"
-    )!;
-    expect(coordinator.systemPrompt).toContain(
-      SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS
+    const profile = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES[0]!;
+    expect(profile.id).toBe("script");
+    for (const toolName of ["read", "create", "edit", "write"]) {
+      expect(profile.systemPrompt).toContain(toolName);
+    }
+    expect(profile.systemPrompt).toContain(
+      "不得把人物、剧情或正文当成不同智能体"
     );
-    expect(coordinator.systemPrompt).toContain("剧本唯一的正文写作智能体");
+    expect(profile.systemPrompt).toContain("文本样式下禁止 create character");
+    expect(profile.systemPrompt).toContain("所有人物写在同一份文本里");
+    expect(profile.systemPrompt).toContain(
+      "只有条目样式才用 kind=character 为单个人物创建独立条目"
+    );
+    expect(profile.systemPrompt).toContain(
+      "读取、写入或修改剧集正文/人物状态时必须同时给出 document=body 或 character_state，不得省略"
+    );
+    expect(profile.systemPrompt).toContain(
+      "读取单个剧集或段落必须给出 kind=draft_section、稳定小节 id 和 document=body 或 character_state"
+    );
+    expect(profile.systemPrompt).toContain("不传 document 时默认 body");
   });
 
   it("validates script snapshots, profiles, and discriminated settings", () => {
@@ -173,7 +196,7 @@ describe("script workspace contracts", () => {
     };
     expect(
       ScriptWorkspaceAgentSettingsInputSchema.parse(input).agents
-    ).toHaveLength(3);
+    ).toHaveLength(1);
     expect(WorkspaceAgentSettingsInputSchema.parse(input).workspaceType).toBe(
       "script"
     );
@@ -185,6 +208,14 @@ describe("script workspace contracts", () => {
         activeSectionId: "episode-1"
       })
     ).not.toThrow();
+    expect(
+      ScriptWorkspaceSnapshotSchema.parse({
+        ...scriptWorkspaceSnapshot(),
+        activeStageId: "draft",
+        activeAgentId: "expert_draft_coordinator",
+        activeSectionId: "episode-1"
+      }).activeAgentId
+    ).toBe("script");
     expect(() =>
       ScriptWorkspaceSnapshotSchema.parse({
         ...scriptWorkspaceSnapshot(),
@@ -301,9 +332,7 @@ describe("script workspace contracts", () => {
       })
     ).toThrow();
 
-    const plotProfile = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES.find(
-      ({ id }) => id === "plot_design"
-    )!;
+    const plotProfile = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES[0]!;
     expect(
       AgentPromptCommandPayloadSchema.parse({
         sessionId: "session_1",
@@ -311,7 +340,7 @@ describe("script workspace contracts", () => {
         workspaceContext: { scriptWorkspace },
         scriptAgentProfile: plotProfile
       }).scriptAgentProfile?.id
-    ).toBe("plot_design");
+    ).toBe("script");
     expect(() =>
       AgentPromptCommandPayloadSchema.parse({
         sessionId: "session_1",
@@ -325,9 +354,7 @@ describe("script workspace contracts", () => {
         message: "细化密室冲突",
         workspaceContext: { scriptWorkspace },
         scriptAgentProfile: plotProfile,
-        agentProfile: DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.find(
-          ({ id }) => id === "plot_design"
-        )
+        agentProfile: DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES[0]
       })
     ).toThrow();
   });
@@ -366,7 +393,7 @@ describe("script workspace contracts", () => {
           "workspaceAgents.reset",
           {
             workspaceType: "script" as const,
-            agentId: "expert_draft_coordinator" as const
+            agentId: "script" as const
           },
           { id: "script_agents_reset" }
         )

@@ -108,7 +108,7 @@ export function useLongEditorStructureSelection(options: {
   orderedBookLineVolumes: ComputedRef<Array<{ id: string }>>;
   currentCharacterNavigationItems: ComputedRef<Array<{ id: string }>>;
   documentStates: Ref<Record<string, LongDocumentState>>;
-  viewMode: Ref<"edit" | "preview">;
+  resetTextViewMode: (forcePreview?: boolean) => void;
   stateKey: (fileId: string, bookId?: string) => string;
 }): {
   activeRole: Ref<LongWorkspaceFileRole>;
@@ -892,7 +892,7 @@ export function useLongEditorStructureSelection(options: {
     if (state?.loaded || Boolean(state?.content)) {
       activeRole.value = selectedFile.role;
       activeFileId.value = fileId;
-      options.viewMode.value = selectedFile.readOnly ? "preview" : "edit";
+      options.resetTextViewMode(selectedFile.readOnly);
     }
   }
 

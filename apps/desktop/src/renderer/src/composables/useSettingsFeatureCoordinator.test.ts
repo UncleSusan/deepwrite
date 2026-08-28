@@ -2,6 +2,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   DeepWriteApi,
+  ModelConfigInput,
   ModelSettings,
   ModelSettingsInput,
   ModelUsageDashboard
@@ -183,7 +184,8 @@ describe("settings feature coordinator", () => {
     const pending = deferred<ModelSettings>();
     const save = vi.fn(() => pending.promise);
     const api = createApi({ models: { list: vi.fn(), save } });
-    const { coordinator, onModelsLoaded, settingsStore } = createHarness(api);
+    const { coordinator, notifications, onModelsLoaded, settingsStore } =
+      createHarness(api);
     const existing = modelSettings("model-existing");
     settingsStore.markLoaded("models", existing);
 
@@ -201,6 +203,115 @@ describe("settings feature coordinator", () => {
     expect(settingsStore.modelError).toBe("模型配置暂时不可写");
     expect(settingsStore.modelSettings).toBe(existing);
     expect(onModelsLoaded).not.toHaveBeenCalled();
+    expect(notifications.error).toHaveBeenCalledOnce();
+    expect(notifications.error).toHaveBeenCalledWith("模型配置暂时不可写");
+  });
+
+  it("publishes a refreshed free-model snapshot without clearing the cached one first", async () => {
+    const existing = modelSettings("model-existing");
+    const refreshed = {
+      ...modelSettings("free-enabled"),
+      deepwriteFreeEnabledModelIds: ["free-enabled"]
+    } as ModelSettings;
+    const refreshFree = vi.fn(async () => refreshed);
+    const api = createApi({ models: { refreshFree } });
+    const { coordinator, onModelsLoaded, settingsStore } = createHarness(api);
+    settingsStore.markLoaded("models", existing);
+
+    const refreshing = coordinator.refreshFreeModels();
+    expect(settingsStore.modelSettings).toBe(existing);
+    expect(settingsStore.freeModelsRefreshing).toBe(true);
+    await refreshing;
+
+    expect(settingsStore.modelSettings).toBe(refreshed);
+    expect(settingsStore.freeModelsRefreshing).toBe(false);
+    expect(onModelsLoaded).toHaveBeenCalledWith(refreshed);
+  });
+
+  it("publishes free-model enable changes and always releases the saving flag", async () => {
+    const enabled = {
+      ...modelSettings("free-writing"),
+      deepwriteFreeEnabledModelIds: ["free-writing"]
+    } as ModelSettings;
+    const setFreeModelEnabled = vi.fn(async () => enabled);
+    const api = createApi({ models: { setFreeModelEnabled } });
+    const { coordinator, onModelsLoaded, settingsStore } = createHarness(api);
+
+    const saving = coordinator.setFreeModelEnabled("free-writing", true);
+    expect(settingsStore.freeModelsSaving).toBe(true);
+    await saving;
+
+    expect(setFreeModelEnabled).toHaveBeenCalledWith("free-writing", true);
+    expect(settingsStore.freeModelsSaving).toBe(false);
+    expect(settingsStore.modelSettings).toBe(enabled);
+    expect(onModelsLoaded).toHaveBeenCalledWith(enabled);
+  });
+
+  it("tests a model with shared progress state and reports success through notifications", async () => {
+    const test = vi.fn(async () => ({
+      ok: true,
+      message: "模型联通正常。",
+      modelId: "free-writing",
+      contextWindow: 272_000,
+      maxTokens: 128_000
+    }));
+    const api = createApi({ models: { test } });
+    const { coordinator, notifications, settingsStore } = createHarness(api);
+    const model: ModelConfigInput = {
+      id: "free-writing",
+      label: "Free Writing",
+      provider: "deepwrite-free",
+      modelId: "free-writing",
+      api: "openai-completions",
+      baseUrl: "https://example.test/v1",
+      reasoning: false,
+      defaultThinkingLevel: "off",
+      thinkingLevelOptions: ["off"],
+      temperatureOptions: [0.1, 0.7, 1]
+    };
+
+    const testing = coordinator.testModel(model);
+    expect(settingsStore.testingModelId).toBe(model.id);
+    await testing;
+
+    expect(test).toHaveBeenCalledWith(model);
+    expect(settingsStore.testingModelId).toBeNull();
+    expect(settingsStore.modelTestMessage).toBe("模型联通正常。");
+    expect(settingsStore.lastModelTestCapacity).toEqual({
+      modelId: "free-writing",
+      contextWindow: 272_000,
+      maxTokens: 128_000
+    });
+    expect(notifications.success).toHaveBeenCalledWith("模型联通正常。");
+  });
+
+  it("reports a failed model test through notifications exactly once", async () => {
+    const test = vi.fn(async () => {
+      throw new Error("模型端点无法访问");
+    });
+    const api = createApi({ models: { test } });
+    const { coordinator, notifications, settingsStore } = createHarness(api);
+    const model: ModelConfigInput = {
+      id: "free-writing",
+      label: "Free Writing",
+      provider: "deepwrite-free",
+      modelId: "free-writing",
+      api: "openai-completions",
+      baseUrl: "https://example.test/v1",
+      reasoning: false,
+      defaultThinkingLevel: "off",
+      thinkingLevelOptions: ["off"],
+      temperatureOptions: [0.1, 0.7, 1]
+    };
+
+    await coordinator.testModel(model);
+
+    expect(settingsStore.testingModelId).toBeNull();
+    expect(settingsStore.lastModelTestCapacity).toBeNull();
+    expect(settingsStore.modelError).toBe("模型端点无法访问");
+    expect(notifications.error).toHaveBeenCalledOnce();
+    expect(notifications.error).toHaveBeenCalledWith("模型端点无法访问");
+    expect(notifications.success).not.toHaveBeenCalled();
   });
 
   it("single-flights short/script agent settings across concurrent feature loads", async () => {
@@ -268,5 +379,48 @@ describe("settings feature coordinator", () => {
     await coordinator.loadAgentTeamSettings();
     expect(list).toHaveBeenCalledOnce();
     expect(notifications.error).not.toHaveBeenCalled();
+  });
+
+  it("downloads and installs team packages without treating cancellation as success", async () => {
+    const installedCatalog = {
+      enabledTeamIds: {},
+      teams: [
+        {
+          id: "team_installed",
+          name: "安装的团队",
+          workspaceType: "short" as const,
+          settings: structuredClone(DEFAULT_AGENT_TEAM_SETTINGS)
+        }
+      ]
+    };
+    const download = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "canceled" })
+      .mockResolvedValueOnce({
+        status: "saved",
+        filePath: "/tmp/team.zip"
+      });
+    const install = vi.fn().mockResolvedValue({
+      status: "installed",
+      teamId: "team_installed",
+      teamName: "安装的团队",
+      catalog: installedCatalog
+    });
+    const api = createApi({ agentTeams: { download, install } });
+    const { coordinator, notifications, settingsStore } = createHarness(api);
+
+    await coordinator.downloadAgentTeam({ teamId: "team_source" });
+    expect(notifications.success).not.toHaveBeenCalled();
+    await coordinator.downloadAgentTeam({ teamId: "team_source" });
+    await coordinator.installAgentTeam();
+
+    expect(download).toHaveBeenCalledWith({ teamId: "team_source" });
+    expect(notifications.success).toHaveBeenCalledWith(
+      "智能体团队压缩包已下载。"
+    );
+    expect(settingsStore.agentTeamCatalog).toEqual(installedCatalog);
+    expect(notifications.success).toHaveBeenCalledWith(
+      "智能体团队“安装的团队”已安装。"
+    );
   });
 });

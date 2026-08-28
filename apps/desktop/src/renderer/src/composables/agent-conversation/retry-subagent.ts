@@ -9,6 +9,10 @@ import type {
 } from "../../types/conversation";
 import { cloneMessage, cloneSubagentRun } from "./clone";
 import type { AgentConversationContext } from "./context";
+import {
+  finalizeUnfinishedMessageTools,
+  preserveLiveEditProposals
+} from "./attempt-state";
 import { id, isRecord, rememberBounded } from "./shared";
 import { flushPendingAgentTextDelta, clearIdleTimer } from "./streaming";
 import type {
@@ -119,6 +123,7 @@ export function markRunError(
   message.errorMessage = messageText;
   const completedAt = new Date().toISOString();
   finalizeRunningSubagents(ctx, message, "error", completedAt, messageText);
+  finalizeUnfinishedMessageTools(message, completedAt, messageText);
   if (message.processingStartedAt) {
     message.processingCompletedAt = completedAt;
   }
@@ -161,6 +166,11 @@ export function markRunStopped(
     "stopped",
     completedAt,
     "父智能体运行已停止，子任务同步停止。"
+  );
+  finalizeUnfinishedMessageTools(
+    message,
+    completedAt,
+    "智能体运行已停止，工具调用未返回完整终态。"
   );
   if (message.processingStartedAt) {
     message.processingCompletedAt = completedAt;
@@ -328,6 +338,7 @@ export function restoreMessageCheckpoint(
         status: "streaming" as const,
         runtime: { ...eventRuntime }
       };
+  preserveLiveEditProposals(current, restored);
   restored.status = "streaming";
   restored.runtime = { ...eventRuntime };
   restored.retry = retry;

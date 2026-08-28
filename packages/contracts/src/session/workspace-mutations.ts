@@ -20,7 +20,15 @@ export const WorkspaceEditorMutationTargetSchema = z.discriminatedUnion(
           z.object({
             title: z.string().trim().min(1).max(240),
             wordCountRequirement: z.string().max(1_000),
-            provisionalSectionId: z.string().trim().min(1).max(120)
+            provisionalSectionId: z.string().trim().min(1).max(120),
+            bodyContent: z
+              .string()
+              .max(SHORT_WORKSPACE_FILE_MAX_CHARACTERS)
+              .optional(),
+            characterStateContent: z
+              .string()
+              .max(SHORT_WORKSPACE_FILE_MAX_CHARACTERS)
+              .optional()
           })
         )
         .min(1)
@@ -45,6 +53,10 @@ export const WorkspaceEditorMutationTargetSchema = z.discriminatedUnion(
     }),
     z.object({
       kind: z.literal("character-structure"),
+      initialContent: z
+        .string()
+        .max(SHORT_WORKSPACE_FILE_MAX_CHARACTERS)
+        .optional(),
       mutation: z.discriminatedUnion("type", [
         z.object({
           type: z.literal("createItem"),
@@ -68,6 +80,25 @@ export const WorkspaceEditorMutationTargetSchema = z.discriminatedUnion(
           itemId: z.string().trim().min(1).max(512),
           title: z.string().trim().min(1).max(256),
           deletedText: z.string().max(SHORT_WORKSPACE_FILE_MAX_CHARACTERS)
+        })
+      ])
+    }),
+    z.object({
+      kind: z.literal("plot-structure"),
+      mutation: z.discriminatedUnion("type", [
+        z.object({
+          type: z.literal("create"),
+          title: z.string().trim().min(1).max(120),
+          description: z.string().trim().min(1).max(20_000),
+          provisionalStageId: ShortWorkspaceStageIdSchema,
+          content: z.string().max(SHORT_WORKSPACE_FILE_MAX_CHARACTERS)
+        }),
+        z.object({
+          type: z.literal("update"),
+          stageId: ShortWorkspaceStageIdSchema,
+          previousTitle: z.string().trim().min(1).max(120),
+          title: z.string().trim().min(1).max(120),
+          description: z.string().trim().min(1).max(20_000)
         })
       ])
     })
@@ -118,6 +149,16 @@ export const WorkspaceEditorMutationPayloadSchema = z
         code: "custom",
         path: ["mutationTarget"],
         message: "Character mutations must target character_design."
+      });
+    }
+    if (
+      value.mutationTarget?.kind === "plot-structure" &&
+      (value.stageId === "character_design" || value.stageId === "draft")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["mutationTarget"],
+        message: "Plot structure mutations must target a plot stage."
       });
     }
   });

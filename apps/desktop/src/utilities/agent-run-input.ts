@@ -58,12 +58,21 @@ export function createAgentRunInput(
     ...(payload.conversationHistory?.length
       ? { conversationHistory: payload.conversationHistory }
       : {}),
+    ...(payload.conversationHistoryMode
+      ? { conversationHistoryMode: payload.conversationHistoryMode }
+      : {}),
     ...(payload.mode ? { mode: payload.mode } : {}),
     ...(payload.attachments?.length
       ? { attachments: payload.attachments }
       : {}),
     ...(payload.writeApprovalMode
       ? { writeApprovalMode: payload.writeApprovalMode }
+      : {}),
+    ...(payload.autoApproveCrossStageOperations !== undefined
+      ? {
+          autoApproveCrossStageOperations:
+            payload.autoApproveCrossStageOperations
+        }
       : {}),
     ...(payload.thinkingLevel ? { thinkingLevel: payload.thinkingLevel } : {}),
     ...(payload.temperature !== undefined

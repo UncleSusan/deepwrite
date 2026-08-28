@@ -1,3 +1,9 @@
+import { parseMarkdownHeadingLine } from "./markdownOutline";
+
+export interface RenderMarkdownOptions {
+  annotateHeadings?: boolean;
+}
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -162,11 +168,15 @@ function isThematicBreak(line: string): boolean {
   );
 }
 
-export function renderMarkdown(source: string): string {
+export function renderMarkdown(
+  source: string,
+  options: RenderMarkdownOptions = {}
+): string {
   const lines = source.replaceAll("\r\n", "\n").split("\n");
   const blocks: string[] = [];
   let paragraph: string[] = [];
   let index = 0;
+  let headingIndex = 0;
 
   const flushParagraph = (): void => {
     if (paragraph.length === 0) {
@@ -230,11 +240,16 @@ export function renderMarkdown(source: string): string {
       continue;
     }
 
-    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    const heading = parseMarkdownHeadingLine(line);
     if (heading) {
       flushParagraph();
-      const level = heading[1]?.length ?? 1;
-      blocks.push(`<h${level}>${renderInline(heading[2] ?? "")}</h${level}>`);
+      const attributes = options.annotateHeadings
+        ? ` data-markdown-heading-index="${headingIndex}" tabindex="-1"`
+        : "";
+      blocks.push(
+        `<h${heading.level}${attributes}>${renderInline(heading.source)}</h${heading.level}>`
+      );
+      headingIndex += 1;
       index += 1;
       continue;
     }

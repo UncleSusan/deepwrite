@@ -37,7 +37,8 @@ import {
 import {
   buildLongWorkspaceTools,
   type LongAgentToolDetails,
-  type LongCommandExecutor
+  type LongCommandExecutor,
+  type LongWorkspaceToolSharedState
 } from "./long-agent-tools";
 import { toRuntimeEvents } from "./index";
 import type { AgentUserInputRequester } from "./runtime-types";
@@ -479,7 +480,9 @@ function longTools(input: {
   activeRoot?: LongWorkspaceRoot;
   activeChapterCardId?: string;
   index?: LongWorkspaceIndexSnapshot;
+  autoApproveCrossStageOperations?: boolean;
   requestUserInput?: AgentUserInputRequester;
+  sharedState?: LongWorkspaceToolSharedState;
 }) {
   const context = workspace(
     "long",
@@ -497,6 +500,9 @@ function longTools(input: {
     sessionId: "session_tools",
     runId: "run_tools",
     executor: input.executor,
+    autoApproveCrossStageOperations:
+      input.autoApproveCrossStageOperations === true,
+    ...(input.sharedState ? { sharedState: input.sharedState } : {}),
     requestUserInput:
       input.requestUserInput ??
       (async (request) => ({

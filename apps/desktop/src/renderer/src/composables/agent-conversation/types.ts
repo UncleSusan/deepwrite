@@ -18,7 +18,8 @@ import type {
   AgentEditProposal,
   AgentSubagentRun,
   ChatMessage,
-  ConversationHistoryItem
+  ConversationHistoryItem,
+  ConversationMessageRewriteRequest
 } from "../../types/conversation";
 import type { WorkspaceDocument } from "../../types/workspace";
 
@@ -30,6 +31,7 @@ export interface ConversationStorage {
 
 export interface UseAgentConversationOptions {
   api: () => DeepWriteApi | undefined;
+  autoApproveCrossStageOperations?: () => boolean;
   initialMessages?: ChatMessage[];
   idleTimeoutMs?: number;
   initialPersistenceSnapshot?: unknown;
@@ -48,6 +50,7 @@ export interface UseAgentConversationOptions {
   /** @deprecated Persistence is now coordinated through structured snapshots. */
   storage?: ConversationStorage;
   onPersistenceError?: () => void;
+  onContextWarning?: (message: string) => void;
 }
 
 export interface AgentRunSettings {
@@ -132,6 +135,7 @@ export interface AgentConversationController {
   hasPendingEditReview: Readonly<Ref<boolean>>;
   canSend: Readonly<Ref<boolean>>;
   canSendAttachments: Readonly<Ref<boolean>>;
+  canRewriteHistory: Readonly<Ref<boolean>>;
   canStop: Readonly<Ref<boolean>>;
   acceptsRunEvent(sessionId: string, runId: string): boolean;
   approvalModeForRun(
@@ -161,6 +165,12 @@ export interface AgentConversationController {
     attachments?: WorkspaceContextAttachments,
     promptAttachments?: UserPromptAttachment[]
   ): Promise<void>;
+  resendMessage(
+    request: ConversationMessageRewriteRequest,
+    activeDocument: WorkspaceDocument,
+    workspaceDocuments?: WorkspaceDocument[],
+    attachments?: WorkspaceContextAttachments
+  ): Promise<boolean>;
   sendAssistantMessage(context?: ChatAssistantRequestContext): Promise<void>;
   sendLongMessage(
     context: LongWorkspaceRuntimeContext,
@@ -170,6 +180,14 @@ export interface AgentConversationController {
     >,
     promptAttachments?: UserPromptAttachment[]
   ): Promise<void>;
+  resendLongMessage(
+    request: ConversationMessageRewriteRequest,
+    context: LongWorkspaceRuntimeContext,
+    attachments?: Pick<
+      WorkspaceRuntimeContext,
+      "attachedSkills" | "attachedMaterials"
+    >
+  ): Promise<boolean>;
   stopGeneration(): Promise<boolean>;
   cancelPendingGeneration(): boolean;
   newConversation(): void;

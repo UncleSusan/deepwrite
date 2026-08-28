@@ -322,7 +322,12 @@ describe("long workspace proposal approval: file-and-continuity-proposals", () =
       })
     );
     expect(test.notifications.error).not.toHaveBeenCalled();
-    expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
+    expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+      {
+        event: { type: "long.ledger_commit_proposal" },
+        status: "accepted"
+      }
+    ]);
   });
 
   it("finalizes two text-file continuity commits from the same run in order", async () => {

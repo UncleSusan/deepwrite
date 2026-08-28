@@ -174,7 +174,7 @@ export function useWorkspaceResourceCoordinator(
     const node = findResourceNodeIn(sections, resourceId);
     return (
       node?.targetDocumentId ??
-      (node?.shortAgentId === "expert_draft_coordinator"
+      (node?.stageCategoryId === "draft"
         ? node.children?.find((child) => child.targetDocumentId)
             ?.targetDocumentId
         : undefined) ??
@@ -322,7 +322,7 @@ export function useWorkspaceResourceCoordinator(
     const unitLabel = resolved.workspaceType === "script" ? "剧集" : "小节";
     if (!node?.shortAgentId) return resolved;
     if (
-      node.shortAgentId === "expert_draft_coordinator" &&
+      node.stageCategoryId === "draft" &&
       directory &&
       !node.expertSectionId
     ) {
@@ -342,7 +342,7 @@ export function useWorkspaceResourceCoordinator(
           directory.title
         ],
         content: "",
-        shortAgentId: "expert_draft_coordinator"
+        shortAgentId: node.shortAgentId
       };
     }
     return {

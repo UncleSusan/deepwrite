@@ -1,6 +1,7 @@
 import {
   AgentTeamCatalogSnapshotSchema,
-  AppearanceSettingsSnapshotSchema,
+  AgentTeamPackageExportResultSchema,
+  AgentTeamPackageInstallResultSchema,
   ChatAssistantProjectConfigListSchema,
   ChatAssistantProjectConfigSchema,
   GeneralSettingsSnapshotSchema,
@@ -14,6 +15,11 @@ import {
 } from "@deepwrite/contracts";
 import { safeErrorDetails } from "./errors";
 import type { IpcCommandContext } from "./command-types";
+import { handleAppearanceCommands } from "./appearance-commands";
+import {
+  downloadAgentTeamPackage,
+  installAgentTeamPackage
+} from "../agent-team-package-service";
 
 export async function handleSettingsCommands(
   ctx: IpcCommandContext,
@@ -63,54 +69,9 @@ export async function handleSettingsCommands(
     }
   }
 
-  if (command.type === "appearance.list") {
-    try {
-      const snapshot = AppearanceSettingsSnapshotSchema.parse(
-        await ctx.requireAppearanceConfigStore().list()
-      );
-      ctx.syncNativeAppearanceChrome(snapshot.settings);
-      return {
-        status: "accepted",
-        requestId: command.id,
-        payload: snapshot
-      };
-    } catch (error: unknown) {
-      return {
-        status: "rejected",
-        requestId: command.id,
-        error: {
-          code: "appearance.list_failed",
-          message:
-            error instanceof Error ? error.message : "加载外观设置失败。",
-          details: safeErrorDetails(error)
-        }
-      };
-    }
-  }
-
-  if (command.type === "appearance.save") {
-    try {
-      const snapshot = AppearanceSettingsSnapshotSchema.parse(
-        await ctx.requireAppearanceConfigStore().save(command.payload)
-      );
-      ctx.syncNativeAppearanceChrome(snapshot.settings);
-      return {
-        status: "accepted",
-        requestId: command.id,
-        payload: snapshot
-      };
-    } catch (error: unknown) {
-      return {
-        status: "rejected",
-        requestId: command.id,
-        error: {
-          code: "appearance.save_failed",
-          message:
-            error instanceof Error ? error.message : "保存外观设置失败。",
-          details: safeErrorDetails(error)
-        }
-      };
-    }
+  const appearanceResult = await handleAppearanceCommands(ctx, command);
+  if (appearanceResult) {
+    return appearanceResult;
   }
 
   if (command.type === "generalSettings.list") {
@@ -207,6 +168,63 @@ export async function handleSettingsCommands(
           code: "agent_teams.list_failed",
           message:
             error instanceof Error ? error.message : "加载智能体团队设置失败。",
+          details: safeErrorDetails(error)
+        }
+      };
+    }
+  }
+
+  if (command.type === "agentTeams.exportPackage") {
+    try {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: AgentTeamPackageExportResultSchema.parse(
+          await downloadAgentTeamPackage(
+            ctx.getMainWindow(),
+            ctx.dialog,
+            ctx.requireAgentTeamConfigStore(),
+            command.payload,
+            ctx.getDocumentsPath()
+          )
+        )
+      };
+    } catch (error: unknown) {
+      return {
+        status: "rejected",
+        requestId: command.id,
+        error: {
+          code: "agent_teams.export_failed",
+          message:
+            error instanceof Error ? error.message : "下载智能体团队失败。",
+          details: safeErrorDetails(error)
+        }
+      };
+    }
+  }
+
+  if (command.type === "agentTeams.installPackage") {
+    try {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: AgentTeamPackageInstallResultSchema.parse(
+          await installAgentTeamPackage(
+            ctx.getMainWindow(),
+            ctx.dialog,
+            ctx.requireAgentTeamConfigStore(),
+            ctx.getDocumentsPath()
+          )
+        )
+      };
+    } catch (error: unknown) {
+      return {
+        status: "rejected",
+        requestId: command.id,
+        error: {
+          code: "agent_teams.install_failed",
+          message:
+            error instanceof Error ? error.message : "安装智能体团队失败。",
           details: safeErrorDetails(error)
         }
       };

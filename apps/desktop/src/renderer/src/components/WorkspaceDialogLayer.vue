@@ -67,6 +67,9 @@ const emit = defineEmits<WorkspaceDialogLayerEmits>();
       open
       :book="module.book"
       :pending="module.pending"
+      :writing-context="module.writingContext"
+      :writing-context-loading="module.writingContextLoading"
+      :writing-context-pending="module.writingContextPending"
       @close="emit('closePlotStructure')"
       @mutation="
         (mutation, completion) =>
@@ -75,6 +78,9 @@ const emit = defineEmits<WorkspaceDialogLayerEmits>();
       @character-mutation="
         (mutation, completion) =>
           emit('characterStructureMutation', mutation, completion)
+      "
+      @save-writing-context="
+        (content, completion) => emit('saveWritingContext', content, completion)
       "
     />
 

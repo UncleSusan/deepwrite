@@ -12,6 +12,19 @@ describe("renderMarkdown", () => {
     expect(output).toContain("<strong>完成</strong>");
   });
 
+  it("only annotates headings for editor preview navigation when requested", () => {
+    const source = "# 第一章\n\n## 第一节";
+    const ordinary = renderMarkdown(source);
+    const annotated = renderMarkdown(source, { annotateHeadings: true });
+
+    expect(ordinary).toBe("<h1>第一章</h1><h2>第一节</h2>");
+    expect(ordinary).not.toContain("data-markdown-heading-index");
+    expect(annotated).toBe(
+      '<h1 data-markdown-heading-index="0" tabindex="-1">第一章</h1>' +
+        '<h2 data-markdown-heading-index="1" tabindex="-1">第一节</h2>'
+    );
+  });
+
   it("escapes arbitrary html while keeping safe links", () => {
     const output = renderMarkdown(
       "<img src=x onerror=alert(1)> [文档](https://example.com)"

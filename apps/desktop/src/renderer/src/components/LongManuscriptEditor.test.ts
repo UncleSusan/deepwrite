@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import source from "./LongManuscriptEditor.vue?raw";
 import editorSource from "./LongWorkspaceEditor.vue?raw";
 import documentSessionSource from "../composables/useLongEditorDocumentSession.ts?raw";
+import structureSelectionSource from "../composables/useLongEditorStructureSelection.ts?raw";
 
 const editorImplementationSource = [editorSource, documentSessionSource].join(
   "\n"
@@ -18,7 +19,7 @@ describe("LongManuscriptEditor", () => {
   });
 
   it("accepts a narrow manuscript projection and emits user intent", () => {
-    expect(source).toContain('viewMode: "edit" | "preview"');
+    expect(source).toContain("viewMode: TextViewMode");
     expect(source).toContain('"update:titleDraft": [value: string]');
     expect(source).toContain("titleChange: [event: Event]");
     expect(source).toContain("beforeinput: [event: InputEvent]");
@@ -106,6 +107,18 @@ describe("LongManuscriptEditor", () => {
     );
     expect(editorSource).toContain(
       ':readonly="currentReadOnly || isDocumentContentBusy"'
+    );
+  });
+
+  it("uses the persisted default mode while keeping read-only files in preview", () => {
+    expect(editorSource).toContain("defaultViewMode: TextViewMode");
+    expect(editorSource).toContain("defaultMode: () => props.defaultViewMode");
+    expect(editorSource).toContain(
+      "resetToDefault(Boolean(currentSelectionFile.value?.readOnly))"
+    );
+    expect(editorSource).toContain("() => props.defaultViewMode");
+    expect(structureSelectionSource).toContain(
+      "options.resetTextViewMode(selectedFile.readOnly)"
     );
   });
 });

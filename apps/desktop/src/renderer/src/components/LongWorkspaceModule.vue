@@ -10,20 +10,25 @@ import type {
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch,
   LongWriteDocumentResult,
+  TextViewMode,
   ThinkingLevel,
   UserPromptAttachment,
   WorkspacePaneLayout
 } from "@deepwrite/contracts";
 import type { AgentConversationController } from "../composables/useAgentConversation";
 import type { LongWorkspaceProposalItem } from "../composables/useLongWorkspaceProposals";
-import type { LongWorkspaceEditorPort } from "../composables/useLongWorkspaceSessionCoordinator";
+import {
+  isLongWorkspaceEditorPort,
+  type LongWorkspaceEditorPort
+} from "../composables/useLongWorkspaceSessionCoordinator";
 import type {
   LongWorkspaceFileContext,
   LongWorkspaceRefreshStatus
 } from "../stores/longWorkspaceStore";
 import type {
   AgentApprovalMode,
-  ComposerReferenceOption
+  ComposerReferenceOption,
+  ConversationMessageRewriteRequest
 } from "../types/conversation";
 import type {
   LongStructureMutationCompletion,
@@ -32,7 +37,7 @@ import type {
 import { LONG_WORKSPACE_ROOT_LABELS } from "../utils/longWorkspaceResourceTree";
 import AgentConversation from "./AgentConversation.vue";
 import AppIcon from "./AppIcon.vue";
-import { LongWorkspaceEditor } from "./lazyAppComponents";
+import LongWorkspaceEditor from "./LongWorkspaceEditor.vue";
 
 const props = defineProps<{
   conversationController: AgentConversationController | null;
@@ -54,6 +59,7 @@ const props = defineProps<{
   loading: boolean;
   leftCollapsed: boolean;
   paneLayout: WorkspacePaneLayout;
+  defaultTextViewMode: TextViewMode;
   rightPane: Readonly<{
     collapsed: boolean;
     minWidth: number;
@@ -73,7 +79,10 @@ const emit = defineEmits<{
   resizeKeydown: [event: KeyboardEvent];
   newConversation: [];
   selectConversation: [sessionId: string];
-  send: [attachments: UserPromptAttachment[]];
+  send: [
+    request: UserPromptAttachment[] | ConversationMessageRewriteRequest,
+    completion?: (started: boolean) => void
+  ];
   stop: [];
   suggestion: [value: string];
   selectModel: [modelId: string];
@@ -88,10 +97,12 @@ const emit = defineEmits<{
     }
   ];
   locateEditProposal: [payload: { runId: string; proposalId: string }];
+  discardEditProposal: [payload: { runId: string; proposalId: string }];
   approveLongProposal: [eventId: string];
   rejectLongProposal: [eventId: string];
   retryLongProposalPreview: [eventId: string];
   locateLongProposal: [eventId: string];
+  discardLongProposal: [eventId: string];
   retryWorkspaceRefresh: [];
   saved: [result: LongWriteDocumentResult];
   contextChange: [context: LongWorkspaceFileContext | null];
@@ -152,13 +163,33 @@ const conversationDraft = computed({
 const activeStageLabel = computed(
   () => LONG_WORKSPACE_ROOT_LABELS[props.selection?.root ?? "worldbuilding"]
 );
+const canRewriteHistory = computed(
+  () =>
+    Boolean(
+      props.conversationController?.canRewriteHistory.value &&
+      !props.sendPreflightPending &&
+      !props.editorLocked &&
+      props.sendContextReady
+    ) &&
+    props.proposalItems.every(
+      (item) =>
+        item.status === "accepted" && item.discardState?.status !== "discarding"
+    )
+);
+
+function submitEditedMessage(
+  request: ConversationMessageRewriteRequest
+): Promise<boolean> {
+  if (!canRewriteHistory.value) return Promise.resolve(false);
+  return new Promise((resolve) => emit("send", request, resolve));
+}
 
 let currentEditorPort: LongWorkspaceEditorPort | null = null;
 
 function captureEditorPort(
   instance: Element | ComponentPublicInstance | null
 ): void {
-  const nextPort = instance as LongWorkspaceEditorPort | null;
+  const nextPort = isLongWorkspaceEditorPort(instance) ? instance : null;
   if (nextPort === currentEditorPort) return;
   currentEditorPort = nextPort;
   emit("editorPortChange", nextPort);
@@ -262,6 +293,8 @@ onBeforeUnmount(() => {
           conversationController.canSend.value
         "
         :can-send-attachments="conversationController.canSendAttachments.value"
+        :can-rewrite-history="canRewriteHistory"
+        :submit-edited-message="submitEditedMessage"
         :can-stop="conversationController.canStop.value"
         :runtime-available="runtimeAvailable"
         :models="conversationController.configuredModels.value"
@@ -304,10 +337,12 @@ onBeforeUnmount(() => {
         @select-approval="emit('selectApproval', $event)"
         @review-edit="emit('reviewEdit', $event)"
         @locate-edit-proposal="emit('locateEditProposal', $event)"
+        @discard-edit-proposal="emit('discardEditProposal', $event)"
         @approve-long-proposal="emit('approveLongProposal', $event)"
         @reject-long-proposal="emit('rejectLongProposal', $event)"
         @retry-long-proposal-preview="emit('retryLongProposalPreview', $event)"
         @locate-long-proposal="emit('locateLongProposal', $event)"
+        @discard-long-proposal="emit('discardLongProposal', $event)"
         @submit-user-input="conversationController.submitUserInput($event)"
       />
       <section
@@ -336,6 +371,7 @@ onBeforeUnmount(() => {
         :locked-reason="editorLockedReason"
         :right-pane="paneLayout === 'agent-editor'"
         :right-pane-collapsed="rightPane.collapsed"
+        :default-view-mode="defaultTextViewMode"
         @saved="emit('saved', $event)"
         @context-change="emit('contextChange', $event)"
         @collapse="emit('collapseRight')"

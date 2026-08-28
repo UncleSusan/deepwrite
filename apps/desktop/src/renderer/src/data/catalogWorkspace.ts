@@ -292,7 +292,7 @@ function createCatalogWorkspaceProjectionIndex(
       }
       const targetDocumentId =
         node.targetDocumentId ??
-        (node.shortAgentId === "expert_draft_coordinator"
+        (node.stageCategoryId === "draft"
           ? node.children?.find((child) => child.targetDocumentId)
               ?.targetDocumentId
           : undefined) ??
@@ -498,7 +498,10 @@ function createBookDocument(
     ...(stageId ? { stageId } : {}),
     ...(stageId === "character_design"
       ? {
-          shortAgentId: "character_design" as const,
+          shortAgentId:
+            book.bookType === "short"
+              ? ("short" as const)
+              : ("script" as const),
           characterFileKind: characterItem
             ? ("item" as const)
             : ("overview" as const),
@@ -511,7 +514,10 @@ function createBookDocument(
         }
       : plotStage
         ? {
-            shortAgentId: "plot_design" as const,
+            shortAgentId:
+              book.bookType === "short"
+                ? ("short" as const)
+                : ("script" as const),
             plotStageDescription: plotStage.description,
             plotStageOrder: plotStageIndex
           }
@@ -548,7 +554,7 @@ function createDraftFileDocument(
     workspaceTitle: book.title,
     workspaceCategories: [book.genre],
     stageId: "draft",
-    shortAgentId: "expert_draft_coordinator",
+    shortAgentId: book.bookType === "short" ? "short" : "script",
     expertSectionId: section.id,
     expertSectionOrder: sectionOrder,
     expertWordCountRequirement: section.wordCountRequirement,
@@ -661,7 +667,7 @@ function createBookProjection(book: Book): {
     catalogNodeType: "category",
     stageCategoryId: "draft",
     selectableBranch: true,
-    shortAgentId: "expert_draft_coordinator",
+    shortAgentId: book.bookType === "short" ? "short" : "script",
     draftDirectoryId: book.draft.id,
     workspaceType: book.bookType,
     children: draftDirectory.sections.map((section) => ({
@@ -677,7 +683,7 @@ function createBookProjection(book: Book): {
       stageCategoryId: "draft",
       targetDocumentId: section.bodyDocumentId,
       characterStateDocumentId: section.characterStateDocumentId,
-      shortAgentId: "expert_draft_coordinator",
+      shortAgentId: book.bookType === "short" ? "short" : "script",
       expertSectionId: section.id,
       draftDirectoryId: book.draft.id,
       workspaceType: book.bookType
@@ -701,7 +707,10 @@ function createBookProjection(book: Book): {
           catalogNodeType: "document" as const,
           stageCategoryId: "character_design",
           workspaceType: book.bookType,
-          shortAgentId: "character_design" as const,
+          shortAgentId:
+            book.bookType === "short"
+              ? ("short" as const)
+              : ("script" as const),
           characterItemId: item.characterItem!.id
         }));
       children.push({
@@ -713,7 +722,7 @@ function createBookProjection(book: Book): {
         workspaceType: book.bookType,
         selectableBranch: true,
         targetDocumentId: character.id,
-        shortAgentId: "character_design",
+        shortAgentId: book.bookType === "short" ? "short" : "script",
         characterDirectory: true,
         children: [{ ...character, label: "概览" }, ...characterItemNodes]
       });

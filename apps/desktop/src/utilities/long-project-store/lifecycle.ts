@@ -155,6 +155,7 @@ export async function duplicateBook(
         expectedSha256: null;
       }> = [];
       const records: LongLedgerCommitRecord[] = [];
+      const continuityFileContents = new Map<string, string>();
 
       for (const slot of indexedFileSlots(source.index)) {
         const disk = await readSecureTextFile(
@@ -194,6 +195,7 @@ export async function duplicateBook(
             expectedSha256: null
           });
         } else {
+          continuityFileContents.set(slot.reference.id, disk.content);
           operations.push({
             path: slot.reference.path,
             content: disk.content,
@@ -218,7 +220,12 @@ export async function duplicateBook(
           content
         );
       }
-      assertLongLedgerRecordChain(validatedIndex, records);
+      assertLongLedgerRecordChain(
+        validatedIndex,
+        records,
+        validatedIndex.revision,
+        continuityFileContents
+      );
 
       const indexContent = serializeJson(validatedIndex);
       const manifest = LongProjectManifestSchema.parse({

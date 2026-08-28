@@ -32,7 +32,9 @@ describe("GeneralSettingsStore", () => {
     });
     expect(createDefaultGeneralSettings()).toMatchObject({
       permissionMode: "auto-approve",
-      autoSave: true
+      autoApproveCrossStageOperations: false,
+      autoSave: true,
+      defaultTextViewMode: "edit"
     });
   });
 
@@ -40,10 +42,12 @@ describe("GeneralSettingsStore", () => {
     const { root, store } = await createStore();
     const settings = {
       permissionMode: "auto-approve" as const,
+      autoApproveCrossStageOperations: true,
       autoSave: true,
       language: "zh-CN" as const,
       showInMenuBar: false,
-      workspacePaneLayout: "editor-agent" as const
+      workspacePaneLayout: "editor-agent" as const,
+      defaultTextViewMode: "preview" as const
     };
 
     await expect(store.save(settings)).resolves.toEqual({
@@ -61,7 +65,7 @@ describe("GeneralSettingsStore", () => {
     ).toEqual({ version: 1, ...settings });
   });
 
-  it("defaults the workspace layout without discarding legacy v1 preferences", async () => {
+  it("defaults new v1 fields without discarding legacy preferences", async () => {
     const { root, store } = await createStore();
     const configDirectory = join(root, "config");
     await mkdir(configDirectory);
@@ -80,10 +84,12 @@ describe("GeneralSettingsStore", () => {
       persisted: true,
       settings: {
         permissionMode: "request-approval",
+        autoApproveCrossStageOperations: false,
         autoSave: false,
         language: "zh-CN",
         showInMenuBar: false,
-        workspacePaneLayout: "agent-editor"
+        workspacePaneLayout: "agent-editor",
+        defaultTextViewMode: "edit"
       }
     });
   });
@@ -99,7 +105,8 @@ describe("GeneralSettingsStore", () => {
         permissionMode: "unsafe",
         autoSave: "yes",
         language: "unknown",
-        showInMenuBar: true
+        showInMenuBar: true,
+        defaultTextViewMode: "reader"
       })
     );
 

@@ -13,8 +13,10 @@ import {
 } from "../../utils/agentEditReview";
 import { buildAgentTextDiff } from "../../utils/agentTextDiff";
 import { captureWorkspaceDocumentBaselines } from "../../utils/catalogSaveReconciliation";
+import { textEditDiscardSnapshot } from "../../utils/acceptedEditDiscard";
 import { resolveProvisionalWriteStagingMode } from "../../utils/provisionalExpertSectionStaging";
 import type { AgentConversationController } from "../useAgentConversation";
+import { reconcileCreationDependencyAfterAttempt } from "./creation-dependency";
 import type {
   AgentEditReviewRequest,
   ProposalLaneContext,
@@ -375,6 +377,12 @@ export function createApplyReview(ctx: ProposalLaneContext) {
               ? existing.createdAt
               : event.timestamp,
           updatedAt: event.timestamp,
+          discardSnapshot: textEditDiscardSnapshot(
+            existing,
+            identity.coalescesExisting,
+            realTarget.content,
+            realTarget.title
+          ),
           provisionalExpertSection: false
         };
         sourceConversation.upsertEditProposal(event.payload.runId, proposal);
@@ -838,7 +846,13 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         identity.coalescesExisting && existing
           ? existing.createdAt
           : event.timestamp,
-      updatedAt: event.timestamp
+      updatedAt: event.timestamp,
+      discardSnapshot: textEditDiscardSnapshot(
+        existing,
+        identity.coalescesExisting,
+        target.content,
+        target.title
+      )
     };
     sourceConversation.upsertEditProposal(event.payload.runId, proposal);
     if (!noChanges && runApprovalMode === "auto-approve") {
@@ -1101,6 +1115,19 @@ export function createApplyReview(ctx: ProposalLaneContext) {
           creation,
           automatic
         );
+        if (
+          reconcileCreationDependencyAfterAttempt({
+            conversation,
+            runId: request.runId,
+            proposalId: request.proposalId,
+            creationProposalId: creation.id,
+            waitingMessage:
+              "章节创建结果尚未确认，正文内容已保留；请先重试章节创建。",
+            blockedMessage: "关联的空白章节确认未能创建，相关正文写入已取消。"
+          })
+        ) {
+          return;
+        }
       } else {
         const realSectionId = resolveProvisionalExpertSectionId(
           request.runId,
@@ -1125,6 +1152,10 @@ export function createApplyReview(ctx: ProposalLaneContext) {
                 ) && candidate.status === "accepting"
             );
           if (inFlight) {
+            conversation.updateEditProposal(request.runId, request.proposalId, {
+              status: "pending",
+              statusMessage: "正在等待关联章节创建完成…"
+            });
             uiMessage.info("同一作品正在保存其他修改，请稍候再接受");
             return;
           }
@@ -1178,6 +1209,19 @@ export function createApplyReview(ctx: ProposalLaneContext) {
           creation,
           automatic
         );
+        if (
+          reconcileCreationDependencyAfterAttempt({
+            conversation,
+            runId: request.runId,
+            proposalId: request.proposalId,
+            creationProposalId: creation.id,
+            waitingMessage:
+              "人物条目创建结果尚未确认，正文内容已保留；请先重试创建操作。",
+            blockedMessage: "关联人物条目未能创建，相关正文写入已取消。"
+          })
+        ) {
+          return;
+        }
       }
       const createdTarget = liveWorkspaceDocuments.value.find(
         (document) =>

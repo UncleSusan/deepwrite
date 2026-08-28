@@ -13,6 +13,7 @@ import type {
   LongWorkspaceSelection
 } from "../types/longWorkspace";
 import {
+  isLongWorkspaceEditorPort,
   useLongWorkspaceSessionCoordinator,
   type LongWorkspaceEditorPort
 } from "./useLongWorkspaceSessionCoordinator";
@@ -221,6 +222,23 @@ afterEach(() => {
 });
 
 describe("long workspace session coordinator", () => {
+  it("rejects incomplete editor instances instead of calling a missing save method", async () => {
+    const harness = createHarness();
+    harness.store.publishBook(summary("longbook_a"), index("longbook_a"));
+    const incompleteEditor = { focusFile: vi.fn() };
+
+    expect(isLongWorkspaceEditorPort(incompleteEditor)).toBe(false);
+    harness.coordinator.editor.value =
+      incompleteEditor as unknown as LongWorkspaceEditorPort;
+
+    await expect(harness.coordinator.saveActiveEditorChanges()).resolves.toBe(
+      false
+    );
+    expect(harness.notifications.error).toHaveBeenCalledWith(
+      "长篇编辑器尚未准备好，已取消当前操作，请重试。"
+    );
+  });
+
   it("saves before switching and publishes the requested selection before open settles", async () => {
     const pendingOpen = deferred<{
       book: { workspaceIndex: LongWorkspaceIndexSnapshot };

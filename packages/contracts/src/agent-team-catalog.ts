@@ -152,6 +152,52 @@ export type AgentTeamProfileSaveInput = z.infer<
   typeof AgentTeamProfileSaveInputSchema
 >;
 
+export const AGENT_TEAM_PACKAGE_FORMAT = "deepwrite-agent-team" as const;
+export const AGENT_TEAM_PACKAGE_VERSION = 1 as const;
+
+export const AgentTeamPackageManifestSchema = z
+  .object({
+    format: z.literal(AGENT_TEAM_PACKAGE_FORMAT),
+    version: z.literal(AGENT_TEAM_PACKAGE_VERSION),
+    exportedAt: z.string().datetime(),
+    team: AgentTeamProfileSchema
+  })
+  .strict();
+export type AgentTeamPackageManifest = z.infer<
+  typeof AgentTeamPackageManifestSchema
+>;
+
+export const AgentTeamPackageExportResultSchema = z.discriminatedUnion(
+  "status",
+  [
+    z.object({ status: z.literal("canceled") }).strict(),
+    z
+      .object({ status: z.literal("saved"), filePath: z.string().min(1) })
+      .strict()
+  ]
+);
+export type AgentTeamPackageExportResult = z.infer<
+  typeof AgentTeamPackageExportResultSchema
+>;
+
+export const AgentTeamPackageInstallResultSchema = z.discriminatedUnion(
+  "status",
+  [
+    z.object({ status: z.literal("canceled") }).strict(),
+    z
+      .object({
+        status: z.literal("installed"),
+        teamId: AgentTeamProfileIdSchema,
+        teamName: AgentTeamProfileNameSchema,
+        catalog: AgentTeamCatalogSnapshotSchema
+      })
+      .strict()
+  ]
+);
+export type AgentTeamPackageInstallResult = z.infer<
+  typeof AgentTeamPackageInstallResultSchema
+>;
+
 export const AgentTeamsListCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("agentTeams.list"),
   payload: z.object({}).strict()
@@ -177,3 +223,13 @@ export const AgentTeamsSaveCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("agentTeams.save"),
   payload: AgentTeamProfileSaveInputSchema
 });
+export const AgentTeamsExportPackageCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("agentTeams.exportPackage"),
+    payload: AgentTeamProfileTargetInputSchema
+  });
+export const AgentTeamsInstallPackageCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("agentTeams.installPackage"),
+    payload: z.object({}).strict()
+  });

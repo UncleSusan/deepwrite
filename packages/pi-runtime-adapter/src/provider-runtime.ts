@@ -18,9 +18,11 @@ import {
   getBuiltinModels,
   getBuiltinProviders
 } from "@earendil-works/pi-ai/providers/all";
-import type {
-  AgentProviderRuntimeConfig,
-  ThinkingLevel as ConfiguredThinkingLevel
+import {
+  DEFAULT_CUSTOM_MODEL_CONTEXT_WINDOW,
+  DEFAULT_CUSTOM_MODEL_MAX_TOKENS,
+  type AgentProviderRuntimeConfig,
+  type ThinkingLevel as ConfiguredThinkingLevel
 } from "@deepwrite/contracts";
 import {
   applyProviderToolSchemaCompatibility,
@@ -188,8 +190,13 @@ export function buildProviderRuntime(
     cost: builtin?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     // Unknown routes inherit the GPT-5.6 Sol capacity baseline so a missing
     // catalog entry does not unnecessarily constrain long-form writing runs.
-    contextWindow: builtin?.contextWindow ?? 272_000,
-    maxTokens: builtin?.maxTokens ?? 128_000,
+    // A saved custom-model override always wins over catalog and baseline.
+    contextWindow:
+      config.contextWindow ??
+      builtin?.contextWindow ??
+      DEFAULT_CUSTOM_MODEL_CONTEXT_WINDOW,
+    maxTokens:
+      config.maxTokens ?? builtin?.maxTokens ?? DEFAULT_CUSTOM_MODEL_MAX_TOKENS,
     ...(builtin?.headers ? { headers: builtin.headers } : {}),
     ...(Object.keys(thinkingLevelMap).length > 0 ? { thinkingLevelMap } : {}),
     ...(compat ? { compat } : {})
@@ -242,4 +249,18 @@ export function buildProviderRuntime(
     );
   };
   return { model, streamFn: streamFn as StreamFn };
+}
+
+export function resolveProviderModelCapacity(
+  config: AgentProviderRuntimeConfig
+): { contextWindow: number; maxTokens: number } {
+  const { model } = buildProviderRuntime(
+    config,
+    undefined,
+    config.defaultThinkingLevel
+  );
+  return {
+    contextWindow: model.contextWindow,
+    maxTokens: model.maxTokens
+  };
 }

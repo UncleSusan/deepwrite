@@ -6,6 +6,10 @@ import type {
 import type { IconName } from "../types/workspace";
 import type { LongWorkspaceProposalItem } from "../composables/useLongWorkspaceProposals";
 import { writeToolText } from "../utils/agentWriteToolPreview";
+import {
+  agentApprovalCanDiscard,
+  longApprovalCanDiscard
+} from "../utils/acceptedEditDiscard";
 
 export function workspaceToolLabel(name: string): string {
   const labels: Record<string, string> = {
@@ -103,6 +107,7 @@ export type ApprovalCardItem =
       type: "edit-proposal";
       createdAt: string;
       toolCallIds: string[];
+      canDiscard: boolean;
       proposal: AgentEditProposal;
     }
   | {
@@ -110,6 +115,7 @@ export type ApprovalCardItem =
       type: "long-proposal";
       createdAt: string;
       toolCallIds: string[];
+      canDiscard: boolean;
       item: LongWorkspaceProposalItem;
     };
 
@@ -221,6 +227,7 @@ export function approvalItemsForMessage(
       type: "edit-proposal",
       createdAt: proposal.createdAt,
       toolCallIds: proposal.toolCallIds,
+      canDiscard: agentApprovalCanDiscard(message, proposal),
       proposal
     })
   );
@@ -232,6 +239,7 @@ export function approvalItemsForMessage(
     type: "long-proposal",
     createdAt: item.event.timestamp,
     toolCallIds: [item.event.payload.toolCallId],
+    canDiscard: longApprovalCanDiscard(message, item),
     item
   }));
   return [...editItems, ...longItems].sort(compareApprovalCards);

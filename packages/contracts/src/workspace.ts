@@ -11,13 +11,19 @@ import {
   SHORT_WORKSPACE_FILE_MAX_CHARACTERS
 } from "./expert-draft";
 import {
-  ScriptWorkspaceAgentIdSchema,
   ScriptWorkspaceAgentProfileSchema,
   ScriptWorkspaceAgentSettingsInputSchema,
-  ScriptWorkspaceAgentSettingsSchema,
+  ScriptWorkspaceAgentSettingsSchema
+} from "./script-agent-settings";
+import {
+  ScriptWorkspaceAgentIdSchema,
   ScriptWorkspaceSnapshotSchema,
   WorkspaceTypeSchema
 } from "./script-workspace";
+import { DEFAULT_SHORT_SYSTEM_PROMPT } from "./writing-agent-prompts";
+import { WRITING_CONTEXT_MAX_CHARACTERS } from "./writing-context";
+
+export { DEFAULT_SHORT_SYSTEM_PROMPT } from "./writing-agent-prompts";
 
 export const SHORT_WORKSPACE_STAGE_IDS = [
   "character_design",
@@ -29,6 +35,23 @@ export const SHORT_WORKSPACE_STAGE_IDS = [
   "outline",
   "draft"
 ] as const;
+
+export const SHORT_DEFAULT_PLOT_STAGE_IDS = [
+  "plot_design",
+  "intro_design",
+  "plot_refine"
+] as const;
+export const ShortDefaultPlotStageIdSchema = CreativePlotStageIdSchema;
+export const ShortDefaultPlotStageIdsSchema = z
+  .array(ShortDefaultPlotStageIdSchema)
+  .min(1)
+  .max(32)
+  .refine((ids) => new Set(ids).size === ids.length, {
+    message: "Default short plot stage ids must be unique."
+  });
+export type ShortDefaultPlotStageId = z.infer<
+  typeof ShortDefaultPlotStageIdSchema
+>;
 
 /** Physical text stages. `draft` is a virtual directory route. */
 export const SHORT_WORKSPACE_TEXT_STAGE_IDS = [
@@ -56,21 +79,56 @@ export type ShortWorkspaceTextStageId = z.infer<
   typeof ShortWorkspaceTextStageIdSchema
 >;
 
-export const SHORT_WORKSPACE_AGENT_IDS = [
+export const SHORT_WORKSPACE_AGENT_IDS = ["short"] as const;
+
+/**
+ * Historical short-agent ids remain stable conversation lanes only. They are
+ * accepted at persistence boundaries and must never be exposed as live parent
+ * agent identities again.
+ */
+export const SHORT_WORKSPACE_CONVERSATION_LANE_IDS = [
   "character_design",
   "plot_design",
   "expert_draft_coordinator"
 ] as const;
+export const ShortWorkspaceConversationLaneIdSchema = z.enum(
+  SHORT_WORKSPACE_CONVERSATION_LANE_IDS
+);
+export type ShortWorkspaceConversationLaneId = z.infer<
+  typeof ShortWorkspaceConversationLaneIdSchema
+>;
 
 export const ShortWorkspaceAgentIdSchema = z.enum(SHORT_WORKSPACE_AGENT_IDS);
 export type ShortWorkspaceAgentId = z.infer<typeof ShortWorkspaceAgentIdSchema>;
 
 export function resolveShortWorkspaceAgentIdForStage(
-  stageId: ShortWorkspaceStageId
+  _stageId: ShortWorkspaceStageId
 ): ShortWorkspaceAgentId {
+  return "short";
+}
+
+export function resolveShortWorkspaceConversationLaneIdForStage(
+  stageId: ShortWorkspaceStageId
+): ShortWorkspaceConversationLaneId {
   if (stageId === "character_design") return "character_design";
   if (stageId === "draft") return "expert_draft_coordinator";
   return "plot_design";
+}
+
+export const SHORT_WORKSPACE_PHASE_IDS = [
+  "character",
+  "plot",
+  "draft"
+] as const;
+export const ShortWorkspacePhaseIdSchema = z.enum(SHORT_WORKSPACE_PHASE_IDS);
+export type ShortWorkspacePhaseId = z.infer<typeof ShortWorkspacePhaseIdSchema>;
+
+export function resolveShortWorkspacePhaseId(
+  stageId: ShortWorkspaceStageId
+): ShortWorkspacePhaseId {
+  if (stageId === "character_design") return "character";
+  if (stageId === "draft") return "draft";
+  return "plot";
 }
 
 export function createShortWorkspaceContentRevision(content: string): string {
@@ -251,9 +309,7 @@ export const DEFAULT_SHORT_WORKSPACE_AGENT_SYSTEM_PROMPTS: Record<
   ShortWorkspaceAgentId,
   string
 > = {
-  character_design: DEFAULT_SHORT_CHARACTER_DESIGN_SYSTEM_PROMPT,
-  plot_design: DEFAULT_SHORT_PLOT_DESIGN_SYSTEM_PROMPT,
-  expert_draft_coordinator: DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT
+  short: DEFAULT_SHORT_SYSTEM_PROMPT
 };
 
 const UniqueShortMaterialKindsSchema = z
@@ -294,22 +350,37 @@ export const ShortAgentReadAccessSchema = z
   .strict();
 export type ShortAgentReadAccess = z.infer<typeof ShortAgentReadAccessSchema>;
 
-/** Defaults from write-claw's short/shared/read_access.json. */
+export const DEFAULT_SHORT_STAGE_READ_ACCESS: Record<
+  ShortWorkspacePhaseId,
+  ShortAgentReadAccess
+> = {
+  character: {
+    material: ["character"],
+    skill: ["general", "plot", "other"]
+  },
+  plot: {
+    material: ["gimmick", "character", "plot"],
+    skill: ["general", "plot", "other"]
+  },
+  draft: {
+    material: ["character", "gimmick", "plot", "draft", "other"],
+    skill: ["style", "general", "other"]
+  }
+};
+
+export function resolveShortWorkspaceStageReadAccess(
+  stageId: ShortWorkspaceStageId
+): ShortAgentReadAccess {
+  return DEFAULT_SHORT_STAGE_READ_ACCESS[resolveShortWorkspacePhaseId(stageId)];
+}
+
 export const DEFAULT_SHORT_AGENT_READ_ACCESS: Record<
   ShortWorkspaceAgentId,
   ShortAgentReadAccess
 > = {
-  character_design: {
-    material: ["character"],
-    skill: ["general", "plot", "other"]
-  },
-  plot_design: {
-    material: ["gimmick", "character", "plot"],
-    skill: ["general", "plot", "other"]
-  },
-  expert_draft_coordinator: {
+  short: {
     material: ["character", "gimmick", "plot", "draft", "other"],
-    skill: ["style", "general", "other"]
+    skill: ["general", "plot", "style", "other"]
   }
 };
 
@@ -489,14 +560,19 @@ export type ExpertDraftDirectorySnapshot = z.infer<
   typeof ExpertDraftDirectorySnapshotSchema
 >;
 
+const ShortWorkspaceSnapshotAgentIdSchema = z
+  .union([ShortWorkspaceAgentIdSchema, ShortWorkspaceConversationLaneIdSchema])
+  .transform(() => "short" as const);
+
 export const ShortWorkspaceSnapshotSchema = z
   .object({
     id: z.string().trim().min(1).max(240),
     title: z.string().trim().min(1).max(240),
     categories: z.array(z.string().trim().min(1).max(120)).max(16),
     activeStageId: ShortWorkspaceStageIdSchema,
-    activeAgentId: ShortWorkspaceAgentIdSchema.optional(),
+    activeAgentId: ShortWorkspaceSnapshotAgentIdSchema.optional(),
     activeSectionId: z.string().trim().min(1).max(120).optional(),
+    agentsMd: z.string().max(WRITING_CONTEXT_MAX_CHARACTERS).optional(),
     plotStages: CreativePlotStagesSchema,
     characterStructure: ShortCharacterStructureSnapshotSchema.default({
       format: "text"
@@ -565,14 +641,11 @@ export const ShortWorkspaceSnapshotSchema = z
       return;
     }
 
-    if (
-      value.activeAgentId !== undefined &&
-      value.activeAgentId !== "expert_draft_coordinator"
-    ) {
+    if (value.activeAgentId !== undefined && value.activeAgentId !== "short") {
       context.addIssue({
         code: "custom",
         path: ["activeAgentId"],
-        message: "The draft stage must use the draft coordinator agent."
+        message: "The draft stage must use the unified short agent."
       });
       return;
     }
@@ -606,20 +679,10 @@ export type ShortAgentWelcomeShortcuts = z.infer<
 >;
 
 export const DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS = {
-  character_design: [
-    "帮我从零创建一个人物设计",
-    "检查当前人设有哪些问题",
-    "完善人物关系和人物弧光"
-  ],
-  plot_design: [
-    "根据当前人设设计一条主线剧情",
-    "帮我写一个抓人的开篇导语",
-    "细化当前剧情的场景和节拍"
-  ],
-  expert_draft_coordinator: [
-    "根据剧情结构初始化并开始写正文",
-    "帮我写指定的正文小节",
-    "审阅并润色当前正文"
+  short: [
+    "根据当前阶段继续完善作品",
+    "检查当前内容与前后阶段是否一致",
+    "读取相关资料并给出可直接写回的成稿"
   ]
 } as const satisfies Record<ShortWorkspaceAgentId, ShortAgentWelcomeShortcuts>;
 
@@ -638,32 +701,13 @@ export type ShortWorkspaceAgentProfile = z.infer<
 export const DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES: readonly ShortWorkspaceAgentProfile[] =
   [
     {
-      id: "character_design",
-      label: "人物",
-      description: "创建、补全、诊断和修改可供剧情与正文直接使用的人物设计。",
-      systemPrompt: DEFAULT_SHORT_CHARACTER_DESIGN_SYSTEM_PROMPT,
-      welcomeShortcuts: [
-        ...DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.character_design
-      ],
-      readAccess: DEFAULT_SHORT_AGENT_READ_ACCESS.character_design
-    },
-    {
-      id: "plot_design",
-      label: "剧情",
-      description: "负责当前作品动态配置的全部剧情结构阶段。",
-      systemPrompt: DEFAULT_SHORT_PLOT_DESIGN_SYSTEM_PROMPT,
-      welcomeShortcuts: [...DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.plot_design],
-      readAccess: DEFAULT_SHORT_AGENT_READ_ACCESS.plot_design
-    },
-    {
-      id: "expert_draft_coordinator",
-      label: "正文专家编写智能体",
-      description: "统一负责正文结构、整篇创作、当前小节写作与成稿修订。",
-      systemPrompt: DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
-      welcomeShortcuts: [
-        ...DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.expert_draft_coordinator
-      ],
-      readAccess: DEFAULT_SHORT_AGENT_READ_ACCESS.expert_draft_coordinator
+      id: "short",
+      label: "短篇智能体",
+      description:
+        "统一负责人物、动态剧情阶段和正文创作，并按当前阶段加载上下文。",
+      systemPrompt: DEFAULT_SHORT_SYSTEM_PROMPT,
+      welcomeShortcuts: [...DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.short],
+      readAccess: DEFAULT_SHORT_AGENT_READ_ACCESS.short
     }
   ];
 
@@ -686,6 +730,9 @@ function validateCompleteAgentSet(
 export const ShortWorkspaceAgentSettingsSchema = z
   .object({
     workspaceType: z.literal("short"),
+    defaultPlotStageIds: ShortDefaultPlotStageIdsSchema.default([
+      ...SHORT_DEFAULT_PLOT_STAGE_IDS
+    ]),
     agents: z
       .array(ShortWorkspaceAgentProfileSchema)
       .length(SHORT_WORKSPACE_AGENT_IDS.length)
@@ -710,6 +757,9 @@ export type ShortWorkspaceAgentSettingsInputAgent = z.infer<
 export const ShortWorkspaceAgentSettingsInputSchema = z
   .object({
     workspaceType: z.literal("short"),
+    defaultPlotStageIds: ShortDefaultPlotStageIdsSchema.default([
+      ...SHORT_DEFAULT_PLOT_STAGE_IDS
+    ]),
     agents: z
       .array(ShortWorkspaceAgentSettingsInputAgentSchema)
       .length(SHORT_WORKSPACE_AGENT_IDS.length)
@@ -724,6 +774,7 @@ export type ShortWorkspaceAgentSettingsInput = z.infer<
 export const DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS: ShortWorkspaceAgentSettings =
   {
     workspaceType: "short",
+    defaultPlotStageIds: [...SHORT_DEFAULT_PLOT_STAGE_IDS],
     agents: [...DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES]
   };
 

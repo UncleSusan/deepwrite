@@ -67,6 +67,10 @@ vi.mock("@deepwrite/pi-runtime-adapter", () => ({
       throw new Error("Not used by this test.");
     }
 
+    resolveModelCapacity(): never {
+      throw new Error("Not used by this test.");
+    }
+
     resolveUserInput(payload: {
       sessionId: string;
       runId: string;
@@ -106,6 +110,7 @@ describe("Agent Utility prompt forwarding", () => {
               createdAt: "2026-08-17T07:59:00.000Z"
             }
           ],
+          conversationHistoryMode: "replace" as const,
           mode: "chat-assistant" as const,
           chatAssistant: {
             mode: "normal" as const,
@@ -136,6 +141,7 @@ describe("Agent Utility prompt forwarding", () => {
         { role: "user", content: "先聊聊出版趋势" },
         { role: "assistant", content: "可以先比较纸书与电子书市场。" }
       ],
+      conversationHistoryMode: "replace",
       webSearchEnabled: true
     });
     expect(captured.startInputs[0]?.subagentRuntimeConfigs).toBeUndefined();
@@ -144,9 +150,7 @@ describe("Agent Utility prompt forwarding", () => {
   it("forwards scriptAgentProfile from the command payload into streamPrompt", async () => {
     await import("./agent-entry");
 
-    const scriptAgentProfile = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES.find(
-      (profile) => profile.id === "character_design"
-    )!;
+    const scriptAgentProfile = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES[0]!;
     const emptyRevision = createShortWorkspaceContentRevision("");
     const characterContent = "人物设定快照";
     const plotStages = createDefaultCreativePlotStages();
@@ -171,7 +175,7 @@ describe("Agent Utility prompt forwarding", () => {
               title: "测试剧本",
               categories: ["悬疑"],
               activeStageId: "character_design",
-              activeAgentId: "character_design",
+              activeAgentId: "script",
               plotStages,
               expertDraft: {
                 id: "draft",
@@ -256,7 +260,7 @@ describe("Agent Utility prompt forwarding", () => {
       workspaceContext: {
         scriptWorkspace: {
           id: "script-1",
-          activeAgentId: "character_design"
+          activeAgentId: "script"
         }
       }
     });

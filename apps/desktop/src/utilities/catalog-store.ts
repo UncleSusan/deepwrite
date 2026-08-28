@@ -1341,7 +1341,11 @@ export class CatalogStore {
       ),
       linkedSkillIdsByKind: normalizeLinkedSkillIds(input.linkedSkillIdsByKind),
       characterStructure: createDefaultBookCharacterStructure(),
-      plotStages: createDefaultBookPlotStages(),
+      plotStages: createDefaultBookPlotStages(
+        input.defaultPlotStageIds
+          ? { enabledStageIds: input.defaultPlotStageIds }
+          : undefined
+      ),
       documents: createDefaultDocuments("short", now),
       draft: createCatalogDraftDirectory(now),
       createdAt: now,

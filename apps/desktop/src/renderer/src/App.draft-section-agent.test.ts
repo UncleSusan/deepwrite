@@ -4,6 +4,7 @@ import applyReviewSource from "./composables/proposal-coordinator/apply-review.t
 import draftSectionLaneSource from "./composables/proposal-coordinator/draft-section-lane.ts?raw";
 import provisionalSource from "./composables/proposal-coordinator/provisional.ts?raw";
 import queueSource from "./composables/proposal-coordinator/queue.ts?raw";
+import proposalCoordinatorSource from "./composables/useProposalCoordinator.ts?raw";
 import structureSource from "./composables/useShortWorkspaceStructureCoordinator.ts?raw";
 
 describe("App agent chapter-file creation", () => {
@@ -31,7 +32,8 @@ describe("App agent chapter-file creation", () => {
       draftSectionLaneSource,
       provisionalSource,
       applyReviewSource,
-      queueSource
+      queueSource,
+      proposalCoordinatorSource
     ].join("\n");
     expect(coordinatorSource).toContain(
       'mutationTarget?.kind === "expert-draft-section-creation"'
@@ -90,7 +92,7 @@ describe("App agent chapter-file creation", () => {
     );
     expect(coordinatorSource).toContain("provisionalExpertSection: true");
     expect(coordinatorSource).toContain("createExpertDraftDirectoryRevision(");
-    expect(coordinatorSource).toContain("autoApproveEditPriority(");
+    expect(coordinatorSource).toContain("options.priority(");
     expect(coordinatorSource).toContain("scheduleQueuedAgentEdits(");
     expect(coordinatorSource).toContain("agentEditCommitQueue");
     expect(coordinatorSource).toContain("decisionToken");

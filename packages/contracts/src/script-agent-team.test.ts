@@ -12,7 +12,7 @@ import {
 } from "./index";
 
 describe("script agent-team contracts", () => {
-  it("provides one isolated empty team for every script parent agent", () => {
+  it("provides one empty team for the unified script parent agent", () => {
     const settings = ScriptAgentTeamSettingsSchema.parse(
       DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS
     );
@@ -54,15 +54,20 @@ describe("script agent-team contracts", () => {
     ).toBe("script");
   });
 
-  it("rejects incomplete or duplicate script parent teams", () => {
+  it("rejects missing or duplicate script parent teams", () => {
     const duplicate = {
       ...DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS,
-      teams: DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS.teams.map((team, index) =>
-        index === 1
-          ? { ...team, parentAgentId: "character_design" as const }
-          : team
-      )
+      teams: [
+        ...DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS.teams,
+        ...DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS.teams
+      ]
     };
     expect(() => ScriptAgentTeamSettingsSchema.parse(duplicate)).toThrow();
+    expect(() =>
+      ScriptAgentTeamSettingsSchema.parse({
+        workspaceType: "script",
+        teams: []
+      })
+    ).toThrow();
   });
 });

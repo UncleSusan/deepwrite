@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type {
   LibraryAgentDomain,
+  ModelConfig,
   ThinkingLevel,
   UserPromptAttachment
 } from "@deepwrite/contracts";
 import type {
   AgentApprovalMode,
+  ChatMessage,
   ComposerReferenceOption,
   EditorTextReference
 } from "../types/conversation";
@@ -18,6 +20,7 @@ import {
 } from "../composables/useConversationAttachments";
 import { useConversationComposer } from "../composables/useConversationComposer";
 import AppIcon from "./AppIcon.vue";
+import ContextWindowIndicator from "./ContextWindowIndicator.vue";
 import PopupSelect from "./PopupSelect.vue";
 
 const props = defineProps<{
@@ -28,10 +31,12 @@ const props = defineProps<{
   canStop: boolean;
   runtimeAvailable: boolean;
   currentSessionId: string;
+  messages: ChatMessage[];
   messagesEmpty: boolean;
   bookTitle: string;
   stageLabel: string;
   selectedModelId: string;
+  selectedModel: ModelConfig | undefined;
   thinkingLevel: ThinkingLevel;
   temperature: number;
   approvalMode: AgentApprovalMode;
@@ -368,6 +373,10 @@ function handleApprovalChange(value: string | number): void {
               >
                 <template #prefix><AppIcon name="brain" :size="14" /></template>
               </PopupSelect>
+              <ContextWindowIndicator
+                :messages="messages"
+                :model="selectedModel"
+              />
               <PopupSelect
                 v-if="showsTemperature"
                 :model-value="temperature"

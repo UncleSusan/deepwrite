@@ -663,7 +663,7 @@ export function projectLongWorkspaceNavigation(
         continuityChapterNode(selection, {
           icon: "check",
           label: chapter?.title ?? selection.title,
-          badge: "待记录"
+          badge: "待提交"
         })
       );
     }

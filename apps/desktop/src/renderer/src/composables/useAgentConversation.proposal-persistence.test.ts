@@ -208,6 +208,59 @@ describe("agent conversation controller: proposal-persistence", () => {
     restored.dispose();
   });
 
+  it("persists safe-discard snapshots for accepted library overview edits", () => {
+    const storage = createMemoryStorage();
+    const persistenceKey = "conversation-edit-discard-snapshot-test";
+    const controller = useAgentConversation({
+      api: () => undefined,
+      ...storage.options(persistenceKey)
+    });
+    controller.upsertEditProposal(
+      "run_edit_1",
+      createEditProposal({
+        stageId: "library",
+        status: "accepted",
+        proposedText: undefined,
+        libraryTarget: {
+          operation: "edit-overview",
+          domain: "material",
+          libraryId: "library-1"
+        },
+        discardSnapshot: {
+          beforeText: "修改前的简介",
+          beforeTitle: "资料库"
+        },
+        discardState: {
+          status: "discarding",
+          message: "正在舍弃",
+          updatedAt: "2026-08-25T00:00:02.000Z"
+        }
+      })
+    );
+    controller.dispose();
+
+    const restored = useAgentConversation({
+      api: () => undefined,
+      ...storage.options(persistenceKey)
+    });
+    expect(restored.getEditProposal("run_edit_1", "proposal_1")).toMatchObject({
+      libraryTarget: {
+        operation: "edit-overview",
+        domain: "material",
+        libraryId: "library-1"
+      },
+      discardSnapshot: {
+        beforeText: "修改前的简介",
+        beforeTitle: "资料库"
+      },
+      discardState: {
+        status: "error",
+        message: "上次舍弃未确认完成；重试前会重新校验当前版本。"
+      }
+    });
+    restored.dispose();
+  });
+
   it("persists accepted draft section ids for dependent proposal recovery", () => {
     const storage = createMemoryStorage();
     const persistenceKey = "conversation-draft-section-mapping-test";

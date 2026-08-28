@@ -8,9 +8,6 @@ export const AgentTeamSettingsPanel = defineAsyncComponent(
 export const LearningImitationDialog = defineAsyncComponent(
   () => import("./LearningImitationDialog.vue")
 );
-export const LongWorkspaceEditor = defineAsyncComponent(
-  () => import("./LongWorkspaceEditor.vue")
-);
 export const LongWorkspaceModule = defineAsyncComponent(
   () => import("./LongWorkspaceModule.vue")
 );

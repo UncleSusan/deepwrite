@@ -5,22 +5,21 @@ import {
   AgentTeamCatalogSnapshotSchema,
   AgentTeamProfileIdSchema,
   AgentTeamProfileNameSchema,
-  AgentTeamSettingsInputSchema,
   DEFAULT_AGENT_TEAM_SETTINGS,
   DEFAULT_LONG_AGENT_TEAM_SETTINGS,
   DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS,
   LongAgentTeamSettingsInputSchema,
-  SCRIPT_WORKSPACE_AGENT_IDS,
-  SHORT_WORKSPACE_AGENT_IDS,
-  ScriptAgentTeamSettingsInputSchema,
   type AgentTeamCatalogSnapshot,
   type AgentTeamProfile,
   type AgentTeamProfileSaveInput,
-  type AgentTeamWorkspaceType
+  type AgentTeamWorkspaceType,
+  type LongAgentTeamSettings
 } from "@deepwrite/contracts";
+import { migrateLegacyLongAgentTeamSettings } from "./legacy-long-agent-team-migration";
+import { migrateLegacyScriptAgentTeamSettings } from "./legacy-script-agent-team-migration";
+import { migrateLegacyShortAgentTeamSettings } from "./legacy-short-agent-team-migration";
 
-export const AGENT_TEAM_CATALOG_DISK_VERSION = 2 as const;
-const LEGACY_LONG_DISK_VERSION = 2;
+export const AGENT_TEAM_CATALOG_DISK_VERSION = 4 as const;
 
 export interface AgentTeamDiskCatalog extends AgentTeamCatalogSnapshot {
   version: typeof AGENT_TEAM_CATALOG_DISK_VERSION;
@@ -34,6 +33,10 @@ export interface LegacyAgentTeamPaths {
 
 function createTeamId(): string {
   return `team_${randomUUID().replaceAll("-", "")}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function defaultName(workspaceType: AgentTeamWorkspaceType): string {
@@ -116,37 +119,6 @@ export function invalidAgentTeamConfig(issue?: {
   );
 }
 
-function normalizeLegacyWorkspace(
-  raw: unknown,
-  workspaceType: "short" | "script"
-): unknown {
-  if (
-    !raw ||
-    typeof raw !== "object" ||
-    !("version" in raw) ||
-    raw.version !== 1
-  ) {
-    throw new Error("智能体团队配置版本无效，已停止加载以避免覆盖原文件。");
-  }
-  const allowed =
-    workspaceType === "script"
-      ? SCRIPT_WORKSPACE_AGENT_IDS
-      : SHORT_WORKSPACE_AGENT_IDS;
-  return {
-    ...(raw as Record<string, unknown>),
-    teams: Array.isArray((raw as Record<string, unknown>).teams)
-      ? ((raw as Record<string, unknown>).teams as unknown[]).filter(
-          (team) =>
-            team !== null &&
-            typeof team === "object" &&
-            allowed.includes(
-              (team as { parentAgentId?: never }).parentAgentId as never
-            )
-        )
-      : (raw as Record<string, unknown>).teams
-  };
-}
-
 export async function createCatalogFromLegacyFiles(
   paths: LegacyAgentTeamPaths
 ): Promise<AgentTeamCatalogSnapshot> {
@@ -157,50 +129,69 @@ export async function createCatalogFromLegacyFiles(
   ]);
   const short = createAgentTeamProfile("short");
   const script = createAgentTeamProfile("script");
-  const long = createAgentTeamProfile("long");
   if (short.workspaceType !== "short" || script.workspaceType !== "script") {
     throw invalidAgentTeamConfig();
   }
-  if (long.workspaceType !== "long") throw invalidAgentTeamConfig();
 
   if (shortRaw !== undefined) {
-    const parsed = AgentTeamSettingsInputSchema.safeParse(
-      normalizeLegacyWorkspace(shortRaw, "short")
-    );
-    if (!parsed.success) throw invalidAgentTeamConfig(parsed.error.issues[0]);
-    short.settings = parsed.data;
+    if (!shortRaw || typeof shortRaw !== "object" || Array.isArray(shortRaw)) {
+      throw invalidAgentTeamConfig();
+    }
+    const { version: _version, ...settings } = shortRaw as Record<
+      string,
+      unknown
+    >;
+    const migrated = migrateLegacyShortAgentTeamSettings(settings);
+    if (!migrated) throw invalidAgentTeamConfig();
+    short.settings = migrated;
   }
   if (scriptRaw !== undefined) {
-    const parsed = ScriptAgentTeamSettingsInputSchema.safeParse(
-      normalizeLegacyWorkspace(scriptRaw, "script")
-    );
-    if (!parsed.success) throw invalidAgentTeamConfig(parsed.error.issues[0]);
-    script.settings = parsed.data;
+    if (
+      !scriptRaw ||
+      typeof scriptRaw !== "object" ||
+      Array.isArray(scriptRaw)
+    ) {
+      throw invalidAgentTeamConfig();
+    }
+    const { version: _version, ...settings } = scriptRaw as Record<
+      string,
+      unknown
+    >;
+    const migrated = migrateLegacyScriptAgentTeamSettings(settings);
+    if (!migrated) throw invalidAgentTeamConfig();
+    script.settings = migrated;
   }
+  let longProfiles = [createAgentTeamProfile("long")];
   if (longRaw !== undefined) {
     if (!longRaw || typeof longRaw !== "object" || Array.isArray(longRaw)) {
       throw invalidAgentTeamConfig();
-    }
-    if (
-      (longRaw as { version?: unknown }).version !== LEGACY_LONG_DISK_VERSION
-    ) {
-      throw new Error("智能体团队配置版本无效，已停止加载以避免覆盖原文件。");
     }
     const { version: _version, ...settings } = longRaw as Record<
       string,
       unknown
     >;
-    const parsed = LongAgentTeamSettingsInputSchema.safeParse(settings);
-    if (!parsed.success) throw invalidAgentTeamConfig(parsed.error.issues[0]);
-    long.settings = parsed.data;
+    const migrated = migrateLegacyLongAgentTeamSettings(settings);
+    if (!migrated) {
+      const parsed = LongAgentTeamSettingsInputSchema.safeParse(settings);
+      throw invalidAgentTeamConfig(
+        parsed.success ? undefined : parsed.error.issues[0]
+      );
+    }
+    longProfiles = migrated.map((longSettings, index) =>
+      createAgentTeamProfile(
+        "long",
+        index === 0 ? defaultName("long") : `迁移长篇团队 ${index + 1}`,
+        longSettings
+      )
+    );
   }
   return AgentTeamCatalogSnapshotSchema.parse({
     enabledTeamIds: {
       ...(shortRaw === undefined ? {} : { short: short.id }),
       ...(scriptRaw === undefined ? {} : { script: script.id }),
-      ...(longRaw === undefined ? {} : { long: long.id })
+      ...(longRaw === undefined ? {} : { long: longProfiles[0]!.id })
     },
-    teams: [short, script, long]
+    teams: [short, script, ...longProfiles]
   });
 }
 
@@ -226,20 +217,16 @@ export function migrateVersionOneCatalog(
     const legacy = candidate as Record<string, unknown>;
     const id = AgentTeamProfileIdSchema.safeParse(legacy.id);
     const name = AgentTeamProfileNameSchema.safeParse(legacy.name);
-    const short = AgentTeamSettingsInputSchema.safeParse(legacy.shortSettings);
-    const script = ScriptAgentTeamSettingsInputSchema.safeParse(
-      legacy.scriptSettings
-    );
+    const short = isRecord(legacy.shortSettings)
+      ? migrateLegacyShortAgentTeamSettings(legacy.shortSettings)
+      : undefined;
+    const script = isRecord(legacy.scriptSettings)
+      ? migrateLegacyScriptAgentTeamSettings(legacy.scriptSettings)
+      : undefined;
     const long = LongAgentTeamSettingsInputSchema.safeParse(
       legacy.longSettings
     );
-    if (
-      !id.success ||
-      !name.success ||
-      !short.success ||
-      !script.success ||
-      !long.success
-    ) {
+    if (!id.success || !name.success || !short || !script || !long.success) {
       throw invalidAgentTeamConfig();
     }
     const names =
@@ -247,8 +234,8 @@ export function migrateVersionOneCatalog(
         ? [defaultName("short"), defaultName("script"), defaultName("long")]
         : [`${name.data} · 短篇`, `${name.data} · 剧本`, `${name.data} · 长篇`];
     const split = [
-      createAgentTeamProfile("short", names[0], short.data),
-      createAgentTeamProfile("script", names[1], script.data),
+      createAgentTeamProfile("short", names[0], short),
+      createAgentTeamProfile("script", names[1], script),
       createAgentTeamProfile("long", names[2], long.data)
     ];
     teams.push(...split);
@@ -259,4 +246,143 @@ export function migrateVersionOneCatalog(
     }
   }
   return AgentTeamCatalogSnapshotSchema.parse({ enabledTeamIds, teams });
+}
+
+function migrateProfileCatalog(
+  raw: Record<string, unknown>
+): AgentTeamCatalogSnapshot | undefined {
+  if (!isRecord(raw.enabledTeamIds) || !Array.isArray(raw.teams)) {
+    return undefined;
+  }
+  const teams: AgentTeamProfile[] = [];
+  const usedNames = new Set<string>();
+  for (const candidate of raw.teams) {
+    if (!isRecord(candidate) || !isRecord(candidate.settings)) {
+      return undefined;
+    }
+    const id = AgentTeamProfileIdSchema.safeParse(candidate.id);
+    const name = AgentTeamProfileNameSchema.safeParse(candidate.name);
+    if (!id.success || !name.success) return undefined;
+    usedNames.add(name.data.toLocaleLowerCase());
+    if (candidate.workspaceType === "short") {
+      const settings = migrateLegacyShortAgentTeamSettings(candidate.settings);
+      if (!settings) return undefined;
+      teams.push({
+        id: id.data,
+        name: name.data,
+        workspaceType: "short",
+        settings
+      });
+      continue;
+    }
+    if (candidate.workspaceType === "script") {
+      const settings = migrateLegacyScriptAgentTeamSettings(candidate.settings);
+      if (!settings) return undefined;
+      teams.push({
+        id: id.data,
+        name: name.data,
+        workspaceType: "script",
+        settings
+      });
+      continue;
+    }
+    if (candidate.workspaceType !== "long") return undefined;
+    const settings = migrateLegacyLongAgentTeamSettings(candidate.settings);
+    if (!settings) return undefined;
+    settings.forEach((longSettings, index) => {
+      let migratedName = name.data;
+      if (index > 0) {
+        const suffix = ` · 迁移 ${index + 1}`;
+        migratedName = `${name.data.slice(0, 80 - suffix.length)}${suffix}`;
+        for (
+          let sequence = 2;
+          usedNames.has(migratedName.toLocaleLowerCase());
+          sequence += 1
+        ) {
+          const numberedSuffix = `${suffix}-${sequence}`;
+          migratedName = `${name.data.slice(0, 80 - numberedSuffix.length)}${numberedSuffix}`;
+        }
+      }
+      usedNames.add(migratedName.toLocaleLowerCase());
+      teams.push({
+        id: index === 0 ? id.data : createTeamId(),
+        name: migratedName,
+        workspaceType: "long",
+        settings: longSettings
+      });
+    });
+  }
+  const enabled = raw.enabledTeamIds;
+  const parsed = AgentTeamCatalogSnapshotSchema.safeParse({
+    enabledTeamIds: {
+      ...(typeof enabled.short === "string" ? { short: enabled.short } : {}),
+      ...(typeof enabled.script === "string" ? { script: enabled.script } : {}),
+      ...(typeof enabled.long === "string" ? { long: enabled.long } : {})
+    },
+    teams
+  });
+  return parsed.success ? parsed.data : undefined;
+}
+
+export function tryMigrateCombinedCatalog(
+  raw: Record<string, unknown>
+): AgentTeamCatalogSnapshot | undefined {
+  const profileCatalog = migrateProfileCatalog(raw);
+  if (profileCatalog) return profileCatalog;
+  try {
+    return migrateVersionOneCatalog(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+function catalogFromStandaloneSettings(
+  settings: AgentTeamProfileSaveInput["settings"]
+): AgentTeamCatalogSnapshot {
+  const short = createAgentTeamProfile("short", defaultName("short"), settings);
+  const script = createAgentTeamProfile(
+    "script",
+    defaultName("script"),
+    settings
+  );
+  const long = createAgentTeamProfile("long", defaultName("long"), settings);
+  const matching =
+    settings.workspaceType === "short"
+      ? short
+      : settings.workspaceType === "script"
+        ? script
+        : long;
+  return AgentTeamCatalogSnapshotSchema.parse({
+    enabledTeamIds: { [settings.workspaceType]: matching.id },
+    teams: [short, script, long]
+  });
+}
+
+function catalogFromLongSettings(
+  settings: readonly LongAgentTeamSettings[]
+): AgentTeamCatalogSnapshot {
+  const short = createAgentTeamProfile("short");
+  const script = createAgentTeamProfile("script");
+  const longProfiles = settings.map((longSettings, index) =>
+    createAgentTeamProfile(
+      "long",
+      index === 0 ? defaultName("long") : `迁移长篇团队 ${index + 1}`,
+      longSettings
+    )
+  );
+  return AgentTeamCatalogSnapshotSchema.parse({
+    enabledTeamIds: { long: longProfiles[0]!.id },
+    teams: [short, script, ...longProfiles]
+  });
+}
+
+export function tryMigrateStandaloneCatalog(
+  raw: Record<string, unknown>
+): AgentTeamCatalogSnapshot | undefined {
+  const short = migrateLegacyShortAgentTeamSettings(raw);
+  if (short) return catalogFromStandaloneSettings(short);
+  const script = migrateLegacyScriptAgentTeamSettings(raw);
+  if (script) return catalogFromStandaloneSettings(script);
+  const long = migrateLegacyLongAgentTeamSettings(raw);
+  return long ? catalogFromLongSettings(long) : undefined;
 }

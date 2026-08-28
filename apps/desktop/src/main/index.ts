@@ -14,6 +14,8 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   AgentTeamCatalogSnapshotSchema,
+  AgentTeamPackageExportResultSchema,
+  AgentTeamPackageInstallResultSchema,
   BookSchema,
   SaveDocumentResultSchema,
   CatalogDraftSectionSchema,
@@ -24,13 +26,13 @@ import {
   CatalogLibraryGroupSchema,
   CatalogLibraryEntrySchema,
   CatalogOpenProjectResultSchema,
-  AppearanceSettingsSnapshotSchema,
   APP_ALERT_ACKNOWLEDGE_DESKTOP_CHANNEL,
   APP_ALERT_GET_CHANNEL,
   AppAlertDesktopRevisionSchema,
   AppAlertSnapshotSchema,
   CatalogIndexSnapshotSchema,
   CatalogReadDocumentResultSchema,
+  ReadWritingContextResultSchema,
   CatalogSnapshotSchema,
   ChatAssistantProjectConfigSchema,
   ChatAssistantProjectConfigListSchema,
@@ -79,10 +81,7 @@ import {
   LongWriteChapterResultSchema,
   LongWriteDocumentResultSchema,
   LongWriteAgentsMdResultSchema,
-  ModelConnectionTestResultSchema,
-  OfficialModelBalanceSchema,
   ModelSettingsSchema,
-  RemoteModelListResultSchema,
   RendererStateLoadResultSchema,
   RendererStateMutationResultSchema,
   ModelUsageDashboardSchema,
@@ -98,6 +97,7 @@ import {
   SystemHealthPayloadSchema,
   SystemReadyEventEnvelopeSchema,
   UnregisterCatalogProjectResultSchema,
+  WriteWritingContextResultSchema,
   WorkspaceDirectorySettingsSchema,
   createDefaultAppearanceSettings,
   createDefaultGeneralSettings,
@@ -121,8 +121,12 @@ import {
   LEGACY_LIBRARY_FILE_SELECTION_PROPERTIES,
   importLegacyLibraryArchives
 } from "./legacy-library-import-batch";
-import { AppearanceConfigStore } from "./appearance-config-store";
+import { AppearanceService } from "./appearance-service";
 import { AgentTeamConfigStore } from "./agent-team-config-store";
+import {
+  downloadAgentTeamPackage,
+  installAgentTeamPackage
+} from "./agent-team-package-service";
 import { GeneralSettingsStore } from "./general-settings-store";
 import { ChatAssistantProjectConfigStore } from "./chat-assistant-project-config-store";
 import { ModelConfigStore } from "./model-config-store";
@@ -169,6 +173,14 @@ import { LegacySyncPreviewRegistry } from "./legacy-sync-preview-registry";
 import { readExternalSkills } from "./external-skill-import";
 import { createMainWindowStartupGate } from "./main-window-startup-gate";
 import { resolveDeepWriteAppMode } from "./app-run-mode";
+import { handleModelCommands } from "./ipc/model-commands";
+import { handleAppearanceCommands } from "./ipc/appearance-commands";
+import {
+  installAppearanceFontProtocolHandler,
+  registerAppearanceFontScheme
+} from "./appearance-font-protocol";
+
+registerAppearanceFontScheme();
 
 interface ActiveRun extends MainInternalCommandActiveRun {
   correlationId: string;
@@ -191,7 +203,7 @@ let modelConfigStore: ModelConfigStore | undefined;
 let modelUsageStore: ModelUsageStore | undefined;
 let softwareTokenUsageReporter: SoftwareTokenUsageReporter | undefined;
 let agentTeamConfigStore: AgentTeamConfigStore | undefined;
-let appearanceConfigStore: AppearanceConfigStore | undefined;
+let appearanceService: AppearanceService | undefined;
 let generalSettingsStore: GeneralSettingsStore | undefined;
 let chatAssistantProjectConfigStore:
   ChatAssistantProjectConfigStore | undefined;
@@ -914,6 +926,13 @@ function requireWorkspaceAgentConfigStore(): WorkspaceAgentConfigStore {
   return workspaceAgentConfigStore;
 }
 
+function requireMainWindow(): BrowserWindow {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    throw new Error("DeepWrite 主窗口尚未初始化。");
+  }
+  return mainWindow;
+}
+
 function requireAgentTeamConfigStore(): AgentTeamConfigStore {
   if (!agentTeamConfigStore) {
     throw new Error("智能体团队设置存储尚未初始化。");
@@ -949,11 +968,11 @@ function requireWorkspaceDirectoryStore(): WorkspaceDirectoryStore {
   return workspaceDirectoryStore;
 }
 
-function requireAppearanceConfigStore(): AppearanceConfigStore {
-  if (!appearanceConfigStore) {
-    throw new Error("外观设置存储尚未初始化。");
+function requireAppearanceService(): AppearanceService {
+  if (!appearanceService) {
+    throw new Error("外观设置服务尚未初始化。");
   }
-  return appearanceConfigStore;
+  return appearanceService;
 }
 
 function requireGeneralSettingsStore(): GeneralSettingsStore {
@@ -978,7 +997,7 @@ function syncNativeAppearanceChrome(settings: AppearanceSettings): void {
 
 async function loadAndSyncNativeAppearanceChrome(): Promise<void> {
   try {
-    const snapshot = await requireAppearanceConfigStore().list();
+    const snapshot = await requireAppearanceService().list();
     syncNativeAppearanceChrome(snapshot.settings);
   } catch {
     syncNativeAppearanceChrome(createDefaultAppearanceSettings());
@@ -1232,6 +1251,7 @@ function registerIpc(): void {
         command.type === "agent.abort" ||
         command.type === "agent.user_input_response" ||
         command.type === "agent.model_test" ||
+        command.type === "agent.model_capacity" ||
         command.type === "catalog.createShortBookAtPath" ||
         command.type === "catalog.createScriptBookAtPath" ||
         command.type === "long.createBookAtPath" ||
@@ -1356,54 +1376,17 @@ function registerIpc(): void {
         }
       }
 
-      if (command.type === "appearance.list") {
-        try {
-          const snapshot = AppearanceSettingsSnapshotSchema.parse(
-            await requireAppearanceConfigStore().list()
-          );
-          syncNativeAppearanceChrome(snapshot.settings);
-          return {
-            status: "accepted",
-            requestId: command.id,
-            payload: snapshot
-          };
-        } catch (error: unknown) {
-          return {
-            status: "rejected",
-            requestId: command.id,
-            error: {
-              code: "appearance.list_failed",
-              message:
-                error instanceof Error ? error.message : "加载外观设置失败。",
-              details: safeErrorDetails(error)
-            }
-          };
-        }
-      }
-
-      if (command.type === "appearance.save") {
-        try {
-          const snapshot = AppearanceSettingsSnapshotSchema.parse(
-            await requireAppearanceConfigStore().save(command.payload)
-          );
-          syncNativeAppearanceChrome(snapshot.settings);
-          return {
-            status: "accepted",
-            requestId: command.id,
-            payload: snapshot
-          };
-        } catch (error: unknown) {
-          return {
-            status: "rejected",
-            requestId: command.id,
-            error: {
-              code: "appearance.save_failed",
-              message:
-                error instanceof Error ? error.message : "保存外观设置失败。",
-              details: safeErrorDetails(error)
-            }
-          };
-        }
+      const appearanceCommandResult = await handleAppearanceCommands(
+        {
+          dialog,
+          getMainWindow: requireMainWindow,
+          requireAppearanceService,
+          syncNativeAppearanceChrome
+        },
+        command
+      );
+      if (appearanceCommandResult) {
+        return appearanceCommandResult;
       }
 
       if (command.type === "generalSettings.list") {
@@ -2211,6 +2194,8 @@ function registerIpc(): void {
       if (
         command.type === "catalog.index" ||
         command.type === "catalog.readDocument" ||
+        command.type === "catalog.readWritingContext" ||
+        command.type === "catalog.writeWritingContext" ||
         command.type === "catalog.snapshot" ||
         command.type === "catalog.loadDraftRecovery" ||
         command.type === "catalog.saveDraftRecovery" ||
@@ -2249,6 +2234,12 @@ function registerIpc(): void {
               break;
             case "catalog.readDocument":
               payload = CatalogReadDocumentResultSchema.parse(result.payload);
+              break;
+            case "catalog.readWritingContext":
+              payload = ReadWritingContextResultSchema.parse(result.payload);
+              break;
+            case "catalog.writeWritingContext":
+              payload = WriteWritingContextResultSchema.parse(result.payload);
               break;
             case "catalog.snapshot":
               payload = CatalogSnapshotSchema.parse(result.payload);
@@ -2335,341 +2326,17 @@ function registerIpc(): void {
         }
       }
 
-      if (command.type === "models.list") {
-        try {
-          return {
-            status: "accepted",
-            requestId: command.id,
-            payload: ModelSettingsSchema.parse(
-              await requireModelConfigStore().list()
-            )
-          };
-        } catch (error: unknown) {
-          return {
-            status: "rejected",
-            requestId: command.id,
-            error: {
-              code: "models.list_failed",
-              message:
-                error instanceof Error ? error.message : "加载模型配置失败。",
-              details: safeErrorDetails(error)
-            }
-          };
-        }
-      }
-
-      if (command.type === "models.refreshFree") {
-        try {
-          return {
-            status: "accepted",
-            requestId: command.id,
-            payload: ModelSettingsSchema.parse(
-              await requireModelConfigStore().refreshFreeModels()
-            )
-          };
-        } catch (error: unknown) {
-          return {
-            status: "rejected",
-            requestId: command.id,
-            error: {
-              code: "models.refresh_free_failed",
-              message:
-                error instanceof Error
-                  ? error.message
-                  : "刷新免费模型配置失败。",
-              details: safeErrorDetails(error)
-            }
-          };
-        }
-      }
-
-      if (command.type === "models.refreshOfficial") {
-        try {
-          const settings = ModelSettingsSchema.parse(
-            await requireModelConfigStore().refreshOfficialModels()
-          );
-          await requireModelUsageStore().syncConfiguredModels(settings.models);
-          return {
-            status: "accepted",
-            requestId: command.id,
-            payload: settings
-          };
-        } catch (error: unknown) {
-          return {
-            status: "rejected",
-            requestId: command.id,
-            error: {
-              code: "models.refresh_official_failed",
-              message:
-                error instanceof Error
-                  ? error.message
-                  : "刷新官方模型配置失败。",
-              details: safeErrorDetails(error)
-            }
-          };
-        }
-      }
-
-      if (command.type === "models.queryOfficialBalance") {
-        try {
-          return {
-            status: "accepted",
-            requestId: command.id,
-            payload: OfficialModelBalanceSchema.parse(
-              await requireModelConfigStore().queryOfficialBalance()
-            )
-          };
-        } catch (error: unknown) {
-          return {
-            status: "rejected",
-            requestId: command.id,
-            error: {
-              code: "models.query_official_balance_failed",
-              message:
-                error instanceof Error
-                  ? error.message
-                  : "查询官方模型余额失败。",
-              details: safeErrorDetails(error)
-            }
-          };
-        }
-      }
-
-      if (command.type === "models.saveOfficialToken") {
-        try {
-          const settings = ModelSettingsSchema.parse(
-            await requireModelConfigStore().saveOfficialToken(
-              command.payload.apiKey
-            )
-          );
-          await requireModelUsageStore().syncConfiguredModels(settings.models);
-          return {
-            status: "accepted",
-            requestId: command.id,
-            payload: settings
-          };
-        } catch (error: unknown) {
-          return {
-            status: "rejected",
-            requestId: command.id,
-            error: {
-              code: "models.save_official_token_failed",
-              message:
-                error instanceof Error ? error.message : "保存官方令牌失败。",
-              details: safeErrorDetails(error)
-            }
-          };
-        }
-      }
-
-      if (command.type === "models.clearOfficialToken") {
-        try {
-          const settings = ModelSettingsSchema.parse(
-            await requireModelConfigStore().clearOfficialToken()
-          );
-          await requireModelUsageStore().syncConfiguredModels(settings.models);
-          return {
-            status: "accepted",
-            requestId: command.id,
-            payload: settings
-          };
-        } catch (error: unknown) {
-          return {
-            status: "rejected",
-            requestId: command.id,
-            error: {
-              code: "models.clear_official_token_failed",
-              message:
-                error instanceof Error ? error.message : "移除官方令牌失败。",
-              details: safeErrorDetails(error)
-            }
-          };
-        }
-      }
-
-      if (command.type === "models.setOfficialModelEnabled") {
-        try {
-          const settings = ModelSettingsSchema.parse(
-            await requireModelConfigStore().setOfficialModelEnabled(
-              command.payload.modelId,
-              command.payload.enabled
-            )
-          );
-          await requireModelUsageStore().syncConfiguredModels(settings.models);
-          return {
-            status: "accepted",
-            requestId: command.id,
-            payload: settings
-          };
-        } catch (error: unknown) {
-          return {
-            status: "rejected",
-            requestId: command.id,
-            error: {
-              code: "models.set_official_model_enabled_failed",
-              message:
-                error instanceof Error
-                  ? error.message
-                  : "更新官方模型启用状态失败。",
-              details: safeErrorDetails(error)
-            }
-          };
-        }
-      }
-
-      if (command.type === "modelUsage.query") {
-        try {
-          return {
-            status: "accepted",
-            requestId: command.id,
-            payload: ModelUsageDashboardSchema.parse(
-              await requireModelUsageStore().query(command.payload)
-            )
-          };
-        } catch (error: unknown) {
-          return {
-            status: "rejected",
-            requestId: command.id,
-            error: {
-              code: "model_usage.query_failed",
-              message:
-                error instanceof Error ? error.message : "加载模型用量失败。",
-              details: safeErrorDetails(error)
-            }
-          };
-        }
-      }
-
-      if (command.type === "models.save") {
-        try {
-          const settings = ModelSettingsSchema.parse(
-            await requireModelConfigStore().save(command.payload)
-          );
-          void requireModelUsageStore()
-            .syncConfiguredModels(settings.models)
-            .catch((error: unknown) => {
-              console.warn(
-                "DeepWrite model usage registry was not synchronized:",
-                error instanceof Error ? error.message : "unknown error"
-              );
-            });
-          return {
-            status: "accepted",
-            requestId: command.id,
-            payload: settings
-          };
-        } catch (error: unknown) {
-          return {
-            status: "rejected",
-            requestId: command.id,
-            error: {
-              code: "models.save_failed",
-              message:
-                error instanceof Error ? error.message : "保存模型配置失败。",
-              details: safeErrorDetails(error)
-            }
-          };
-        }
-      }
-
-      if (command.type === "models.listRemote") {
-        try {
-          const apiKey = await requireModelConfigStore().resolveDraftApiKey({
-            ...(command.payload.id ? { id: command.payload.id } : {}),
-            ...(command.payload.apiKey
-              ? { apiKey: command.payload.apiKey }
-              : {}),
-            ...(command.payload.clearApiKey ? { clearApiKey: true } : {})
-          });
-          const models = await listRemoteModels({
-            provider: command.payload.provider,
-            api: command.payload.api,
-            baseUrl: command.payload.baseUrl,
-            apiKey
-          });
-          return {
-            status: "accepted",
-            requestId: command.id,
-            payload: RemoteModelListResultSchema.parse({ models })
-          };
-        } catch (error: unknown) {
-          return {
-            status: "rejected",
-            requestId: command.id,
-            error: {
-              code: "models.list_remote_failed",
-              message:
-                error instanceof Error ? error.message : "拉取可用模型失败。",
-              details: safeErrorDetails(error)
-            }
-          };
-        }
-      }
-
-      if (command.type === "models.test") {
-        try {
-          const runtimeConfig = await requireModelConfigStore().resolveDraft(
-            command.payload.model
-          );
-          const internalCommand = CommandEnvelopeSchema.parse(
-            createEnvelope(
-              "agent.model_test",
-              { runtimeConfig },
-              { id: command.id, context: command.context }
-            )
-          );
-          const result = await supervisor.requestCommand(
-            "agent",
-            internalCommand,
-            20_000
-          );
-          if (result.status === "accepted") {
-            const payload = ModelConnectionTestResultSchema.parse(
-              result.payload
-            );
-            if (payload.usage) {
-              const runtime: AgentRuntimeRef = {
-                provider: runtimeConfig.provider,
-                model: runtimeConfig.modelId,
-                mode: "provider",
-                configId: runtimeConfig.id
-              };
-              void requireModelUsageStore()
-                .record({
-                  id: `v2:model-test:${command.id}`,
-                  occurredAt: payload.testedAt,
-                  model: createUsageModelSnapshot(runtime, runtimeConfig),
-                  module: "model-test",
-                  actor: "connection-test",
-                  status: "completed",
-                  usage: payload.usage
-                })
-                .catch((error: unknown) => {
-                  console.warn(
-                    "DeepWrite model-test usage was not persisted:",
-                    error instanceof Error ? error.message : "unknown error"
-                  );
-                });
-            }
-            return {
-              status: "accepted",
-              requestId: command.id,
-              payload
-            };
-          }
-          return result;
-        } catch (error: unknown) {
-          return {
-            status: "rejected",
-            requestId: command.id,
-            error: {
-              code: "models.test_failed",
-              message:
-                error instanceof Error ? error.message : "模型连接测试失败。",
-              details: safeErrorDetails(error)
-            }
-          };
-        }
+      const modelCommandResult = await handleModelCommands(
+        {
+          requireModelConfigStore,
+          requireModelUsageStore,
+          listRemoteModels,
+          supervisor
+        },
+        command
+      );
+      if (modelCommandResult) {
+        return modelCommandResult;
       }
 
       if (command.type === "workspaceAgents.list") {
@@ -2718,6 +2385,63 @@ function registerIpc(): void {
                 error instanceof Error
                   ? error.message
                   : "加载智能体团队设置失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "agentTeams.exportPackage") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: AgentTeamPackageExportResultSchema.parse(
+              await downloadAgentTeamPackage(
+                mainWindow,
+                dialog,
+                requireAgentTeamConfigStore(),
+                command.payload,
+                app.getPath("documents")
+              )
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "agent_teams.export_failed",
+              message:
+                error instanceof Error ? error.message : "下载智能体团队失败。",
+              details: safeErrorDetails(error)
+            }
+          };
+        }
+      }
+
+      if (command.type === "agentTeams.installPackage") {
+        try {
+          return {
+            status: "accepted",
+            requestId: command.id,
+            payload: AgentTeamPackageInstallResultSchema.parse(
+              await installAgentTeamPackage(
+                mainWindow,
+                dialog,
+                requireAgentTeamConfigStore(),
+                app.getPath("documents")
+              )
+            )
+          };
+        } catch (error: unknown) {
+          return {
+            status: "rejected",
+            requestId: command.id,
+            error: {
+              code: "agent_teams.install_failed",
+              message:
+                error instanceof Error ? error.message : "安装智能体团队失败。",
               details: safeErrorDetails(error)
             }
           };
@@ -3588,7 +3312,8 @@ if (!hasSingleInstanceLock) {
       userDataPath
     );
     workspaceDirectoryStore = new WorkspaceDirectoryStore(userDataPath);
-    appearanceConfigStore = new AppearanceConfigStore(userDataPath);
+    appearanceService = new AppearanceService(userDataPath);
+    installAppearanceFontProtocolHandler(appearanceService);
     generalSettingsStore = new GeneralSettingsStore(userDataPath);
     chatAssistantProjectConfigStore = new ChatAssistantProjectConfigStore(
       userDataPath

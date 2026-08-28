@@ -107,6 +107,9 @@ import {
   type ContinuationImportPlan
 } from "./long-continuation-import";
 import { migrateLegacyCharacterStateFiles } from "./long-project-store/migrations/world-character";
+import { assertPinnedSetIntegrity } from "./long-project-store/integrity";
+import { overwriteLongV4LedgerAuditsFromCurrent } from "./long-project-store/v4-ledger-repair";
+import { LongV4LedgerFileAuditError } from "./long-ledger-v4-audit";
 
 const MANIFEST_PATH = "deepwrite.json";
 const BOOK_LINE_PATH = "long/plot/book-line.md";
@@ -554,6 +557,7 @@ export class LongProjectStore {
           expectedSha256: null;
         }> = [];
         const records: LongLedgerCommitRecord[] = [];
+        const continuityFileContents = new Map<string, string>();
 
         for (const slot of indexedFileSlots(source.index)) {
           const disk = await readSecureTextFile(
@@ -593,6 +597,7 @@ export class LongProjectStore {
               expectedSha256: null
             });
           } else {
+            continuityFileContents.set(slot.reference.id, disk.content);
             operations.push({
               path: slot.reference.path,
               content: disk.content,
@@ -617,7 +622,12 @@ export class LongProjectStore {
             content
           );
         }
-        assertLongLedgerRecordChain(validatedIndex, records);
+        assertLongLedgerRecordChain(
+          validatedIndex,
+          records,
+          validatedIndex.revision,
+          continuityFileContents
+        );
 
         const indexContent = serializeJson(validatedIndex);
         const manifest = LongProjectManifestSchema.parse({
@@ -1847,8 +1857,8 @@ export class LongProjectStore {
   ): Promise<LongCommitChapterResult> {
     const canonical = await secureDirectory(projectDirectory, "长篇项目目录");
     return await this.runExclusive(canonical, async () => {
-      const loaded = await this.loadProject(canonical);
-      const input = LongCommitChapterInputSchema.parse({
+      let loaded = await this.loadProject(canonical);
+      let input = LongCommitChapterInputSchema.parse({
         ...rawInput,
         bookId: loaded.manifest.id
       });
@@ -1857,7 +1867,44 @@ export class LongProjectStore {
         input.baseWorkspaceRevision,
         input.baseProjectRevision
       );
-      const existingPinnedChecks = await assertPinnedSetIntegrity(loaded);
+      let existingPinnedChecks: ProjectTransactionFileOperation[];
+      try {
+        existingPinnedChecks = await assertPinnedSetIntegrity(loaded);
+      } catch (error: unknown) {
+        if (
+          !(error instanceof LongV4LedgerFileAuditError) ||
+          !error.canOverwriteFromCurrent
+        ) {
+          throw error;
+        }
+        try {
+          await overwriteLongV4LedgerAuditsFromCurrent(
+            loaded,
+            error.recordId,
+            this.timestamp()
+          );
+          loaded = await this.loadProject(canonical);
+          input = LongCommitChapterInputSchema.parse({
+            ...input,
+            baseWorkspaceRevision: loaded.index.revision,
+            baseProjectRevision: loaded.manifest.revision
+          });
+          existingPinnedChecks = await assertPinnedSetIntegrity(loaded);
+        } catch (repairError: unknown) {
+          if (repairError instanceof ProjectTransactionConflictError) {
+            throw new LongProjectConflictError(
+              "transaction",
+              repairError.expectedSha256 ?? "missing",
+              repairError.actualSha256 ?? "missing"
+            );
+          }
+          const detail =
+            repairError instanceof Error ? repairError.message : "未知错误";
+          throw new Error(
+            `自动按当前文件覆盖旧 v4 连续性账本失败（当前正文和连续性文件均已保留）：${detail}`
+          );
+        }
+      }
 
       const chapterEntry = loaded.index.chapters.find(
         ({ chapterCardId }) => chapterCardId === input.chapterCardId
@@ -3510,64 +3557,6 @@ function assertProjectRevisions(
       loaded.index.revision
     );
   }
-}
-
-async function assertPinnedSetIntegrity(
-  loaded: LoadedLongProject
-): Promise<ProjectTransactionFileOperation[]> {
-  const checks = new Map<string, ProjectTransactionFileOperation>();
-  const addCheck = (file: LoadedIndexedFile): void => {
-    checks.set(file.reference.path, {
-      action: "check",
-      path: file.reference.path,
-      expectedSha256: file.disk.sha256
-    });
-  };
-  const records: LongLedgerCommitRecord[] = [];
-  for (const entry of loaded.index.ledger.commits) {
-    const recordFile = await loadIndexedFile(loaded, entry.recordFile.id);
-    if (recordFile.kind !== "json") {
-      throw new Error(`连续性账本记录文件类型无效：${entry.id}。`);
-    }
-    const record = LongLedgerCommitRecordSchema.parse(
-      parseJson(recordFile.disk.content, `长篇连续性账本记录 ${entry.id}`)
-    );
-    assertLongLedgerRecordMatchesIndex(
-      loaded.index,
-      entry,
-      record,
-      recordFile.disk.content
-    );
-    records.push(record);
-    addCheck(recordFile);
-  }
-  assertLongLedgerRecordChain(loaded.index, records);
-
-  for (const chapter of loaded.index.chapters) {
-    if (chapter.commitId === null) continue;
-    for (const reference of [
-      chapter.body,
-      chapter.card,
-      chapter.characterState,
-      chapter.handoff,
-      chapter.foreshadowingChanges,
-      ...(chapter.worldReveals ? [chapter.worldReveals] : []),
-      ...chapter.characterContinuity.flatMap((entry) => [
-        entry.currentState,
-        entry.history
-      ])
-    ]) {
-      addCheck(await loadIndexedFile(loaded, reference.id));
-    }
-  }
-  if (loaded.index.ledger.commits.some(({ mode }) => mode === "structured")) {
-    for (const entry of loaded.index.characterFiles) {
-      for (const reference of [entry.relationships]) {
-        addCheck(await loadIndexedFile(loaded, reference.id));
-      }
-    }
-  }
-  return [...checks.values()];
 }
 
 function mergeIntegrityChecks(

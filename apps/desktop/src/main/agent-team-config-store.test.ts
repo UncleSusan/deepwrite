@@ -49,7 +49,7 @@ afterEach(async () => {
 });
 
 describe("AgentTeamConfigStore", () => {
-  it("creates three blank disabled default teams and persists version two", async () => {
+  it("creates three blank disabled default profiles and persists version four", async () => {
     const root = await temporaryRoot();
     const snapshot = await new AgentTeamConfigStore(root).list();
 
@@ -71,7 +71,7 @@ describe("AgentTeamConfigStore", () => {
       JSON.parse(
         await readFile(join(root, "config", "agent-team-profiles.json"), "utf8")
       )
-    ).toMatchObject({ version: 2, enabledTeamIds: {} });
+    ).toMatchObject({ version: 4, enabledTeamIds: {} });
   });
 
   it("migrates each legacy type into its own enabled team without deleting sources", async () => {
@@ -118,14 +118,14 @@ describe("AgentTeamConfigStore", () => {
     ).resolves.toBeTruthy();
   });
 
-  it("splits a version-one combined catalog into one profile per type", async () => {
+  it("splits a recognizable combined catalog regardless of its version marker", async () => {
     const root = await temporaryRoot();
     const config = join(root, "config");
     await mkdir(config);
     await writeFile(
       join(config, "agent-team-profiles.json"),
       JSON.stringify({
-        version: 1,
+        version: 17,
         activeTeamId: "team_original",
         teams: [
           {
@@ -152,6 +152,110 @@ describe("AgentTeamConfigStore", () => {
     });
   });
 
+  it("turns a standalone historical payload into a new typed team", async () => {
+    const root = await temporaryRoot();
+    const config = join(root, "config");
+    await mkdir(config);
+    const short = {
+      workspaceType: "short" as const,
+      teams: [
+        { parentAgentId: "character_design", subagents: [] },
+        {
+          parentAgentId: "plot_design",
+          subagents: [
+            {
+              id: "legacy_reviewer",
+              name: "旧版审阅",
+              description: "迁移旧配置",
+              systemPrompt: "保留旧版提示词。",
+              enabled: true,
+              modelMode: "inherit"
+            }
+          ]
+        },
+        { parentAgentId: "expert_draft_coordinator", subagents: [] }
+      ]
+    };
+    await writeFile(
+      join(config, "agent-team-profiles.json"),
+      JSON.stringify({ version: "historical", ...short })
+    );
+
+    const snapshot = await new AgentTeamConfigStore(root).list();
+    const migrated = profileOfType(snapshot, "short");
+    expect(migrated.settings).toEqual({
+      workspaceType: "short",
+      teams: [
+        {
+          parentAgentId: "short",
+          subagents: [expect.objectContaining({ id: "legacy_reviewer" })]
+        }
+      ]
+    });
+    expect(snapshot.enabledTeamIds.short).toBe(migrated.id);
+    expect(
+      JSON.parse(
+        await readFile(join(config, "agent-team-profiles.json"), "utf8")
+      ).version
+    ).toBe(4);
+  });
+
+  it("accepts recognizable separate legacy files with unknown versions", async () => {
+    const root = await temporaryRoot();
+    const config = join(root, "config");
+    await mkdir(config);
+    await writeFile(
+      join(config, "agent-teams.json"),
+      JSON.stringify({ version: 99, ...DEFAULT_AGENT_TEAM_SETTINGS })
+    );
+
+    const snapshot = await new AgentTeamConfigStore(root).list();
+    const migrated = profileOfType(snapshot, "short");
+    expect(migrated.settings).toEqual(DEFAULT_AGENT_TEAM_SETTINGS);
+    expect(snapshot.enabledTeamIds.short).toBe(migrated.id);
+  });
+
+  it("migrates historical long parent-agent ids into a current long team", async () => {
+    const root = await temporaryRoot();
+    const config = join(root, "config");
+    await mkdir(config);
+    await writeFile(
+      join(config, "long-agent-teams.json"),
+      JSON.stringify({
+        version: 1,
+        workspaceType: "long",
+        teams: [
+          {
+            parentAgentId: "setting",
+            subagents: [
+              {
+                id: "setting_helper",
+                name: "设定助手",
+                description: "整理设定",
+                systemPrompt: "整理长篇设定。",
+                enabled: true,
+                modelMode: "inherit"
+              }
+            ]
+          },
+          { parentAgentId: "plot_design", subagents: [] },
+          { parentAgentId: "draft", subagents: [] },
+          { parentAgentId: "continuity_ledger", subagents: [] }
+        ]
+      })
+    );
+
+    const snapshot = await new AgentTeamConfigStore(root).list();
+    const migrated = profileOfType(snapshot, "long");
+    expect(migrated.settings.teams).toEqual([
+      {
+        parentAgentId: "long",
+        subagents: [expect.objectContaining({ id: "setting_helper" })]
+      }
+    ]);
+    expect(snapshot.enabledTeamIds.long).toBe(migrated.id);
+  });
+
   it("isolates profiles and allows one enabled team per type or none", async () => {
     const store = new AgentTeamConfigStore(await temporaryRoot());
     const created = await store.create({
@@ -160,7 +264,7 @@ describe("AgentTeamConfigStore", () => {
     });
     const second = profileOfType(created, "short", "审稿团队");
     const settings = structuredClone(second.settings);
-    settings.teams[1]!.subagents.push({
+    settings.teams[0]!.subagents.push({
       id: "reviewer",
       name: "审阅",
       description: "检查剧情",
@@ -170,13 +274,13 @@ describe("AgentTeamConfigStore", () => {
     });
     await store.save({ teamId: second.id, settings });
 
-    expect(await store.resolve("short", "plot_design")).toEqual([]);
+    expect(await store.resolve("short", "short")).toEqual([]);
     const enabled = await store.setEnabled({
       teamId: second.id,
       enabled: true
     });
     expect(enabled.enabledTeamIds.short).toBe(second.id);
-    expect(await store.resolve("short", "plot_design")).toEqual([
+    expect(await store.resolve("short", "short")).toEqual([
       expect.objectContaining({ id: "reviewer" })
     ]);
     await expect(store.delete({ teamId: second.id })).rejects.toThrow(
@@ -211,6 +315,30 @@ describe("AgentTeamConfigStore", () => {
       short: secondShort.id,
       long: long.id
     });
+  });
+
+  it("exports and installs a complete team as a disabled independent copy", async () => {
+    const store = new AgentTeamConfigStore(await temporaryRoot());
+    const snapshot = await store.list();
+    const source = profileOfType(snapshot, "short");
+    const settings = structuredClone(source.settings);
+    settings.teams[0]!.subagents.push({
+      id: "package_reviewer",
+      name: "压缩包审阅",
+      description: "验证完整安装",
+      systemPrompt: "检查团队压缩包。",
+      enabled: true,
+      modelMode: "inherit"
+    });
+    await store.save({ teamId: source.id, settings });
+
+    const exported = await store.exportProfile({ teamId: source.id });
+    const installed = await store.installProfile(exported);
+
+    expect(installed.team.id).not.toBe(source.id);
+    expect(installed.team.name).toBe(`${source.name} (2)`);
+    expect(installed.team.settings).toEqual(settings);
+    expect(installed.catalog.enabledTeamIds.short).toBeUndefined();
   });
 
   it("rejects duplicate names and invalid legacy input without overwriting it", async () => {

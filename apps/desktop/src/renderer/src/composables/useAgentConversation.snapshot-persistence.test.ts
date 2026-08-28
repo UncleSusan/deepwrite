@@ -105,6 +105,64 @@ describe("agent conversation controller: snapshot-persistence", () => {
     controller.dispose();
   });
 
+  it("restores top-level model identity and real usage for context display", () => {
+    const snapshot: AgentConversationPersistenceSnapshot = {
+      version: 1,
+      activeSessionId: "session-context-usage",
+      conversations: [
+        {
+          ...storedConversation(
+            "session-context-usage",
+            "2026-08-28T08:00:00.000Z",
+            "继续写"
+          ),
+          messages: [
+            {
+              id: "assistant-context-usage",
+              role: "assistant",
+              content: "已完成。",
+              createdAt: "2026-08-28T08:01:00.000Z",
+              status: "completed",
+              runtime: {
+                provider: "example",
+                model: "writer-1",
+                mode: "provider",
+                configId: "model-config-1"
+              },
+              usage: {
+                inputTokens: 12_000,
+                outputTokens: 345,
+                cacheReadTokens: 0,
+                cacheWriteTokens: 0,
+                totalTokens: 12_345
+              }
+            }
+          ]
+        }
+      ]
+    };
+
+    const controller = useAgentConversation({
+      api: () => undefined,
+      initialPersistenceSnapshot: snapshot
+    });
+
+    expect(controller.messages.value[0]?.runtime).toEqual({
+      provider: "example",
+      model: "writer-1",
+      mode: "provider",
+      configId: "model-config-1"
+    });
+    expect(controller.messages.value[0]?.usage).toEqual({
+      inputTokens: 12_000,
+      outputTokens: 345,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 12_345
+    });
+    controller.dispose();
+  });
+
   it("preserves enabled web search in normal chat requests", async () => {
     const deferred = createDeferredApi();
     const controller = useAgentConversation({ api: () => deferred.api });

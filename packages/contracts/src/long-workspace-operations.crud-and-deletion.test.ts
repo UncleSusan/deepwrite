@@ -429,7 +429,34 @@ describe("long workspace operation engine: crud-and-deletion", () => {
           updatedAt: later,
           operations: [operation]
         })
-      ).not.toThrow();
+      ).toThrow(/already been committed/u);
+    }
+
+    const committedWithoutOptionalFiles = committedWorkspace();
+    for (const operation of [
+      {
+        type: "chapterContinuity.worldReveals.create" as const,
+        chapterCardId: "chapter_one",
+        file: worldReveals
+      },
+      {
+        type: "chapterContinuity.character.create" as const,
+        chapterCardId: "chapter_one",
+        characterId: "character_alice",
+        currentState,
+        history
+      }
+    ]) {
+      expect(() =>
+        applyLongWorkspaceOperations(
+          structuredClone(committedWithoutOptionalFiles),
+          {
+            baseRevision: committedWithoutOptionalFiles.revision,
+            updatedAt: later,
+            operations: [operation]
+          }
+        )
+      ).toThrow(/already been committed/u);
     }
 
     for (const forbiddenType of [

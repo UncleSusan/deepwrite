@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import conversationSource from "./ConversationMessageList.vue?raw";
 import messageItemSource from "./ConversationMessageItem.vue?raw";
 import processingItemSource from "./ConversationProcessingItem.vue?raw";
 import streamedContentSource from "./StreamedContent.vue?raw";
+import streamingMarkdownSource from "./StreamingMarkdown.vue?raw";
 import streamingTextSource from "./StreamingText.vue?raw";
 import subagentSource from "./SubagentRunList.vue?raw";
 
 describe("streaming conversation content", () => {
-  it("uses an incremental text node while the model is streaming", () => {
-    expect(streamedContentSource).toContain(
-      "props.streaming || props.content.length > MAX_SAFE_MARKDOWN_LENGTH"
-    );
+  it("keeps thinking as incremental plain text in every state", () => {
+    expect(streamedContentSource).toContain('props.format === "plain"');
+    expect(processingItemSource).toContain('format="plain"');
+    expect(subagentSource).toContain('format="plain"');
     expect(streamingTextSource).toContain("textNode.appendData");
     expect(streamingTextSource).toContain("globalThis.requestAnimationFrame");
     expect(streamingTextSource).toContain("BACKGROUND_RENDER_FALLBACK_MS");
@@ -18,7 +18,24 @@ describe("streaming conversation content", () => {
     expect(streamingTextSource).not.toContain("v-html");
   });
 
-  it("keeps Markdown for completed normal-size content and protects huge traces", () => {
+  it("renders formal responses as throttled Markdown while streaming", () => {
+    expect(streamedContentSource).toContain(
+      'import StreamingMarkdown from "./StreamingMarkdown.vue"'
+    );
+    expect(streamedContentSource).toContain(
+      '<StreamingMarkdown\n    v-else-if="streaming"'
+    );
+    expect(streamingMarkdownSource).toContain(
+      'import { renderMarkdown } from "../utils/renderMarkdown"'
+    );
+    expect(streamingMarkdownSource).toContain("scheduler.schedule()");
+    expect(streamingMarkdownSource).toContain("scheduler.flush()");
+    expect(streamingMarkdownSource).toContain('v-html="html"');
+    expect(messageItemSource).toContain('format="markdown"');
+    expect(processingItemSource).toContain('format="markdown"');
+  });
+
+  it("uses one final Markdown pass and protects extremely large output", () => {
     expect(streamedContentSource).toContain(
       "MAX_SAFE_MARKDOWN_LENGTH = 100_000"
     );
@@ -30,18 +47,19 @@ describe("streaming conversation content", () => {
     ).toHaveLength(2);
     expect(processingItemSource).toContain(':streaming="streaming"');
     expect(messageItemSource).toContain(':content="visibleResponse(message)"');
-    expect(
-      `${conversationSource}\n${messageItemSource}\n${processingItemSource}`
-    ).not.toContain("<MessageMarkdown");
+    expect(messageItemSource).not.toContain("<MessageMarkdown");
+    expect(processingItemSource).not.toContain("<MessageMarkdown");
   });
 
-  it("applies the same safe streaming renderer to subagent output", () => {
+  it("applies the same response and thinking split to subagent output", () => {
     expect(subagentSource).toContain(
       'import StreamedContent from "./StreamedContent.vue"'
     );
     expect(
       subagentSource.match(/:streaming="run\.status === 'running'"/g)
     ).toHaveLength(2);
+    expect(subagentSource.match(/format="markdown"/g)).toHaveLength(2);
+    expect(subagentSource.match(/format="plain"/g)).toHaveLength(1);
     expect(subagentSource).not.toContain("<MessageMarkdown");
   });
 });

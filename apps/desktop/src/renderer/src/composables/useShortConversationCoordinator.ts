@@ -1,5 +1,7 @@
 import {
   ATTACHED_CONTEXT_MAX_ITEMS,
+  resolveScriptWorkspaceStageReadAccess,
+  resolveShortWorkspaceStageReadAccess,
   resolveScriptWorkspaceAgentIdForStage,
   resolveShortWorkspaceAgentIdForStage,
   type Book,
@@ -27,6 +29,7 @@ import {
 } from "../data/catalogWorkspace";
 import type {
   ComposerReferenceOption,
+  ConversationMessageRewriteRequest,
   EditorTextReference
 } from "../types/conversation";
 import type { WorkspaceDocument } from "../types/workspace";
@@ -37,12 +40,19 @@ import {
 import { buildLibraryAgentWorkspaceContext } from "../utils/libraryAgentContext";
 import { buildLibraryAgentSkillAttachments } from "../utils/libraryAgentSkillAttachments";
 import { buildLibraryAttachments } from "../utils/libraryAttachments";
+import { scopeBookLibrariesToReadAccess } from "../utils/shortWorkspaceLibraryScope";
+import { createConversationHistoryRewriteDispatcher } from "./agent-conversation/history-rewrite-dispatcher";
 
-const COMPOSER_STAGE_LABELS = {
-  character_design: "人设",
-  plot_design: "剧情",
-  expert_draft_coordinator: "正文"
-} as const satisfies Record<WorkspaceAgentId, string>;
+function composerStageLabel(
+  descriptor: ShortConversationDocumentDescriptor
+): string {
+  if (descriptor.stageId === "character_design") return "人设";
+  if (descriptor.stageId === "draft") return "正文";
+  if (descriptor.stageId) return "剧情";
+  if (descriptor.domain === "skill") return "技能库";
+  if (descriptor.domain === "material") return "素材库";
+  return "未选择阶段";
+}
 
 interface ShortConversationNotifications {
   info(message: string): void;
@@ -343,6 +353,10 @@ export function useShortConversationCoordinator(
       activeConversationScope.value
     )
   );
+  const resendMessage = createConversationHistoryRewriteDispatcher({
+    conversation: () => activeConversation.value,
+    dispatch: (request) => sendMessage([], request)
+  });
   const activeAgentId = computed<WorkspaceAgentId | undefined>(() => {
     const descriptor = activeDescriptor.value;
     if (!descriptor.stageId) return undefined;
@@ -375,6 +389,26 @@ export function useShortConversationCoordinator(
           ?.agents.find(({ id }) => id === agentId)
       : undefined;
   });
+  const effectiveShortReadAccess = computed(() => {
+    const profile = activeShortAgentProfile.value;
+    const descriptor = activeDescriptor.value;
+    if (!profile) return undefined;
+    if (!descriptor.stageId) {
+      return profile.readAccess;
+    }
+    const stage =
+      descriptor.workspaceType === "script"
+        ? resolveScriptWorkspaceStageReadAccess(descriptor.stageId)
+        : resolveShortWorkspaceStageReadAccess(descriptor.stageId);
+    return {
+      material: profile.readAccess.material.filter((kind) =>
+        stage.material.includes(kind)
+      ),
+      skill: profile.readAccess.skill.filter((kind) =>
+        stage.skill.includes(kind)
+      )
+    };
+  });
   const activeLibraryAgentProfile = computed(() => {
     const domain = activeLibraryDomain.value;
     return domain
@@ -397,7 +431,7 @@ export function useShortConversationCoordinator(
     return creationSkillReferences(
       options.catalog.snapshot.value,
       workspaceId ? options.catalog.findBook(workspaceId) : undefined,
-      activeShortAgentProfile.value?.readAccess.skill ?? []
+      effectiveShortReadAccess.value?.skill ?? []
     );
   });
   const availableMaterialReferences = computed<ComposerReferenceOption[]>(
@@ -413,7 +447,7 @@ export function useShortConversationCoordinator(
       return creationMaterialReferences(
         options.catalog.snapshot.value,
         workspaceId ? options.catalog.findBook(workspaceId) : undefined,
-        activeShortAgentProfile.value?.readAccess.material ?? []
+        effectiveShortReadAccess.value?.material ?? []
       );
     }
   );
@@ -426,13 +460,7 @@ export function useShortConversationCoordinator(
       contextTitle: descriptor.title,
       bookTitle:
         descriptor.workspaceTitle || descriptor.pathRoot || "未选择资源",
-      stageLabel: agentId
-        ? COMPOSER_STAGE_LABELS[agentId]
-        : descriptor.domain === "skill"
-          ? "技能库"
-          : descriptor.domain === "material"
-            ? "素材库"
-            : "未选择阶段",
+      stageLabel: composerStageLabel(descriptor),
       agentLabel:
         activeShortAgentProfile.value?.label ??
         activeLibraryAgentProfile.value?.label ??
@@ -453,7 +481,14 @@ export function useShortConversationCoordinator(
       availableMaterials: availableMaterialReferences.value,
       editorReferences: options.resource.pendingEditorReferences.value,
       leftCollapsed: options.resource.leftCollapsed.value,
-      rightCollapsed: options.resource.rightCollapsed.value
+      rightCollapsed: options.resource.rightCollapsed.value,
+      canRewriteHistory:
+        activeConversation.value.canRewriteHistory.value &&
+        !sendPreflightPending.value &&
+        options.edits.acceptingDocumentIds.value.size === 0 &&
+        options.edits.acceptingWorkspaceIds.value.size === 0 &&
+        !options.edits.hasQueued(),
+      submitEditedMessage: resendMessage
     };
   });
 
@@ -581,20 +616,49 @@ export function useShortConversationCoordinator(
   }
 
   function sendMessage(
-    promptAttachments: UserPromptAttachment[] = []
+    promptAttachments: UserPromptAttachment[] = [],
+    rewriteRequest?: ConversationMessageRewriteRequest
   ): Promise<void> {
     if (disposed) return Promise.resolve();
     if (activeSend) {
       options.notifications.info("正在准备上一条消息，请稍候。");
       return Promise.resolve();
     }
+    if (
+      rewriteRequest &&
+      (!activeConversation.value.canRewriteHistory.value ||
+        options.edits.acceptingDocumentIds.value.size > 0 ||
+        options.edits.acceptingWorkspaceIds.value.size > 0 ||
+        options.edits.hasQueued())
+    ) {
+      options.notifications.info("请先等待当前回复、审批和修改保存全部完成。");
+      return Promise.resolve();
+    }
     const target = captureSendTarget();
     sendPreflightPending.value = true;
     const operation = (async () => {
       try {
-        const contextReady = await options.resource.ensureDocumentsLoaded(
-          options.resource.contextDocuments()
-        );
+        const readAccess = effectiveShortReadAccess.value;
+        const contextDocuments = options.resource
+          .contextDocuments()
+          .filter((document) => {
+            if (!readAccess) return true;
+            if (document.domain === "material") {
+              return (
+                document.materialKind !== undefined &&
+                readAccess.material.includes(document.materialKind)
+              );
+            }
+            if (document.domain === "skill") {
+              return (
+                document.skillKind !== undefined &&
+                readAccess.skill.includes(document.skillKind)
+              );
+            }
+            return true;
+          });
+        const contextReady =
+          await options.resource.ensureDocumentsLoaded(contextDocuments);
         if (!sendTargetIsCurrent(target)) {
           notifyCanceledSend();
           return;
@@ -606,13 +670,34 @@ export function useShortConversationCoordinator(
         const agentDocument = options.resource.activeAgentDocument.value;
         const workspaceId =
           options.resource.activePromptDocument.value.workspaceId;
-        const attachments =
+        const workspaceBook = workspaceId
+          ? options.catalog.findBook(workspaceId)
+          : undefined;
+        const allAttachments =
           contextSnapshot &&
           agentDocument.domain === "creation" &&
-          workspaceId &&
-          options.catalog.findBook(workspaceId)
-            ? buildLibraryAttachments(contextSnapshot, workspaceId)
+          workspaceBook &&
+          readAccess
+            ? buildLibraryAttachments(
+                contextSnapshot,
+                scopeBookLibrariesToReadAccess(workspaceBook, readAccess)
+              )
             : null;
+        const attachments = allAttachments
+          ? {
+              ...allAttachments,
+              attachedSkills: allAttachments.attachedSkills.filter(
+                (item) =>
+                  item.kind !== undefined &&
+                  (readAccess?.skill.includes(item.kind) ?? false)
+              ),
+              attachedMaterials: allAttachments.attachedMaterials.filter(
+                (item) =>
+                  item.kind !== undefined &&
+                  (readAccess?.material.includes(item.kind) ?? false)
+              )
+            }
+          : null;
         const libraryProfile = activeLibraryAgentProfile.value;
         const librarySkillAttachments = libraryProfile
           ? buildLibraryAgentSkillAttachments(libraryProfile.readAccess.skills)
@@ -657,24 +742,36 @@ export function useShortConversationCoordinator(
         target.conversation.selectApprovalMode(
           options.settings.permissionMode()
         );
-        await target.conversation.sendMessage(
-          agentDocument,
-          liveDocuments,
-          {
-            ...(attachments
-              ? {
-                  attachedSkills: attachments.attachedSkills,
-                  attachedMaterials: attachments.attachedMaterials
-                }
-              : librarySkillAttachments
-                ? { attachedSkills: librarySkillAttachments.attachedSkills }
-                : {}),
-            ...(libraryAgentContext
-              ? { libraryWorkspace: libraryAgentContext }
-              : {})
-          },
-          promptAttachments
-        );
+        const workspaceAttachments = {
+          ...(attachments
+            ? {
+                attachedSkills: attachments.attachedSkills,
+                attachedMaterials: attachments.attachedMaterials
+              }
+            : librarySkillAttachments
+              ? { attachedSkills: librarySkillAttachments.attachedSkills }
+              : {}),
+          ...(libraryAgentContext
+            ? { libraryWorkspace: libraryAgentContext }
+            : {})
+        };
+        let rewriteStarted = true;
+        if (rewriteRequest) {
+          rewriteStarted = await target.conversation.resendMessage(
+            rewriteRequest,
+            agentDocument,
+            liveDocuments,
+            workspaceAttachments
+          );
+        } else {
+          await target.conversation.sendMessage(
+            agentDocument,
+            liveDocuments,
+            workspaceAttachments,
+            promptAttachments
+          );
+        }
+        if (!rewriteStarted) return;
         if (!sendTargetIsCurrent(target, { includeDraft: false })) return;
         options.edits.schedule(
           (queued) =>
@@ -786,6 +883,7 @@ export function useShortConversationCoordinator(
     selectModel,
     selectTemperature,
     selectThinking,
+    resendMessage,
     sendMessage,
     sendPreflightPending,
     stopGeneration,

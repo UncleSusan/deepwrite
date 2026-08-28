@@ -16,12 +16,17 @@ export const WorkspacePaneLayoutSchema = z.enum([
 ]);
 export type WorkspacePaneLayout = z.infer<typeof WorkspacePaneLayoutSchema>;
 
+export const TextViewModeSchema = z.enum(["edit", "preview"]);
+export type TextViewMode = z.infer<typeof TextViewModeSchema>;
+
 export const GeneralSettingsSchema = z.object({
   permissionMode: GeneralPermissionModeSchema,
+  autoApproveCrossStageOperations: z.boolean().default(false),
   autoSave: z.boolean(),
   language: AppLanguageSchema,
   showInMenuBar: z.boolean(),
-  workspacePaneLayout: WorkspacePaneLayoutSchema.default("agent-editor")
+  workspacePaneLayout: WorkspacePaneLayoutSchema.default("agent-editor"),
+  defaultTextViewMode: TextViewModeSchema.default("edit")
 });
 export type GeneralSettings = z.infer<typeof GeneralSettingsSchema>;
 
@@ -36,10 +41,12 @@ export type GeneralSettingsSnapshot = z.infer<
 export function createDefaultGeneralSettings(): GeneralSettings {
   return {
     permissionMode: "auto-approve",
+    autoApproveCrossStageOperations: false,
     autoSave: true,
     language: "auto",
     showInMenuBar: true,
-    workspacePaneLayout: "agent-editor"
+    workspacePaneLayout: "agent-editor",
+    defaultTextViewMode: "edit"
   };
 }
 

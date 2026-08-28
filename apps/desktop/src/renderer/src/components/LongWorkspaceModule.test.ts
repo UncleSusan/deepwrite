@@ -48,6 +48,13 @@ describe("LongWorkspaceModule boundary", () => {
       "editorPortChange: [port: LongWorkspaceEditorPort | null]"
     );
     expect(source).toContain(':ref="captureEditorPort"');
+    expect(source).toContain(
+      'import LongWorkspaceEditor from "./LongWorkspaceEditor.vue"'
+    );
+    expect(source).toContain("isLongWorkspaceEditorPort(instance)");
+    expect(source).not.toContain(
+      'import { LongWorkspaceEditor } from "./lazyAppComponents"'
+    );
     expect(source).toContain('emit("editorPortChange", null)');
     expect(shellSource).toContain(
       '@editor-port-change="updateLongWorkspaceEditorPort"'

@@ -15,7 +15,9 @@ import {
   type Model
 } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { buildShortWorkspaceTools } from "./short-agent-tools";
+import { shortProfile, shortWorkspace } from "./short-agent-tools.test-support";
 import {
   buildSpawnSubagentTool,
   buildSubagentSystemPrompt,
@@ -259,6 +261,76 @@ describe("blocking subagent runtime", () => {
     expect(tool?.executionMode).toBe("sequential");
     expect(tool?.description).toContain("continuity_checker");
     expect(tool?.description).not.toContain("disabled_writer");
+  });
+
+  it("lets child tools inherit cross-stage auto approval", async () => {
+    const requestUserInput = vi.fn(async () => {
+      throw new Error("cross-stage input should have been auto-approved");
+    });
+    const { tool } = makeHarness({
+      buildChildTools: () =>
+        buildShortWorkspaceTools({
+          workspace: shortWorkspace("character_design"),
+          profile: shortProfile(),
+          autoApproveCrossStageOperations: true,
+          requestUserInput
+        }),
+      responses: [
+        fauxAssistantMessage(
+          fauxToolCall(
+            "read",
+            { kind: "plot_stage", id: "plot_design" },
+            { id: "child-read-plot" }
+          ),
+          { stopReason: "toolUse" }
+        ),
+        fauxAssistantMessage(
+          fauxToolCall(
+            "edit",
+            {
+              kind: "plot_stage",
+              id: "plot_design",
+              replacements: [
+                { original_text: "唯一片段", new_text: "子智能体自动允许" }
+              ],
+              summary: "子智能体跨阶段修改"
+            },
+            { id: "child-edit-plot" }
+          ),
+          { stopReason: "toolUse" }
+        ),
+        fauxAssistantMessage(fauxText("子智能体修改提案已生成。"))
+      ]
+    });
+    if (!tool) throw new Error("spawn_subagent was not built");
+    const updates: AgentToolResult<SubagentToolDetails>[] = [];
+
+    await tool.execute(
+      "parent-auto-approve-call",
+      {
+        subagent_id: "continuity_checker",
+        task: "跨阶段修改剧情"
+      } as never,
+      undefined,
+      (update) => updates.push(update as AgentToolResult<SubagentToolDetails>)
+    );
+
+    expect(requestUserInput).not.toHaveBeenCalled();
+    expect(progressFrom(updates)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "child_tool_details",
+          toolName: "edit",
+          result: expect.objectContaining({
+            details: expect.objectContaining({
+              kind: "workspace-editor-mutation",
+              stageId: "plot_design",
+              summary: "子智能体跨阶段修改"
+            })
+          })
+        })
+      ])
+    );
   });
 
   it("closes the lifecycle with an error when child initialization fails", async () => {

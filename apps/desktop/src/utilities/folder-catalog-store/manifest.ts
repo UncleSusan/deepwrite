@@ -54,6 +54,7 @@ import {
   type FolderCurrentBookProjectManifest,
   type OpenFolderCatalogProjectResult
 } from "./types";
+import { initializeWritingContextFile } from "./writing-context";
 
 export function manifestContentItems(
   manifest: FolderCatalogProjectManifest
@@ -883,6 +884,12 @@ export async function writeNewResourceProject(
       resource,
       store.maxMarkdownBytes
     );
+    if (domain === "book") {
+      await initializeWritingContextFile(
+        stagingDirectory,
+        (resource as Book).bookType
+      );
+    }
     await atomicWriteJson(
       join(stagingDirectory, MANIFEST_FILE),
       manifest,

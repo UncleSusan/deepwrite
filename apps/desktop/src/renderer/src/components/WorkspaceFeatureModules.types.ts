@@ -2,6 +2,7 @@ import type {
   AppLanguage,
   AgentTeamCatalogSnapshot,
   CatalogSnapshot,
+  CreativePlotStage,
   GeneralPermissionMode,
   LearningImitationSettings,
   LibraryAgentSettings,
@@ -12,6 +13,7 @@ import type {
   ModelUsageDashboard,
   OfficialModelBalance,
   SkillLibrary,
+  TextViewMode,
   WorkspacePaneLayout,
   WorkspaceAgentSettings
 } from "@deepwrite/contracts";
@@ -22,11 +24,14 @@ export interface SettingsFeatureModule {
   kind: "settings";
   initialCategory: string;
   permissionMode: GeneralPermissionMode;
+  autoApproveCrossStageOperations: boolean;
   autoSaveEnabled: boolean;
   language: AppLanguage;
   showInMenuBar: boolean;
   workspacePaneLayout: WorkspacePaneLayout;
+  defaultTextViewMode: TextViewMode;
   workspaceAgentSettings: readonly WorkspaceAgentSettings[];
+  creativePlotStages: readonly CreativePlotStage[];
   longAgentSettings: LongAgentSettings | null;
   workspaceAgentLoading: boolean;
   workspaceAgentSaving: boolean;
@@ -44,6 +49,8 @@ export interface SettingsFeatureModule {
   modelSettings: ModelSettings | null;
   modelLoading: boolean;
   modelSaving: boolean;
+  freeModelsRefreshing: boolean;
+  freeModelsSaving: boolean;
   modelError: string | null;
   modelTestMessage: string | null;
   testingModelId: string | null;
@@ -79,7 +86,6 @@ export interface ModelsFeatureModule {
   settings: ModelSettings | null;
   loading: boolean;
   saving: boolean;
-  freeModelsRefreshing: boolean;
   error: string | null;
   testMessage: string | null;
   testingModelId: string | null;

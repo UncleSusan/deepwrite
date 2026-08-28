@@ -15,10 +15,102 @@ export const APPEARANCE_FONT_SIZE_LIMITS = {
 export const DEFAULT_APPEARANCE_UI_FONT_SIZE = 14;
 export const DEFAULT_APPEARANCE_CODE_FONT_SIZE = 13;
 
+export const APPEARANCE_CUSTOM_FONT_MAX_FILES_PER_INSTALL = 20;
+export const APPEARANCE_CUSTOM_FONT_MAX_FILE_BYTES = 64 * 1024 * 1024;
+export const APPEARANCE_CUSTOM_FONT_MAX_COUNT = 100;
+export const APPEARANCE_CUSTOM_FONT_MAX_TOTAL_BYTES = 512 * 1024 * 1024;
+export const APPEARANCE_CUSTOM_FONT_DISPLAY_NAME_MAX_LENGTH = 100;
+
+export const AppearanceCustomFontIdSchema = z
+  .string()
+  .regex(/^font_[\da-f]{64}$/u);
+export type AppearanceCustomFontId = z.infer<
+  typeof AppearanceCustomFontIdSchema
+>;
+
+export const AppearanceCustomFontFormatSchema = z.enum(["ttf", "otf"]);
+export type AppearanceCustomFontFormat = z.infer<
+  typeof AppearanceCustomFontFormatSchema
+>;
+
+export const AppearanceCustomFontSchema = z.object({
+  id: AppearanceCustomFontIdSchema,
+  displayName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(APPEARANCE_CUSTOM_FONT_DISPLAY_NAME_MAX_LENGTH),
+  format: AppearanceCustomFontFormatSchema,
+  byteSize: z
+    .number()
+    .int()
+    .positive()
+    .max(APPEARANCE_CUSTOM_FONT_MAX_FILE_BYTES),
+  installedAt: z.string().datetime()
+});
+export type AppearanceCustomFont = z.infer<typeof AppearanceCustomFontSchema>;
+
+export const AppearanceFontCatalogSnapshotSchema = z.object({
+  fonts: z
+    .array(AppearanceCustomFontSchema)
+    .max(APPEARANCE_CUSTOM_FONT_MAX_COUNT)
+});
+export type AppearanceFontCatalogSnapshot = z.infer<
+  typeof AppearanceFontCatalogSnapshotSchema
+>;
+
+export const AppearanceFontInstallFailureCodeSchema = z.enum([
+  "not_regular_file",
+  "unsupported_format",
+  "invalid_font",
+  "file_too_large",
+  "catalog_limit",
+  "read_failed"
+]);
+export type AppearanceFontInstallFailureCode = z.infer<
+  typeof AppearanceFontInstallFailureCodeSchema
+>;
+
+export const AppearanceFontInstallFailureSchema = z.object({
+  displayName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(APPEARANCE_CUSTOM_FONT_DISPLAY_NAME_MAX_LENGTH),
+  code: AppearanceFontInstallFailureCodeSchema
+});
+export type AppearanceFontInstallFailure = z.infer<
+  typeof AppearanceFontInstallFailureSchema
+>;
+
+export const AppearanceFontInstallResultSchema = z.discriminatedUnion(
+  "status",
+  [
+    z.object({ status: z.literal("canceled") }),
+    z.object({
+      status: z.literal("completed"),
+      catalog: AppearanceFontCatalogSnapshotSchema,
+      installedIds: z.array(AppearanceCustomFontIdSchema),
+      duplicateIds: z.array(AppearanceCustomFontIdSchema),
+      rejected: z.array(AppearanceFontInstallFailureSchema)
+    })
+  ]
+);
+export type AppearanceFontInstallResult = z.infer<
+  typeof AppearanceFontInstallResultSchema
+>;
+
 export const APPEARANCE_UI_FONT_FAMILIES = ["system", "sans", "yuan"] as const;
 export const AppearanceUiFontFamilySchema = z.enum(APPEARANCE_UI_FONT_FAMILIES);
 export type AppearanceUiFontFamily = z.infer<
   typeof AppearanceUiFontFamilySchema
+>;
+export const AppearanceUiFontSelectionSchema = z.union([
+  AppearanceUiFontFamilySchema,
+  AppearanceCustomFontIdSchema
+]);
+export type AppearanceUiFontSelection = z.infer<
+  typeof AppearanceUiFontSelectionSchema
 >;
 
 export const APPEARANCE_EDITOR_FONT_FAMILIES = [
@@ -33,6 +125,13 @@ export const AppearanceEditorFontFamilySchema = z.enum(
 );
 export type AppearanceEditorFontFamily = z.infer<
   typeof AppearanceEditorFontFamilySchema
+>;
+export const AppearanceEditorFontSelectionSchema = z.union([
+  AppearanceEditorFontFamilySchema,
+  AppearanceCustomFontIdSchema
+]);
+export type AppearanceEditorFontSelection = z.infer<
+  typeof AppearanceEditorFontSelectionSchema
 >;
 
 export const DEFAULT_APPEARANCE_UI_FONT_FAMILY: AppearanceUiFontFamily =
@@ -70,9 +169,32 @@ export interface AppearanceFontFamilyOption<T extends string> {
   stack: string;
 }
 
+export function isAppearanceCustomFontId(
+  value: unknown
+): value is AppearanceCustomFontId {
+  return AppearanceCustomFontIdSchema.safeParse(value).success;
+}
+
+export function appearanceCustomFontCssFamily(
+  rawId: AppearanceCustomFontId
+): string {
+  const id = AppearanceCustomFontIdSchema.parse(rawId);
+  return `DeepWriteCustom_${id.slice("font_".length)}`;
+}
+
+export function appearanceCustomFontSourceUrl(
+  rawId: AppearanceCustomFontId
+): string {
+  const id = AppearanceCustomFontIdSchema.parse(rawId);
+  return `deepwrite-font://asset/${id}`;
+}
+
 export function resolveAppearanceUiFontStack(
   family: string | undefined
 ): string {
+  if (isAppearanceCustomFontId(family)) {
+    return `"${appearanceCustomFontCssFamily(family)}", ${APPEARANCE_UI_FONT_STACKS[DEFAULT_APPEARANCE_UI_FONT_FAMILY]}`;
+  }
   if (family && family in APPEARANCE_UI_FONT_STACKS) {
     return APPEARANCE_UI_FONT_STACKS[family as AppearanceUiFontFamily];
   }
@@ -82,6 +204,9 @@ export function resolveAppearanceUiFontStack(
 export function resolveAppearanceEditorFontStack(
   family: string | undefined
 ): string {
+  if (isAppearanceCustomFontId(family)) {
+    return `"${appearanceCustomFontCssFamily(family)}", ${APPEARANCE_EDITOR_FONT_STACKS[DEFAULT_APPEARANCE_EDITOR_FONT_FAMILY]}`;
+  }
   if (family && family in APPEARANCE_EDITOR_FONT_STACKS) {
     return APPEARANCE_EDITOR_FONT_STACKS[family as AppearanceEditorFontFamily];
   }
@@ -137,10 +262,10 @@ export const AppearanceSettingsSchema = z.object({
   mode: AppearanceModeSchema,
   light: AppearanceThemeConfigSchema,
   dark: AppearanceThemeConfigSchema,
-  uiFontFamily: AppearanceUiFontFamilySchema.default(
+  uiFontFamily: AppearanceUiFontSelectionSchema.default(
     DEFAULT_APPEARANCE_UI_FONT_FAMILY
   ),
-  editorFontFamily: AppearanceEditorFontFamilySchema.default(
+  editorFontFamily: AppearanceEditorFontSelectionSchema.default(
     DEFAULT_APPEARANCE_EDITOR_FONT_FAMILY
   )
 });
@@ -198,3 +323,30 @@ export const AppearanceSaveCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("appearance.save"),
   payload: AppearanceSettingsSchema
 });
+
+export const AppearanceFontsListCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("appearance.fonts.list"),
+    payload: z.object({}).strict()
+  });
+
+export const AppearanceFontsInstallCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("appearance.fonts.install"),
+    payload: z.object({}).strict()
+  });
+
+export const AppearanceFontsRemoveCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("appearance.fonts.remove"),
+    payload: z.object({ id: AppearanceCustomFontIdSchema }).strict()
+  });
+
+export const AppearanceFontRemoveResultSchema = z.object({
+  removed: z.boolean(),
+  catalog: AppearanceFontCatalogSnapshotSchema,
+  appearance: AppearanceSettingsSnapshotSchema
+});
+export type AppearanceFontRemoveResult = z.infer<
+  typeof AppearanceFontRemoveResultSchema
+>;

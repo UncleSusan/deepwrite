@@ -15,7 +15,7 @@ describe("App lazy feature mounting", () => {
       '() => import("./SettingsPage.vue")'
     );
     expect(lazyComponentsSource).toContain(
-      '() => import("./LongWorkspaceEditor.vue")'
+      '() => import("./LongWorkspaceModule.vue")'
     );
     expect(lazyComponentsSource).toContain(
       '() => import("./AgentTeamCatalogFeature.vue")'

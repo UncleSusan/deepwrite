@@ -28,6 +28,12 @@ export interface DeepWriteFreeModelCatalog {
   enabled: boolean;
   message: string;
   manifestAvailable: boolean;
+  /**
+   * True only after this process has fetched and validated an enabled,
+   * version-compatible manifest. Cached or disabled manifests must never be
+   * used to conclude that a previously known model was removed.
+   */
+  canDeprecateMissingModels: boolean;
   defaultModelId: string;
   models: ModelConfigInput[];
   /**
@@ -55,6 +61,7 @@ const EMPTY_CATALOG: DeepWriteFreeModelCatalog = {
   enabled: false,
   message: "DeepWrite 免费模型配置暂时不可用，请稍后重试。",
   manifestAvailable: false,
+  canDeprecateMissingModels: false,
   defaultModelId: "",
   models: [],
   apiKeys: {}
@@ -155,25 +162,20 @@ export function parseDeepWriteFreeModelManifest(
   const minimumVersion =
     typeof raw.minAppVersion === "string" ? raw.minAppVersion.trim() : "";
   const status = isRecord(raw.status) ? raw.status : {};
-  const enabled = status.enabled !== false;
-  const message =
+  const remotelyEnabled = status.enabled !== false;
+  const remoteMessage =
     typeof status.message === "string" && status.message.trim()
       ? status.message.trim().slice(0, 500)
-      : enabled
+      : remotelyEnabled
         ? ""
         : "DeepWrite 免费模型当前已暂停使用。";
-
-  if (minimumVersion && versionIsOlder(appVersion, minimumVersion)) {
-    return {
-      revision,
-      enabled: false,
-      message: `当前版本过低，请升级到 DeepWrite ${minimumVersion} 或更高版本。`,
-      manifestAvailable: true,
-      defaultModelId: "",
-      models: [],
-      apiKeys: {}
-    };
-  }
+  const versionTooOld = Boolean(
+    minimumVersion && versionIsOlder(appVersion, minimumVersion)
+  );
+  const enabled = remotelyEnabled && !versionTooOld;
+  const message = versionTooOld
+    ? `当前版本过低，请升级到 DeepWrite ${minimumVersion} 或更高版本。`
+    : remoteMessage;
 
   if (!Array.isArray(raw.models) || raw.models.length > 50) {
     throw new Error("远程免费模型列表无效或数量超过限制。");
@@ -192,17 +194,14 @@ export function parseDeepWriteFreeModelManifest(
   const defaultModelId = uniqueIds.has(requestedDefaultModelId)
     ? requestedDefaultModelId
     : (parsedModels[0]?.id ?? "");
-  if (enabled && parsedModels.length === 0) {
-    throw new Error("远程免费模型配置没有可用模型。");
-  }
-
   return {
     revision,
     enabled,
     message,
     manifestAvailable: true,
+    canDeprecateMissingModels: false,
     defaultModelId,
-    models: enabled ? parsedModels : [],
+    models: parsedModels,
     apiKeys: enabled
       ? Object.fromEntries(
           parsedRemoteModels.flatMap(({ model, apiKey }) =>
@@ -333,7 +332,10 @@ export class DeepWriteFreeModelCatalogStore {
         manifest,
         this.appVersion
       );
-      this.catalog = catalog;
+      this.catalog = {
+        ...catalog,
+        canDeprecateMissingModels: catalog.enabled
+      };
       const cache: RemoteModelConfigCache = {
         version: 1,
         fetchedAt: new Date(now).toISOString(),

@@ -7,6 +7,7 @@ import type {
   SessionPromptCommandPayload
 } from "./session";
 import type {
+  ModelCapacityResult,
   ModelConnectionTestResult,
   ModelConfigInput,
   OfficialModelBalance,
@@ -24,6 +25,8 @@ import type {
 } from "./workspace";
 import type {
   AgentTeamCatalogSnapshot,
+  AgentTeamPackageExportResult,
+  AgentTeamPackageInstallResult,
   AgentTeamProfileCreateInput,
   AgentTeamProfileRenameInput,
   AgentTeamProfileSaveInput,
@@ -31,8 +34,18 @@ import type {
   AgentTeamProfileTargetInput
 } from "./agent-team-catalog";
 import type { WorkspaceType } from "./script-workspace";
+import type {
+  ReadWritingContextInput,
+  ReadWritingContextResult,
+  WriteWritingContextInput,
+  WriteWritingContextResult
+} from "./writing-context";
 import type { WorkspaceDirectorySettings } from "./workspace-directory";
 import type {
+  AppearanceCustomFontId,
+  AppearanceFontCatalogSnapshot,
+  AppearanceFontInstallResult,
+  AppearanceFontRemoveResult,
   AppearanceSettings,
   AppearanceSettingsSnapshot
 } from "./appearance";
@@ -233,6 +246,12 @@ export interface DeepWriteApi {
     readDocument(
       input: CatalogReadDocumentInput
     ): Promise<CatalogReadDocumentResult>;
+    readWritingContext(
+      input: ReadWritingContextInput
+    ): Promise<ReadWritingContextResult>;
+    writeWritingContext(
+      input: WriteWritingContextInput
+    ): Promise<WriteWritingContextResult>;
     snapshot(): Promise<CatalogSnapshot>;
     loadDraftRecovery(): Promise<CatalogDraftRecovery>;
     saveDraftRecovery(drafts: CatalogDraftRecovery): Promise<void>;
@@ -354,6 +373,10 @@ export interface DeepWriteApi {
   models: {
     list(): Promise<ModelSettings>;
     refreshFree(): Promise<ModelSettings>;
+    setFreeModelEnabled(
+      modelId: string,
+      enabled: boolean
+    ): Promise<ModelSettings>;
     refreshOfficial(): Promise<ModelSettings>;
     queryOfficialBalance(): Promise<OfficialModelBalance>;
     saveOfficialToken(apiKey: string): Promise<ModelSettings>;
@@ -364,6 +387,7 @@ export interface DeepWriteApi {
     ): Promise<ModelSettings>;
     save(settings: ModelSettingsInput): Promise<ModelSettings>;
     test(model: ModelConfigInput): Promise<ModelConnectionTestResult>;
+    resolveCapacity(model: ModelConfigInput): Promise<ModelCapacityResult>;
     listRemote(input: RemoteModelListInput): Promise<RemoteModelListResult>;
   };
   modelUsage: {
@@ -410,6 +434,10 @@ export interface DeepWriteApi {
       input: AgentTeamProfileSetEnabledInput
     ): Promise<AgentTeamCatalogSnapshot>;
     save(input: AgentTeamProfileSaveInput): Promise<AgentTeamCatalogSnapshot>;
+    download(
+      input: AgentTeamProfileTargetInput
+    ): Promise<AgentTeamPackageExportResult>;
+    install(): Promise<AgentTeamPackageInstallResult>;
   };
   libraryAgents: {
     list(): Promise<LibraryAgentSettings>;
@@ -432,6 +460,11 @@ export interface DeepWriteApi {
   appearance: {
     list(): Promise<AppearanceSettingsSnapshot>;
     save(settings: AppearanceSettings): Promise<AppearanceSettingsSnapshot>;
+    fonts: {
+      list(): Promise<AppearanceFontCatalogSnapshot>;
+      install(): Promise<AppearanceFontInstallResult>;
+      remove(id: AppearanceCustomFontId): Promise<AppearanceFontRemoveResult>;
+    };
   };
   generalSettings: {
     list(): Promise<GeneralSettingsSnapshot>;

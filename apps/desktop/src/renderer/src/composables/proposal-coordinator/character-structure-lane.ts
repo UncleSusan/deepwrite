@@ -1,5 +1,6 @@
 import type { AgentEditProposal } from "../../types/conversation";
 import type { AgentConversationController } from "../useAgentConversation";
+import { saveCreatedCharacterContent } from "./creation-content";
 import {
   createShortWorkspaceContentRevision,
   type CharacterStructureMutation
@@ -96,15 +97,39 @@ export function createCharacterStructureLane(ctx: ProposalLaneContext) {
     });
     setAgentEditWorkspaceAccepting(proposal.workspaceId, true);
     try {
-      await currentApi.catalog.mutateCharacterStructure({
+      const updatedBook = await currentApi.catalog.mutateCharacterStructure({
         bookId: proposal.workspaceId,
         baseProjectRevision: book.projectRevision,
         mutation: target.mutation
       });
+      if (
+        target.mutation.type === "createItem" &&
+        target.initialContent?.trim()
+      ) {
+        if (!target.mutation.itemId) {
+          throw new Error("人物创建结果缺少稳定条目 id，无法写入人物正文。");
+        }
+        await saveCreatedCharacterContent(currentApi.catalog, {
+          bookId: proposal.workspaceId,
+          itemId: target.mutation.itemId,
+          content: target.initialContent,
+          ...(updatedBook.projectRevision === undefined
+            ? {}
+            : { projectRevision: updatedBook.projectRevision })
+        });
+      }
       await loadCatalogSnapshot();
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",
         proposedText: undefined,
+        ...(updatedBook.projectRevision === undefined
+          ? {}
+          : {
+              discardSnapshot: {
+                ...proposal.discardSnapshot,
+                appliedProjectRevision: updatedBook.projectRevision
+              }
+            }),
         statusMessage: automatic
           ? "已自动批准并保存人物结构变更。"
           : "人物结构变更已保存到本地。"
@@ -214,8 +239,19 @@ export function createCharacterStructureLane(ctx: ProposalLaneContext) {
         ...(diff.truncated ? { truncated: true } : {}),
         createdAt: event.timestamp,
         updatedAt: event.timestamp,
+        ...(source.type === "updateItem"
+          ? {
+              discardSnapshot: {
+                beforeText: source.previousTitle,
+                beforeTitle: source.previousTitle
+              }
+            }
+          : {}),
         characterStructureTarget: {
           mutation,
+          ...(mutationTarget.initialContent
+            ? { initialContent: mutationTarget.initialContent }
+            : {}),
           ...(book.projectRevision === undefined
             ? {}
             : { baseProjectRevision: book.projectRevision })

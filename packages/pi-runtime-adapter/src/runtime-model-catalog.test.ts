@@ -26,6 +26,18 @@ describe("DeepWrite runtime model catalog", () => {
     );
   });
 
+  it("treats DeepSeek V4 Flash Vision Exp as a multimodal Flash model", () => {
+    expect(
+      findDeepWriteRuntimeModel("deepseek-v4-flash-vision-exp")
+    ).toMatchObject({
+      id: "deepseek-v4-flash-vision-exp",
+      input: ["text", "image"],
+      reasoning: true,
+      contextWindow: 1_000_000,
+      maxTokens: 384_000
+    });
+  });
+
   it.each(["grok-4.5", "grok-4.6"])(
     "keeps the full 500K capacity for %s custom routes",
     (modelId) => {

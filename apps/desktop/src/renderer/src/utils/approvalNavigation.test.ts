@@ -275,6 +275,34 @@ describe("approval navigation target resolution", () => {
       }
     ]);
   });
+
+  it("maps ledger finalization cards to the continuity chapter", () => {
+    const item = {
+      status: "accepted",
+      approvalMode: "auto-approve",
+      event: {
+        id: "event_ledger",
+        type: "long.ledger_commit_proposal",
+        payload: {
+          bookId: "long_book",
+          input: { chapterCardId: "chapter_test" }
+        }
+      }
+    } as unknown as LongWorkspaceProposalItem;
+
+    expect(resolveLongProposalApprovalTarget(item)).toEqual({
+      kind: "long",
+      bookId: "long_book",
+      candidates: [
+        {
+          kind: "chapter-card",
+          chapterCardId: "chapter_test",
+          view: "continuity"
+        },
+        { kind: "root", root: "continuity_ledger" }
+      ]
+    });
+  });
 });
 
 describe("long approval navigation against the latest index", () => {

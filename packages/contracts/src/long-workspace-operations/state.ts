@@ -12,6 +12,7 @@ import type {
 } from "./impact-schema";
 import { LongWorkspaceOperationError } from "./impact-schema";
 import { normalizeStoryPlotOrders } from "./order-utils";
+import { chapterMutationViolation } from "./chapter-mutation-guard";
 
 export { nextOrder } from "./order-utils";
 
@@ -223,6 +224,15 @@ export function assertChapterIsMutable(
   void workspace;
   void chapterCardId;
   void action;
+}
+
+export function assertChapterContinuityIsMutable(
+  workspace: LongWorkspaceIndexSnapshot,
+  chapterCardId: string,
+  action: string
+): void {
+  const violation = chapterMutationViolation(workspace, chapterCardId, action);
+  if (violation) operationError(violation.code, violation.message);
 }
 
 export function assertPlacementIsMutable(

@@ -31,44 +31,20 @@ export const DEFAULT_AGENT_WELCOME: AgentWelcomeContent = {
 };
 
 export const SHORT_AGENT_WELCOME_CONTENT = {
-  character_design: {
-    title: "从一个人物设计开始",
+  short: {
+    title: "从当前短篇阶段开始",
     description:
-      "我是人物设计智能体，用于创建、管理和完善优秀的人设，让角色能够直接服务于后续剧情与正文。",
-    questions: DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.character_design
-  },
-  plot_design: {
-    title: "从一个精彩剧情开始",
-    description:
-      "我是剧情设计智能体，用于设计和管理故事主线、导语钩子与剧情细节，让冲突、转折和结局前后连贯。",
-    questions: DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.plot_design
-  },
-  expert_draft_coordinator: {
-    title: "从一篇完整正文开始",
-    description:
-      "我是正文专家智能体，统一负责正文结构、整篇创作、当前小节写作，以及成稿审阅、润色和跨节修订。",
-    questions: DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.expert_draft_coordinator
+      "我是短篇智能体，统一负责人物、剧情和正文，并根据你当前打开的阶段加载对应上下文。",
+    questions: DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS.short
   }
 } as const satisfies Record<ShortWorkspaceAgentId, AgentWelcomeContent>;
 
 export const SCRIPT_AGENT_WELCOME_CONTENT = {
-  character_design: {
-    title: "从一组剧本人物开始",
+  script: {
+    title: "从当前剧本阶段开始",
     description:
-      "我是剧本人物智能体，用于创建和完善适合镜头、行动与对白呈现的人物设计。",
-    questions: DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.character_design
-  },
-  plot_design: {
-    title: "从一条剧本主线开始",
-    description:
-      "我是剧本剧情智能体，用于设计可拆场、可拍摄且因果连贯的剧情结构。",
-    questions: DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.plot_design
-  },
-  expert_draft_coordinator: {
-    title: "从一部完整剧本开始",
-    description:
-      "我是剧本正文专家，统一负责剧集结构、全剧创作、当前剧集写作和跨集修订。",
-    questions: DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.expert_draft_coordinator
+      "我是剧本智能体，统一负责人物、剧情和正文，并根据你当前打开的阶段加载对应上下文。",
+    questions: DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS.script
   }
 } as const satisfies Record<ScriptWorkspaceAgentId, AgentWelcomeContent>;
 

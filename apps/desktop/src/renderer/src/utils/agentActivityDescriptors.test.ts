@@ -87,7 +87,7 @@ describe("resolveAgentActivityDescriptor", () => {
     expect(
       resolveAgentActivityDescriptor("book-one:character_design", sources)
     ).toMatchObject({
-      agentLabel: "人物",
+      agentLabel: "短篇智能体",
       contextLabel: "测试短篇 · 人物概览",
       targetResourceId: "character-node"
     });

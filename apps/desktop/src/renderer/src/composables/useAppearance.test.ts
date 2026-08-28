@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { expectSourceToContain } from "../../../test-utils/sourceText";
+import themeRuntimeSource from "./appearanceThemeRuntime.ts?raw";
 import source from "./useAppearance.ts?raw";
 
 describe("useAppearance", () => {
@@ -13,21 +14,22 @@ describe("useAppearance", () => {
 
   it("migrates legacy localStorage settings when disk config is missing", () => {
     expect(source).toContain("if (!snapshot.persisted)");
-    expect(source).toContain("await api.save(legacy.data)");
+    expect(source).toContain("await api.save(normalized)");
     expect(source).toContain("hydrateFromDesktop");
   });
 
   it("applies selected font families to document CSS variables", () => {
-    expectSourceToContain(source, 'root.style.setProperty("--ui-font"');
-    expect(source).toContain("root.style.setProperty(");
-    expect(source).toContain('"--editor-font"');
-    expect(source).toContain(
-      "resolveAppearanceUiFontStack(state.uiFontFamily)"
+    expectSourceToContain(
+      themeRuntimeSource,
+      'root.style.setProperty("--ui-font"'
     );
-    expect(source).toContain(
-      "resolveAppearanceEditorFontStack(state.editorFontFamily)"
-    );
+    expect(themeRuntimeSource).toContain('"--editor-font"');
+    expect(themeRuntimeSource).toContain("resolveAppearanceUiFontStack(");
+    expect(themeRuntimeSource).toContain("resolveAppearanceEditorFontStack(");
+    expect(source).toContain("applyAppearanceThemeToDocument({");
     expect(source).toContain("setUiFontFamily");
     expect(source).toContain("setEditorFontFamily");
+    expect(source).toContain("++uiFontSelectionIntent");
+    expect(source).toContain("++editorFontSelectionIntent");
   });
 });

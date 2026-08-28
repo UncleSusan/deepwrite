@@ -14,10 +14,8 @@ import {
   TemperatureSchema,
   ThinkingLevelSchema
 } from "../models";
-import {
-  ScriptWorkspaceAgentProfileSchema,
-  resolveScriptWorkspaceAgentIdForStage
-} from "../script-workspace";
+import { ScriptWorkspaceAgentProfileSchema } from "../script-agent-settings";
+import { resolveScriptWorkspaceAgentIdForStage } from "../script-workspace";
 import {
   ShortWorkspaceAgentProfileSchema,
   resolveShortWorkspaceAgentIdForStage
@@ -76,12 +74,14 @@ export const SessionPromptCommandPayloadSchema = z
     sessionId: z.string().min(1),
     message: z.string().trim().min(1).max(20_000),
     conversationHistory: SessionConversationHistorySchema.optional(),
+    conversationHistoryMode: z.literal("replace").optional(),
     mode: SessionModeSchema.optional(),
     attachments: UserPromptAttachmentsSchema.optional(),
     modelId: z.string().min(1).max(120).optional(),
     thinkingLevel: ThinkingLevelSchema.optional(),
     temperature: TemperatureSchema.optional(),
     writeApprovalMode: AgentWriteApprovalModeSchema.optional(),
+    autoApproveCrossStageOperations: z.boolean().optional(),
     chatAssistant: ChatAssistantRequestContextSchema.optional(),
     workspaceContext: WorkspaceRuntimeContextSchema.optional()
   })
@@ -108,6 +108,14 @@ export const SessionPromptCommandPayloadSchema = z
         code: "custom",
         path: ["writeApprovalMode"],
         message: "Chat assistant sessions cannot request write approval."
+      });
+    }
+    if (value.autoApproveCrossStageOperations !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["autoApproveCrossStageOperations"],
+        message:
+          "Chat assistant sessions cannot approve cross-stage operations."
       });
     }
   });

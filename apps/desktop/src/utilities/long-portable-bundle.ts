@@ -20,6 +20,7 @@ import {
   type LongWorkspaceFileReference,
   type LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
+import { assertLongV4LedgerFileAudit } from "./long-ledger-v4-audit";
 
 export const LONG_PORTABLE_BUNDLE_SCHEMA =
   "deepwrite.long-book.portable" as const;
@@ -401,7 +402,8 @@ export function assertLongLedgerRecordMatchesIndex(
 export function assertLongLedgerRecordChain(
   index: LongWorkspaceIndexSnapshot,
   records: readonly LongLedgerCommitRecord[],
-  finalProjectRevision = index.revision
+  finalProjectRevision = index.revision,
+  continuityFileContents?: ReadonlyMap<string, string>
 ): void {
   if (records.length !== index.ledger.commits.length) {
     throw new Error("连续性账本记录链数量与索引不一致。");
@@ -505,49 +507,7 @@ export function assertLongLedgerRecordChain(
     }
     previousRecord = record;
     orderedRecords.push(record);
-    if (record.schemaVersion === 4) {
-      const chapter = index.chapters.find(
-        ({ chapterCardId }) => chapterCardId === record.chapterCardId
-      );
-      if (!chapter) {
-        throw new Error(
-          `v4 连续性账本引用了不存在的章节：${record.chapterCardId}。`
-        );
-      }
-      const auditsForeshadowingChanges =
-        entry.foreshadowingBeatIds.length > 0 ||
-        record.continuityFiles.some(
-          ({ fileId }) => fileId === chapter.foreshadowingChanges.id
-        );
-      const expectedFiles = [
-        chapter.characterState,
-        chapter.handoff,
-        ...(auditsForeshadowingChanges ? [chapter.foreshadowingChanges] : []),
-        ...(chapter.worldReveals ? [chapter.worldReveals] : []),
-        ...chapter.characterContinuity.flatMap((continuity) => [
-          continuity.currentState,
-          continuity.history
-        ])
-      ];
-      const auditedById = new Map(
-        record.continuityFiles.map((file) => [file.fileId, file])
-      );
-      if (
-        auditedById.size !== expectedFiles.length ||
-        expectedFiles.some((reference) => {
-          const audited = auditedById.get(reference.id);
-          return (
-            !audited ||
-            audited.path !== reference.path ||
-            audited.revision !== reference.revision
-          );
-        })
-      ) {
-        throw new Error(
-          `v4 连续性账本的文件清单与章节索引不一致：${record.id}。`
-        );
-      }
-    }
+    assertLongV4LedgerFileAudit(index, entry, record, continuityFileContents);
     if (record.schemaVersion === 3) {
       const changedFileIds = new Set(
         record.fileChanges.map(({ fileId }) => fileId)
@@ -1124,7 +1084,17 @@ export function parseLongPortableExportBundle(
   if (seenIds.size !== expectedById.size) {
     throw new Error("长篇可移植包缺少索引中的文档。");
   }
-  assertLongLedgerRecordChain(index, ledgerRecords, manifest.revision);
+  const continuityFileContents = new Map(
+    files
+      .filter(({ kind }) => kind === "markdown")
+      .map(({ id, content }) => [id, content] as const)
+  );
+  assertLongLedgerRecordChain(
+    index,
+    ledgerRecords,
+    manifest.revision,
+    continuityFileContents
+  );
   const agentsMd =
     typeof bundle.agentsMd === "string" ? bundle.agentsMd : undefined;
   return {

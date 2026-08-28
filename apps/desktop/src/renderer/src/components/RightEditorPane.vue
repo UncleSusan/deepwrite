@@ -11,7 +11,8 @@ import {
 } from "vue";
 import {
   CATALOG_LIBRARY_ENTRY_MAX_CHARACTERS,
-  CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS
+  CATALOG_LIBRARY_OVERVIEW_MAX_CHARACTERS,
+  type TextViewMode
 } from "@deepwrite/contracts";
 import { randomHex8 } from "@deepwrite/shared";
 import type {
@@ -44,7 +45,9 @@ import { parseSkillFrontmatter } from "../utils/skillFrontmatter";
 import { createTransientScrollbarController } from "../utils/transientScrollbar";
 import { uiMessage } from "../ui-feedback";
 import { useEditorSaveViewport } from "../composables/useEditorSaveViewport";
+import { useTextViewMode } from "../composables/useTextViewMode";
 import AppIcon from "./AppIcon.vue";
+import DocumentMetaRow from "./DocumentMetaRow.vue";
 import MarkdownContent from "./MarkdownContent.vue";
 
 const props = defineProps<{
@@ -57,6 +60,7 @@ const props = defineProps<{
   saving?: boolean;
   manualSaving?: boolean;
   autoSaveEnabled?: boolean;
+  defaultViewMode: TextViewMode;
   boundToCurrentBook?: boolean;
   sectionTabs?: readonly { id: string; title: string }[];
   activeSectionId?: string | undefined;
@@ -83,7 +87,7 @@ const emit = defineEmits<{
 }>();
 
 const editorInput = ref<HTMLTextAreaElement>();
-const documentPreview = ref<HTMLElement>();
+const documentPreview = ref<HTMLElement | null>(null);
 const selectionMenuElement = ref<HTMLElement>();
 const editorToolsElement = ref<HTMLElement>();
 const findPanelElement = ref<HTMLElement>();
@@ -101,7 +105,9 @@ const nonWhitespaceCharacterCount = ref(
   countNonWhitespaceCharacters(content.value)
 );
 const dirty = ref(props.draftState?.dirty ?? false);
-const viewMode = ref<EditorScrollView>("edit");
+const { resetToDefault, setViewMode, viewMode } = useTextViewMode({
+  defaultMode: () => props.defaultViewMode
+});
 const findPanelOpen = ref(false);
 const findPanelMode = ref<"find" | "replace">("find");
 const searchQuery = ref("");
@@ -153,14 +159,14 @@ watch(activeScrollMemoryKey, (nextScrollMemoryKey, previousScrollMemoryKey) => {
     content.value
   );
   dirty.value = props.draftState?.dirty ?? false;
-  viewMode.value = "edit";
+  const nextViewMode = resetToDefault();
   selectionAction.value = null;
   findPanelOpen.value = false;
   searchQuery.value = "";
   replacementText.value = "";
   currentMatchIndex.value = -1;
   resetEditorHistory();
-  void restoreDocumentScroll(nextScrollMemoryKey, "edit");
+  void restoreDocumentScroll(nextScrollMemoryKey, nextViewMode);
 });
 
 watch(
@@ -406,7 +412,7 @@ function recordProgrammaticChange(
 async function restoreEditorHistory(
   result: TextHistoryRestoreResult
 ): Promise<void> {
-  viewMode.value = "edit";
+  setViewMode("edit");
   updateContent(result.content, result.nonWhitespaceDelta);
   await nextTick();
   const input = editorInput.value;
@@ -487,7 +493,7 @@ function closeSelectionAction(): void {
 
 function currentDocumentScroller(
   view: EditorScrollView
-): HTMLElement | undefined {
+): HTMLElement | null | undefined {
   return view === "edit" ? editorInput.value : documentPreview.value;
 }
 
@@ -525,10 +531,15 @@ function handleDocumentScroll(event: Event): void {
 function selectViewMode(view: EditorScrollView): void {
   if (view === viewMode.value) return;
   rememberCurrentDocumentScroll();
-  viewMode.value = view;
+  setViewMode(view);
   closeSelectionAction();
   void restoreDocumentScroll(activeScrollMemoryKey.value, view);
 }
+
+watch(
+  () => props.defaultViewMode,
+  (mode) => selectViewMode(mode)
+);
 
 function closeFindPanel(): void {
   findPanelOpen.value = false;
@@ -541,7 +552,7 @@ async function toggleFindPanel(mode: "find" | "replace"): Promise<void> {
     return;
   }
 
-  viewMode.value = "edit";
+  setViewMode("edit");
   closeSelectionAction();
   findPanelMode.value = mode;
   findPanelOpen.value = true;
@@ -585,7 +596,7 @@ async function selectSearchMatch(index: number): Promise<void> {
   const match = searchMatches.value[index];
   if (!match) return;
   currentMatchIndex.value = index;
-  viewMode.value = "edit";
+  setViewMode("edit");
   await nextTick();
   const input = editorInput.value;
   if (!input) return;
@@ -757,7 +768,7 @@ async function locateEditorReference(
 ): Promise<void> {
   if (!navigation || navigation.reference.documentId !== props.document.id)
     return;
-  viewMode.value = "edit";
+  setViewMode("edit");
   closeSelectionAction();
   await nextTick();
   const input = editorInput.value;
@@ -1085,7 +1096,12 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="editor-document" :class="{ 'is-readonly': document.readOnly }">
-      <div class="document-meta-row">
+      <DocumentMetaRow
+        :view-mode="viewMode"
+        :content="content"
+        :preview-element="documentPreview"
+        :document-key="activeScrollMemoryKey"
+      >
         <span>{{ document.eyebrow }}</span>
         <span v-if="document.format" class="document-format">{{
           document.format
@@ -1103,7 +1119,7 @@ onBeforeUnmount(() => {
         >
           {{ skillFormatError }}
         </span>
-      </div>
+      </DocumentMetaRow>
 
       <input
         v-model="title"
@@ -1133,47 +1149,52 @@ onBeforeUnmount(() => {
         class="document-preview transient-scrollbar"
         @scroll="handleDocumentScroll"
       >
-        <MarkdownContent v-if="content.trim()" :content="content" />
+        <MarkdownContent
+          v-if="content.trim()"
+          :content="content"
+          annotate-headings
+        />
         <p v-else class="document-preview-empty">暂无内容</p>
       </article>
     </div>
 
     <footer class="editor-footer">
-      <span>
-        {{ characterCount.toLocaleString("zh-CN")
-        }}<template v-if="recommendedContentLength">
-          / {{ recommendedContentLength.toLocaleString("zh-CN") }}</template
+      <div class="editor-footer-meta">
+        <span>
+          {{ characterCount.toLocaleString("zh-CN")
+          }}<template v-if="recommendedContentLength">
+            / {{ recommendedContentLength.toLocaleString("zh-CN") }}</template
+          >
+          字
+        </span>
+        <span
+          v-if="isLibraryDocument"
+          class="library-entry-limit-hint"
+          :class="{ 'limit-warning': contentExceedsRecommendedLength }"
+          :title="
+            isLibraryOverview
+              ? '素材库或技能库介绍建议不超过 40,000 字'
+              : '每个素材库或技能库条目建议不超过 40,000 字，请勿上传过多内容'
+          "
         >
-        字
-      </span>
-      <span
-        v-if="isLibraryDocument"
-        class="library-entry-limit-hint"
-        :class="{ 'limit-warning': contentExceedsRecommendedLength }"
-        :title="
-          isLibraryOverview
-            ? '素材库或技能库介绍建议不超过 40,000 字'
-            : '每个素材库或技能库条目建议不超过 40,000 字，请勿上传过多内容'
-        "
-      >
-        {{
-          isLibraryOverview
-            ? "建议库介绍不超过 40,000 字"
-            : "建议每个条目不超过 40,000 字，请勿上传过多内容"
-        }}
-      </span>
-      <span class="editor-save-status">{{
-        locked
-          ? resolvedLockedLabel
-          : manualSaving
-            ? "正在原子保存本机文稿"
-            : persistedDocument
-              ? autoSaveEnabled
-                ? "本机文稿 · 更改后自动保存"
-                : "本机文稿 · 应用后持久保存"
-              : "内存草稿 · 重启后不保留"
-      }}</span>
-      <span class="footer-spacer" />
+          {{
+            isLibraryOverview
+              ? "建议库介绍不超过 40,000 字"
+              : "建议每个条目不超过 40,000 字，请勿上传过多内容"
+          }}
+        </span>
+        <span class="editor-save-status">{{
+          locked
+            ? resolvedLockedLabel
+            : manualSaving
+              ? "正在原子保存本机文稿"
+              : persistedDocument
+                ? autoSaveEnabled
+                  ? "本机文稿 · 更改后自动保存"
+                  : "本机文稿 · 应用后持久保存"
+                : "内存草稿 · 重启后不保留"
+        }}</span>
+      </div>
       <button
         class="save-button"
         type="button"

@@ -6,6 +6,9 @@ import {
 // @ts-expect-error Loaded as source text by the Vitest-only virtual module.
 import rendererStyles from "virtual:deepwrite-renderer-styles";
 import conversationSource from "./AgentConversation.vue?raw";
+import composerSource from "./ConversationComposer.vue?raw";
+import composerLogicSource from "../composables/useConversationComposer.ts?raw";
+import attachmentLogicSource from "../composables/useConversationAttachments.ts?raw";
 import userInputCardSource from "./AgentUserInputCard.vue?raw";
 import messageListSource from "./ConversationMessageList.vue?raw";
 import messageItemSource from "./ConversationMessageItem.vue?raw";
@@ -13,8 +16,10 @@ import processingTimelineSource from "./ConversationProcessingTimeline.vue?raw";
 import processingItemSource from "./ConversationProcessingItem.vue?raw";
 import presentationSource from "./conversationToolPresentation.ts?raw";
 import proposalCardSource from "./AgentEditProposalCard.vue?raw";
+import discardButtonSource from "./ApprovalDiscardButton.vue?raw";
 import writingWorkspaceSource from "./WritingWorkspaceModule.vue?raw";
 import subagentSource from "./SubagentRunList.vue?raw";
+import subagentPresentationSource from "./subagentRunPresentation.ts?raw";
 
 describe("AgentConversation edit proposal placement", () => {
   it("uses one composer card for agent questions and cross-stage confirmation", () => {
@@ -34,8 +39,10 @@ describe("AgentConversation edit proposal placement", () => {
     expect(userInputCardSource).not.toContain(
       'v-for="question in request.questions"'
     );
-    expect(conversationSource).toContain(
-      '<div v-else class="composer" :class="{ \'is-disabled\': responding }">'
+    expect(conversationSource).toContain("<ConversationComposer");
+    expect(conversationSource).toContain("v-else");
+    expect(composerSource).toContain(
+      '<div class="composer" :class="{ \'is-disabled\': responding }">'
     );
     expect(writingWorkspaceSource).toContain(
       ':user-input-request="conversationController.pendingUserInput.value"'
@@ -72,6 +79,25 @@ describe("AgentConversation edit proposal placement", () => {
     ).toHaveLength(2);
     expect(writingWorkspaceSource).toContain(
       "@locate-edit-proposal=\"emit('locateEditProposal', $event)\""
+    );
+  });
+
+  it("places discard beside target navigation only when the card is eligible", () => {
+    expect(proposalCardSource).toContain("discardable?: boolean");
+    expect(proposalCardSource).toContain("function showDiscardButton");
+    expect(discardButtonSource).toContain("舍弃本次修改");
+    expect(proposalCardSource).toContain("<ApprovalDiscardButton");
+    expect(presentationSource).toContain(
+      "canDiscard: agentApprovalCanDiscard(message, proposal)"
+    );
+    expect(`${messageItemSource}\n${processingItemSource}`).toContain(
+      ':discardable="approval.canDiscard"'
+    );
+    expect(`${messageItemSource}\n${processingItemSource}`).toContain(
+      ':discardable="item.canDiscard"'
+    );
+    expect(writingWorkspaceSource).toContain(
+      "@discard-edit-proposal=\"emit('discardEditProposal', $event)\""
     );
   });
 
@@ -241,14 +267,14 @@ describe("AgentConversation edit proposal placement", () => {
   });
 
   it("uses distinct composer placeholders for creative space and library agents", () => {
-    expect(conversationSource).toContain("composerPlaceholder");
-    expect(conversationSource).toContain(
+    expect(composerSource).toContain("composerPlaceholder");
+    expect(composerLogicSource).toContain(
       "随心输入，输入 / 调用技能，输入 @ 引用素材"
     );
-    expect(conversationSource).toContain(
+    expect(composerLogicSource).toContain(
       "输入 / 加载方法技能，输入 @ 引用当前库或同分组其它库的技能"
     );
-    expect(conversationSource).toContain(
+    expect(composerLogicSource).toContain(
       "输入 / 加载方法技能，输入 @ 引用当前库或同分组其它库的素材"
     );
   });
@@ -266,22 +292,19 @@ describe("AgentConversation edit proposal placement", () => {
   });
 
   it("scrolls the active slash or mention option into view when using arrow keys", () => {
-    expect(conversationSource).toContain(
+    expect(composerLogicSource).toContain(
       "function scrollActiveReferenceOptionIntoView"
     );
-    expect(conversationSource).toContain(
+    expect(composerLogicSource).toContain(
       "composer-reference-option-${activeReferenceIndex.value}"
     );
-    expect(conversationSource).toContain(
+    expect(composerLogicSource).toContain(
       'scrollIntoView({ block: "nearest" })'
     );
 
-    const keydownStart = conversationSource.indexOf("function handleKeydown");
-    const keydownEnd = conversationSource.indexOf(
-      "const welcomeContent",
-      keydownStart
-    );
-    const keydownBlock = conversationSource.slice(keydownStart, keydownEnd);
+    const keydownStart = composerLogicSource.indexOf("function handleKeydown");
+    const keydownEnd = composerLogicSource.indexOf("return {", keydownStart);
+    const keydownBlock = composerLogicSource.slice(keydownStart, keydownEnd);
     expect(keydownBlock).toContain(
       'event.key === "ArrowDown" || event.key === "ArrowUp"'
     );
@@ -290,9 +313,8 @@ describe("AgentConversation edit proposal placement", () => {
 
   it("renders a hover copy action and timestamp below both user and assistant messages", () => {
     expect(messageItemSource).toContain('<div class="message-content">');
-    expect(messageItemSource).toContain(
-      "v-if=\"message.content && message.status !== 'streaming'\""
-    );
+    expect(messageItemSource).toContain("message.status !== 'streaming' &&");
+    expect(messageItemSource).toContain("!editing");
     expect(messageItemSource).toContain("'复制回复'");
     expect(messageItemSource).toContain("'复制消息'");
 
@@ -342,39 +364,37 @@ describe("AgentConversation edit proposal placement", () => {
   });
 
   it("shows multiple independently clickable editor references inside the composer", () => {
-    expect(conversationSource).toContain(
-      'class="composer-editor-reference-list"'
-    );
-    expect(conversationSource).toContain(
+    expect(composerSource).toContain('class="composer-editor-reference-list"');
+    expect(composerSource).toContain(
       'v-for="editorReference in editorReferences"'
     );
-    expect(conversationSource).toContain('class="composer-editor-reference"');
-    expect(conversationSource).toContain("{{ editorReference.label }}");
-    expect(conversationSource).toContain(
+    expect(composerSource).toContain('class="composer-editor-reference"');
+    expect(composerSource).toContain("{{ editorReference.label }}");
+    expect(composerSource).toContain(
       "emit('locateEditorReference', editorReference)"
     );
-    expect(conversationSource).toContain(
-      "props.editorReferences.map(createEditorReferenceAttachment)"
+    expect(composerLogicSource).toContain(
+      "options.editorReferences().map(createEditorReferenceAttachment)"
     );
-    expect(conversationSource).toContain(
+    expect(composerSource).toContain(
       "emit('removeEditorReference', editorReference.id)"
     );
-    expect(conversationSource).toContain('emit("clearEditorReferences")');
+    expect(composerSource).toContain('emit("clearEditorReferences")');
   });
 
   it("adds pasted clipboard files through the existing attachment flow", () => {
-    expect(conversationSource).toContain("function handleComposerPaste");
-    expect(conversationSource).toContain(
+    expect(attachmentLogicSource).toContain("function handleComposerPaste");
+    expect(attachmentLogicSource).toContain(
       "promptAttachmentFilesFromClipboard(event.clipboardData)"
     );
-    expect(conversationSource).toContain("void addAttachmentFiles(files)");
-    expect(conversationSource).toContain('@paste="handleComposerPaste"');
+    expect(attachmentLogicSource).toContain("void addAttachmentFiles(files)");
+    expect(composerSource).toContain('@paste="handleComposerPaste"');
   });
 
   it("only lists configured models in the composer model selector", () => {
     expect(conversationSource).toContain("props.models.map");
-    expect(conversationSource).toContain('placeholder="选择模型"');
-    expect(conversationSource).not.toContain(
+    expect(composerSource).toContain('placeholder="选择模型"');
+    expect(`${conversationSource}\n${composerSource}`).not.toContain(
       '{ value: "", label: "DeepWrite Faux" }'
     );
   });
@@ -490,10 +510,10 @@ describe("AgentConversation edit proposal placement", () => {
     );
     expect(subagentSource).not.toContain('class="subagent-run-timeline"');
     expect(subagentSource).toContain("{{ run.task }}");
-    expect(subagentSource).toContain("{{ subagentStatusLabel(run) }}");
+    expect(subagentSource).toContain("{{ subagentStatusLabel(run, now) }}");
     expect(subagentSource).toContain("{{ run.toolCalls.length }} 个工具");
     expect(subagentSource).toContain("subagentReviewHint(message, run)");
-    expect(subagentSource).toContain("`${writeCount} 次写入调用`");
+    expect(subagentPresentationSource).toContain("`${writeCount} 次写入调用`");
     expect(subagentSource).not.toContain("`${writeCount} 项文本变更`");
     expect(subagentSource).toContain(
       "formatToolPayload(visibleToolArguments(item.tool))"
@@ -550,12 +570,14 @@ describe("AgentConversation edit proposal placement", () => {
     );
     expect(processingTimelineSource).not.toContain("retry-error");
 
-    expect(subagentSource).toContain("function subagentRetryStatus");
-    expect(subagentSource).toContain(
-      "网络波动，${seconds}s 后重试（${progress}）"
+    expect(subagentPresentationSource).toContain(
+      "export function subagentRetryStatus"
     );
-    expect(subagentSource).toContain("正在重试（${progress}）");
-    expect(subagentSource).toContain('v-if="subagentRetryStatus(run)"');
+    expect(subagentPresentationSource).toContain(
+      "网络波动，${retryCountdownSeconds(run, now)}s 后重试（${progress}）"
+    );
+    expect(subagentPresentationSource).toContain("正在重试（${progress}）");
+    expect(subagentSource).toContain('v-if="subagentRetryStatus(run, now)"');
   });
 
   it("keeps the elapsed clock alive for every visibly running state", () => {

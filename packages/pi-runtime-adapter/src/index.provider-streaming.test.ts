@@ -614,6 +614,81 @@ describe("DeepWrite Pi runtime adapter: provider-streaming", () => {
     expect(JSON.stringify(messages)).not.toContain("这条历史不应重复灌入");
   });
 
+  it("replaces a cached conversation agent with the supplied history", async () => {
+    const runtime = new PiAgentRuntimeAdapter({ tokensPerSecond: 0 });
+
+    for await (const _event of runtime.start({
+      runId: "run_history_before_replace",
+      sessionId: "session_history_replace",
+      prompt: "这轮内容稍后应被舍弃",
+      thinkingLevel: "off"
+    })) {
+      // Populate the cached conversation agent.
+    }
+
+    for await (const _event of runtime.start({
+      runId: "run_history_replace",
+      sessionId: "session_history_replace",
+      prompt: "修改后的问题",
+      conversationHistory: [
+        {
+          role: "user",
+          content: "保留的问题",
+          createdAt: "2026-08-25T10:00:00.000Z"
+        },
+        {
+          role: "assistant",
+          content: "保留的回答",
+          createdAt: "2026-08-25T10:01:00.000Z"
+        }
+      ],
+      conversationHistoryMode: "replace",
+      thinkingLevel: "off"
+    })) {
+      // Consume the replacement turn.
+    }
+
+    const cache = (
+      runtime as unknown as {
+        conversationAgents: Map<
+          string,
+          { state: { messages: Array<{ role?: string; content?: unknown }> } }
+        >;
+      }
+    ).conversationAgents;
+    const messages = cache.get("session_history_replace:default")?.state
+      .messages;
+
+    expect(messages?.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant"
+    ]);
+    expect(JSON.stringify(messages)).toContain("保留的问题");
+    expect(JSON.stringify(messages)).toContain("修改后的问题");
+    expect(JSON.stringify(messages)).not.toContain("这轮内容稍后应被舍弃");
+
+    for await (const _event of runtime.start({
+      runId: "run_history_replace_empty",
+      sessionId: "session_history_replace",
+      prompt: "从第一条重新开始",
+      conversationHistoryMode: "replace",
+      thinkingLevel: "off"
+    })) {
+      // Consume an empty-prefix replacement turn.
+    }
+
+    const resetMessages = cache.get("session_history_replace:default")?.state
+      .messages;
+    expect(resetMessages?.map((message) => message.role)).toEqual([
+      "user",
+      "assistant"
+    ]);
+    expect(JSON.stringify(resetMessages)).toContain("从第一条重新开始");
+    expect(JSON.stringify(resetMessages)).not.toContain("保留的问题");
+  });
+
   it("uses the same permanent-context transcript for creative workspace agents", async () => {
     const runtime = new PiAgentRuntimeAdapter({ tokensPerSecond: 0 });
     const scriptWorkspace = screenplayWorkspace();
@@ -640,9 +715,7 @@ describe("DeepWrite Pi runtime adapter: provider-streaming", () => {
         >;
       }
     ).conversationAgents;
-    const agent = cache.get(
-      "session_script_history:script:expert_draft_coordinator"
-    );
+    const agent = cache.get("session_script_history:script:script");
     const userMessages = agent?.state.messages.filter(
       (message) => message.role === "user"
     );
@@ -655,16 +728,17 @@ describe("DeepWrite Pi runtime adapter: provider-streaming", () => {
       "剧本作品: 《雾港剧本》"
     );
     expect(String(userMessages?.[0]?.content)).toContain("先规划第一集");
-    expect(userMessages?.[1]?.content).toBe("继续细化开场");
+    expect(String(userMessages?.[1]?.content)).toContain(
+      "【本次智能体会话固定上下文】"
+    );
+    expect(String(userMessages?.[1]?.content)).toContain("继续细化开场");
 
-    const shortProfile = DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.find(
-      ({ id }) => id === "expert_draft_coordinator"
-    )!;
+    const shortProfile = DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES[0]!;
     const shortWorkspace = {
       ...(scriptWorkspace as unknown as ShortWorkspaceSnapshot),
       id: "short-history",
       title: "雾港短篇",
-      activeAgentId: "expert_draft_coordinator" as const
+      activeAgentId: "short" as const
     };
     for (const [index, prompt] of ["先规划第一节", "继续细化冲突"].entries()) {
       for await (const _event of runtime.start({
@@ -678,9 +752,7 @@ describe("DeepWrite Pi runtime adapter: provider-streaming", () => {
         // Consume both turns before inspecting the short-agent transcript.
       }
     }
-    const shortAgent = cache.get(
-      "session_short_history:expert_draft_coordinator"
-    );
+    const shortAgent = cache.get("session_short_history:short");
     const shortUserMessages = shortAgent?.state.messages.filter(
       (message) => message.role === "user"
     );
@@ -688,7 +760,10 @@ describe("DeepWrite Pi runtime adapter: provider-streaming", () => {
     expect(String(shortUserMessages?.[0]?.content)).toContain(
       "短篇作品: 《雾港短篇》"
     );
-    expect(shortUserMessages?.[1]?.content).toBe("继续细化冲突");
+    expect(String(shortUserMessages?.[1]?.content)).toContain(
+      "短篇作品: 《雾港短篇》"
+    );
+    expect(String(shortUserMessages?.[1]?.content)).toContain("继续细化冲突");
   });
 
   it("permanently injects worldbuilding context only into the first user message", async () => {

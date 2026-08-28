@@ -1,5 +1,7 @@
 import {
   renderLearningImitationSystemPrompt,
+  resolveScriptWorkspaceStageReadAccess,
+  resolveShortWorkspaceStageReadAccess,
   type LongAgentProfile
 } from "@deepwrite/contracts";
 import {
@@ -13,7 +15,11 @@ import { buildWritingSystemPrompt } from "./prompts-writing";
 import type { AgentRunInput } from "./runtime-types";
 import { renderSubagentAuthoringSystemPrompt } from "./subagent-authoring-tools";
 
-export { scriptRuntimeFormatRequirements } from "./prompts-writing";
+export {
+  scriptRuntimeFormatRequirements,
+  scriptRuntimeSystemRequirements,
+  shortRuntimeSystemRequirements
+} from "./prompts-writing";
 
 export function buildDeepWriteSystemPrompt(): string {
   return [
@@ -123,11 +129,18 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
   // and no implementation-level ids are exposed.
   const isLongRun = Boolean(longWorkspace && longProfile);
   const learningContext = input.workspaceContext?.learningImitation;
+  const writingStageReadAccess = scriptWorkspace
+    ? resolveScriptWorkspaceStageReadAccess(scriptWorkspace.activeStageId)
+    : shortWorkspace
+      ? resolveShortWorkspaceStageReadAccess(shortWorkspace.activeStageId)
+      : undefined;
   const readableSkills = writingProfile
     ? skills.filter(
         (item) =>
           item.kind !== undefined &&
-          writingProfile.readAccess.skill.includes(item.kind)
+          writingProfile.readAccess.skill.includes(item.kind) &&
+          (!writingStageReadAccess ||
+            writingStageReadAccess.skill.includes(item.kind))
       )
     : longProfile
       ? skills.filter(
@@ -142,7 +155,9 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
     ? materials.filter(
         (item) =>
           item.kind !== undefined &&
-          writingProfile.readAccess.material.includes(item.kind)
+          writingProfile.readAccess.material.includes(item.kind) &&
+          (!writingStageReadAccess ||
+            writingStageReadAccess.material.includes(item.kind))
       )
     : longProfile
       ? materials.filter(
@@ -164,7 +179,7 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
                 "\n"
               )}\n需要正文时调用 load_skill；name 可用完整名称或唯一短名。`
           : `可按需加载的技能：\n${readableSkills
-              .map((item) => `- ${item.title} [${item.kind}]`)
+              .map((item) => `- ${item.title} [${item.kind}]（id=${item.id}）`)
               .join(
                 "\n"
               )}\n需要正文时调用 load_skill；name 优先完整标题，也可用条目标题短名或库名（唯一命中即可）。`
@@ -176,7 +191,7 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
     isWritingAgentRun || isLongAgentRun
       ? readableMaterials.length
         ? `当前读取范围内的关联素材：\n${readableMaterials
-            .map((item) => `- ${item.title} [${item.kind}]`)
+            .map((item) => `- ${item.title} [${item.kind}]（id=${item.id}）`)
             .join("\n")}\n需要条目正文时调用 query_linked_material_entries。`
         : "当前读取范围内的关联素材: 无"
       : materials.length
@@ -188,6 +203,12 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
     "【本次智能体会话固定上下文】",
     isLongRun ? "" : `sessionId: ${input.sessionId}`,
     isLongRun ? "" : `runId: ${input.runId}`,
+    writingWorkspace
+      ? `【${scriptWorkspace ? "剧本" : "短篇"}上下文（AGENTS.md）】\n${writingWorkspace.agentsMd ?? "未提供"}`
+      : "",
+    writingWorkspace
+      ? `【当前${scriptWorkspace ? "剧本" : "短篇"}情况（发送时快照）】`
+      : "",
     writingWorkspace
       ? `${scriptWorkspace ? "剧本" : "短篇"}作品: 《${writingWorkspace.title}》`
       : "",
@@ -207,6 +228,17 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
             (section) => section.id === writingWorkspace.activeSectionId
           )?.title ?? "未知标题"
         }（section_id=${writingWorkspace.activeSectionId}）`
+      : "",
+    writingWorkspace
+      ? writingWorkspace.characterStructure?.format === "list"
+        ? `人物结构: 条目样式；人物条目索引: ${
+            writingWorkspace.characterStructure.items.length
+              ? writingWorkspace.characterStructure.items
+                  .map((item) => `${item.title} (${item.id})`)
+                  .join("、")
+              : "无"
+          }`
+        : "人物结构: 文本样式（所有人物写在同一份总稿，kind=character_overview、id=character_design）"
       : "",
     writingWorkspace?.expertDraft.sections.length
       ? `正文目录${scriptWorkspace ? "剧集" : "小节"}（由早到晚）: ${writingWorkspace.expertDraft.sections

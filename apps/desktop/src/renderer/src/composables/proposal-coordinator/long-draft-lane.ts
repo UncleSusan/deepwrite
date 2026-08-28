@@ -11,6 +11,7 @@ import {
 } from "../../utils/agentEditReview";
 import { buildAgentTextDiff } from "../../utils/agentTextDiff";
 import type { AgentConversationController } from "../useAgentConversation";
+import { longProjectRevisionMatchesProposalChain } from "./long-project-revision-chain";
 import type {
   AgentEditReviewRequest,
   LongDraftMutationEvent,
@@ -195,19 +196,13 @@ export function createLongDraftLane(ctx: ProposalLaneContext) {
         await refreshLongProposalWorkspace(target.bookId);
         return;
       }
-      const predecessor = proposal.predecessorProposalId
-        ? conversation.getEditProposal(
-            request.runId,
-            proposal.predecessorProposalId
-          )
-        : undefined;
-      const predecessorProjectRevision =
-        predecessor?.status === "accepted"
-          ? predecessor.longDraftTarget?.appliedProjectRevision
-          : undefined;
       if (
-        latest.projectRevision !== target.baseProjectRevision &&
-        latest.projectRevision !== predecessorProjectRevision
+        !longProjectRevisionMatchesProposalChain({
+          proposals: conversation.listEditProposals(request.runId),
+          proposal,
+          baseProjectRevision: target.baseProjectRevision,
+          latestProjectRevision: latest.projectRevision
+        })
       ) {
         const message =
           "章节正文已在审阅期间发生变化，未覆盖最新内容。请基于当前正文重新生成。";

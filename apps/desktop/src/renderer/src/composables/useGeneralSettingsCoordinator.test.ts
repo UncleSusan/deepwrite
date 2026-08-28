@@ -152,9 +152,10 @@ describe("general settings coordinator", () => {
     coordinator.updateLanguage("zh-CN");
     coordinator.updateShowInMenuBar(false);
     coordinator.updateWorkspacePaneLayout("editor-agent");
+    coordinator.updateDefaultTextViewMode("preview");
     await coordinator.drain();
 
-    expect(snapshots).toHaveLength(3);
+    expect(snapshots).toHaveLength(4);
     expect(snapshots[0]).toMatchObject({
       language: "zh-CN",
       showInMenuBar: true
@@ -167,6 +168,10 @@ describe("general settings coordinator", () => {
       language: "zh-CN",
       showInMenuBar: false,
       workspacePaneLayout: "editor-agent"
+    });
+    expect(snapshots[3]).toMatchObject({
+      workspacePaneLayout: "editor-agent",
+      defaultTextViewMode: "preview"
     });
   });
 
@@ -246,5 +251,19 @@ describe("general settings coordinator", () => {
 
     expect(applyApprovalMode).toHaveBeenLastCalledWith("auto-approve");
     expect(resumeAutomaticAgentEdits).toHaveBeenCalledOnce();
+  });
+
+  it("persists cross-stage auto approval without changing proposal approval mode", async () => {
+    const { coordinator, settings, api, applyApprovalMode } = harness();
+
+    coordinator.updateAutoApproveCrossStageOperations(true);
+    await coordinator.drain();
+
+    expect(settings.value.autoApproveCrossStageOperations).toBe(true);
+    expect(settings.value.permissionMode).toBe("auto-approve");
+    expect(applyApprovalMode).not.toHaveBeenCalled();
+    expect(api?.save).toHaveBeenCalledWith(
+      expect.objectContaining({ autoApproveCrossStageOperations: true })
+    );
   });
 });

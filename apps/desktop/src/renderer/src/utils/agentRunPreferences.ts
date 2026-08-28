@@ -1,6 +1,6 @@
 import {
-  resolveScriptWorkspaceAgentIdForStage,
-  resolveShortWorkspaceAgentIdForStage,
+  resolveScriptWorkspaceConversationLaneIdForStage,
+  resolveShortWorkspaceConversationLaneIdForStage,
   type ThinkingLevel
 } from "@deepwrite/contracts";
 import type { AgentApprovalMode } from "../types/conversation";
@@ -59,12 +59,10 @@ export function agentConversationKeyForDocument(
   ) {
     return document.workspaceId ? `${document.workspaceId}:general` : "general";
   }
-  const agentId =
-    document.shortAgentId ??
-    (document.workspaceType === "script"
-      ? resolveScriptWorkspaceAgentIdForStage(document.stageId)
-      : resolveShortWorkspaceAgentIdForStage(document.stageId));
-  return `${document.workspaceId}:${agentId}`;
+  if (document.workspaceType === "short") {
+    return `${document.workspaceId}:${resolveShortWorkspaceConversationLaneIdForStage(document.stageId)}`;
+  }
+  return `${document.workspaceId}:${resolveScriptWorkspaceConversationLaneIdForStage(document.stageId)}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

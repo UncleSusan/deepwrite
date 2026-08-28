@@ -55,11 +55,11 @@ describe("agent run preferences", () => {
     const firstPlot = workspaceDocument("book-one", "plot_design");
     const shortDraftRoot = {
       ...workspaceDocument("book-one", "draft"),
-      shortAgentId: "expert_draft_coordinator" as const
+      shortAgentId: "short" as const
     };
     const scriptDraftRoot = {
       ...workspaceDocument("script-one", "draft", "script"),
-      shortAgentId: "expert_draft_coordinator" as const
+      shortAgentId: "script" as const
     };
 
     expect(agentConversationKeyForDocument(firstOther)).toBe(

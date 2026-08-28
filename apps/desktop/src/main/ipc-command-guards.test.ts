@@ -18,7 +18,7 @@ describe("IPC command requestId handling", () => {
 
   it("preload surfaces rejected IPC errors instead of masking them as requestId mismatches", () => {
     const source = readFileSync(
-      new URL("../preload/index.ts", import.meta.url),
+      new URL("../preload/invoke.ts", import.meta.url),
       "utf8"
     );
     expect(source).toContain("const expectedRequestId = command.id");
@@ -95,20 +95,59 @@ describe("IPC command requestId handling", () => {
       new URL("./index.ts", import.meta.url),
       "utf8"
     );
-    const preloadSource = readFileSync(
-      new URL("../preload/index.ts", import.meta.url),
+    const modelCommandSource = readFileSync(
+      new URL("./ipc/model-commands.ts", import.meta.url),
+      "utf8"
+    );
+    const preloadModelSource = readFileSync(
+      new URL("../preload/session-models-api.ts", import.meta.url),
       "utf8"
     );
 
-    expect(preloadSource).toContain("async function listRemoteModels");
-    expect(preloadSource).toContain('"models.listRemote"');
-    expect(preloadSource).toContain("listRemote: listRemoteModels");
-    expect(mainSource).toContain('command.type === "models.listRemote"');
-    expect(mainSource).toContain("resolveDraftApiKey(");
-    expect(mainSource).toContain("listRemoteModels({");
-    expect(mainSource).toContain(
+    expect(preloadModelSource).toContain("function listRemoteModels");
+    expect(preloadModelSource).toContain('"models.listRemote"');
+    expect(preloadModelSource).toContain("listRemote: listRemoteModels");
+    expect(mainSource).toContain("handleModelCommands(");
+    expect(modelCommandSource).toContain(
+      'command.type === "models.listRemote"'
+    );
+    expect(modelCommandSource).toContain("resolveDraftApiKey(");
+    expect(modelCommandSource).toContain("ctx.listRemoteModels({");
+    expect(modelCommandSource).toContain(
       "RemoteModelListResultSchema.parse({ models })"
     );
+  });
+
+  it("routes model capacity resolution through preload, main, and the agent utility", () => {
+    const mainSource = readFileSync(
+      new URL("./index.ts", import.meta.url),
+      "utf8"
+    );
+    const modelCommandSource = readFileSync(
+      new URL("./ipc/model-commands.ts", import.meta.url),
+      "utf8"
+    );
+    const preloadModelSource = readFileSync(
+      new URL("../preload/session-models-api.ts", import.meta.url),
+      "utf8"
+    );
+    const agentSource = readFileSync(
+      new URL("../utilities/agent-entry.ts", import.meta.url),
+      "utf8"
+    );
+
+    expect(preloadModelSource).toContain("function resolveModelCapacity");
+    expect(preloadModelSource).toContain('"models.resolveCapacity"');
+    expect(preloadModelSource).toContain(
+      "resolveCapacity: resolveModelCapacity"
+    );
+    expect(mainSource).toContain('command.type === "agent.model_capacity"');
+    expect(modelCommandSource).toContain(
+      'command.type === "models.resolveCapacity"'
+    );
+    expect(modelCommandSource).toContain('"agent.model_capacity"');
+    expect(agentSource).toContain('command.type === "agent.model_capacity"');
+    expect(agentSource).toContain("runtime.resolveModelCapacity(");
   });
 
   it("routes metadata index and on-demand document reads through every boundary", () => {
@@ -172,7 +211,7 @@ describe("IPC command requestId handling", () => {
     );
     const catalogForwarding = mainSource.slice(
       mainSource.indexOf('command.type === "catalog.index"'),
-      mainSource.indexOf('if (command.type === "models.list")')
+      mainSource.indexOf("const modelCommandResult")
     );
 
     expect(catalogForwarding).toContain(

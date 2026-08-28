@@ -1,4 +1,7 @@
-import { longChapterWorldRevealsFileId } from "@deepwrite/contracts";
+import {
+  longChapterWorldRevealsFileId,
+  longLedgerCommitFileId
+} from "@deepwrite/contracts";
 import {
   describe,
   documentExecutor,
@@ -198,5 +201,42 @@ describe("unified long-form tools: continuity create with content", () => {
         content: "缺少 document。"
       })
     ).rejects.toThrow("meta.document=current_state 或 history");
+  });
+
+  it("rejects continuity-file creation after the chapter ledger is committed", async () => {
+    const index = fixtureIndex();
+    index.chapters[0]!.commitId = "commit_existing";
+    index.ledger.committedThroughChapterId = "chapter_one";
+    index.ledger.commits.push({
+      id: "commit_existing",
+      mode: "text_files",
+      sequence: 1,
+      chapterCardId: "chapter_one",
+      committedAt: index.updatedAt,
+      reversible: true,
+      sourceRevision: index.revision,
+      placementIds: [],
+      foreshadowingBeatIds: [],
+      recordFile: {
+        id: longLedgerCommitFileId("commit_existing"),
+        path: "long/ledger/commit-existing.json",
+        revision: "v1:0:00000000",
+        updatedAt: index.updatedAt
+      }
+    });
+    const tools = longTools({
+      executor: documentExecutor(index),
+      activeRoot: "continuity_ledger",
+      activeChapterCardId: "chapter_one",
+      index
+    });
+
+    await expect(
+      toolByName(tools, "create").execute("create-after-commit", {
+        kind: "continuity_world_reveals",
+        meta: { chapter_card_id: "chapter_one" },
+        content: "不应在提交后创建。"
+      })
+    ).rejects.toThrow("已提交账本");
   });
 });

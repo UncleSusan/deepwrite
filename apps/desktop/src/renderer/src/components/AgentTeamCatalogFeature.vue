@@ -39,6 +39,8 @@ const emit = defineEmits<{
   create: [input: { name: string; workspaceType: AgentTeamWorkspaceType }];
   rename: [input: { teamId: string; name: string }];
   delete: [input: { teamId: string }];
+  download: [input: { teamId: string }];
+  install: [];
   setEnabled: [input: { teamId: string; enabled: boolean }];
   save: [input: AgentTeamProfileSaveInput];
   authoringGenerate: [
@@ -239,15 +241,26 @@ function leaveEditor(): void {
           每个团队只服务一种创作类型；每种类型最多启用一个，也可以全部关闭。
         </p>
       </div>
-      <button
-        type="button"
-        class="primary-button"
-        :disabled="saving || !runtimeAvailable"
-        @click="openCreate"
-      >
-        <AppIcon name="plus" :size="16" />
-        新建团队
-      </button>
+      <div class="catalog-header-actions">
+        <button
+          type="button"
+          class="secondary-button"
+          :disabled="saving || !runtimeAvailable"
+          @click="emit('install')"
+        >
+          <AppIcon name="archive" :size="16" />
+          安装团队
+        </button>
+        <button
+          type="button"
+          class="primary-button"
+          :disabled="saving || !runtimeAvailable"
+          @click="openCreate"
+        >
+          <AppIcon name="plus" :size="16" />
+          新建团队
+        </button>
+      </div>
     </header>
 
     <div v-if="loading" class="catalog-state">正在加载智能体团队…</div>
@@ -302,6 +315,14 @@ function leaveEditor(): void {
           </button>
         </div>
         <div class="team-actions">
+          <button
+            type="button"
+            :disabled="saving || !runtimeAvailable"
+            @click.stop="emit('download', { teamId: team.id })"
+          >
+            <AppIcon name="download" :size="13" />
+            下载
+          </button>
           <button
             type="button"
             :disabled="saving || !runtimeAvailable"
@@ -366,6 +387,7 @@ function leaveEditor(): void {
               v-model="createWorkspaceType"
               :options="workspaceTypeOptions"
               accessible-label="团队创作类型"
+              :menu-z-index="2200"
             />
           </label>
           <div class="dialog-actions">

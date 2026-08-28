@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   AgentTeamCatalogSnapshotSchema,
+  AgentTeamPackageExportResultSchema,
+  AgentTeamPackageInstallResultSchema,
+  AgentTeamPackageManifestSchema,
   CommandEnvelopeSchema,
   DEFAULT_AGENT_TEAM_SETTINGS,
   DEFAULT_LONG_AGENT_TEAM_SETTINGS,
@@ -77,12 +80,46 @@ describe("agent team catalog contracts", () => {
         "agentTeams.save",
         { teamId: "team_long", settings: DEFAULT_LONG_AGENT_TEAM_SETTINGS },
         { id: "save" }
-      )
+      ),
+      createEnvelope(
+        "agentTeams.exportPackage",
+        { teamId: "team_short" },
+        { id: "export" }
+      ),
+      createEnvelope("agentTeams.installPackage", {}, { id: "install" })
     ];
     expect(
       commands.every(
         (command) => CommandEnvelopeSchema.safeParse(command).success
       )
     ).toBe(true);
+  });
+
+  it("validates versioned package manifests and file operation results", () => {
+    expect(
+      AgentTeamPackageManifestSchema.parse({
+        format: "deepwrite-agent-team",
+        version: 1,
+        exportedAt: "2026-08-27T08:00:00.000Z",
+        team: shortProfile()
+      }).team.name
+    ).toBe("短篇团队");
+    expect(
+      AgentTeamPackageExportResultSchema.parse({
+        status: "saved",
+        filePath: "/tmp/team.zip"
+      }).status
+    ).toBe("saved");
+    expect(
+      AgentTeamPackageInstallResultSchema.parse({
+        status: "installed",
+        teamId: "team_installed",
+        teamName: "已安装团队",
+        catalog: {
+          enabledTeamIds: {},
+          teams: [shortProfile("team_installed", "已安装团队")]
+        }
+      }).status
+    ).toBe("installed");
   });
 });

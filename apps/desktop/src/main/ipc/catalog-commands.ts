@@ -20,10 +20,12 @@ import {
   MoveDraftSectionResultSchema,
   MoveLibraryEntryResultSchema,
   RemoveLibraryEntryResultSchema,
+  ReadWritingContextResultSchema,
   SaveDocumentResultSchema,
   ScriptBookSchema,
   ShortBookSchema,
   UnregisterCatalogProjectResultSchema,
+  WriteWritingContextResultSchema,
   createEnvelope,
   type CommandEnvelope,
   type CommandResult
@@ -296,6 +298,8 @@ export async function handleCatalogCommands(
   if (
     command.type === "catalog.index" ||
     command.type === "catalog.readDocument" ||
+    command.type === "catalog.readWritingContext" ||
+    command.type === "catalog.writeWritingContext" ||
     command.type === "catalog.snapshot" ||
     command.type === "catalog.loadDraftRecovery" ||
     command.type === "catalog.saveDraftRecovery" ||
@@ -334,6 +338,12 @@ export async function handleCatalogCommands(
           break;
         case "catalog.readDocument":
           payload = CatalogReadDocumentResultSchema.parse(result.payload);
+          break;
+        case "catalog.readWritingContext":
+          payload = ReadWritingContextResultSchema.parse(result.payload);
+          break;
+        case "catalog.writeWritingContext":
+          payload = WriteWritingContextResultSchema.parse(result.payload);
           break;
         case "catalog.snapshot":
           payload = CatalogSnapshotSchema.parse(result.payload);

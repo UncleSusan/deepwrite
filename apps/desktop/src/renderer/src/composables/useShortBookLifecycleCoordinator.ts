@@ -498,6 +498,7 @@ export function useShortBookLifecycleCoordinator(
             : await api.createShortBook({
                 title: input.title,
                 genre: input.genre,
+                defaultPlotStageIds: input.defaultPlotStageIds,
                 linkedMaterialIdsByKind: input.linkedMaterialIdsByKind,
                 linkedSkillIdsByKind: input.linkedSkillIdsByKind
               });

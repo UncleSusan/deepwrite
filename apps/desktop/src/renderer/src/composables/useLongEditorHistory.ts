@@ -1,3 +1,4 @@
+import type { TextViewMode } from "@deepwrite/contracts";
 import { computed, nextTick, ref, type ComputedRef, type Ref } from "vue";
 import type { LongWorkspaceSelectionFile } from "../types/longWorkspace";
 import {
@@ -17,7 +18,7 @@ export function useLongEditorHistory(options: {
   isDocumentContentBusy: ComputedRef<boolean>;
   isDocumentSwitchPending: ComputedRef<boolean>;
   canUseTextTools: ComputedRef<boolean>;
-  viewMode: Ref<"edit" | "preview">;
+  viewMode: Ref<TextViewMode>;
   editorInput: Ref<HTMLTextAreaElement | null>;
   characterCount: Ref<number>;
   stateKey: (fileId: string, bookId?: string) => string;

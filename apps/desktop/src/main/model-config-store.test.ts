@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -43,6 +43,7 @@ function emptyCatalog(): DeepWriteFreeModelCatalog {
     enabled: false,
     message: "",
     manifestAvailable: false,
+    canDeprecateMissingModels: false,
     defaultModelId: "",
     models: [],
     apiKeys: {}
@@ -321,6 +322,7 @@ describe("ModelConfigStore managed free models", () => {
       enabled: true,
       message: "",
       manifestAvailable: true,
+      canDeprecateMissingModels: true,
       defaultModelId: "deepwrite-free-writing",
       models: [managedModel("vendor/writer-v1")],
       apiKeys: { "deepwrite-free-writing": "sk-test-only" }
@@ -331,15 +333,22 @@ describe("ModelConfigStore managed free models", () => {
     };
     const store = new ModelConfigStore(root, { freeModelCatalog });
 
-    const saved = await store.save({
-      models: [managedModel("vendor/writer-v1")],
-      defaultModelId: "deepwrite-free-writing"
-    });
+    const initial = await store.list();
+    expect(initial.models).toEqual([]);
+    expect(initial.deepwriteFreeEnabledModelIds).toEqual([]);
+
+    const saved = await store.setFreeModelEnabled(
+      "deepwrite-free-writing",
+      true
+    );
     expect(saved.models[0]).toMatchObject({
       modelId: "vendor/writer-v1",
       hasApiKey: true,
       managedBy: "deepwrite-free"
     });
+    expect(saved.deepwriteFreeEnabledModelIds).toEqual([
+      "deepwrite-free-writing"
+    ]);
     expect(saved.models[0]).not.toHaveProperty("apiKey");
 
     catalog.revision = "v2";
@@ -380,6 +389,7 @@ describe("ModelConfigStore managed free models", () => {
         enabled: true,
         message: "",
         manifestAvailable: true,
+        canDeprecateMissingModels: true,
         defaultModelId: "deepwrite-free-writing",
         models: [
           managedModel("vendor/paid-model", {
@@ -400,6 +410,447 @@ describe("ModelConfigStore managed free models", () => {
       baseUrl: "https://example.invalid/v1",
       managedBy: "deepwrite-free"
     });
+  });
+
+  it("migrates v1 managed models as enabled and persists the v2 layout", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-model-store-free-v1-")
+    );
+    temporaryRoots.push(root);
+    const configDirectory = join(root, "config");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(
+      join(configDirectory, "models.json"),
+      `${JSON.stringify({
+        version: 1,
+        defaultModelId: "deepwrite-free-writing",
+        models: [managedModel("vendor/writer-v1"), customModel()],
+        disabledOfficialModelIds: []
+      })}\n`,
+      "utf8"
+    );
+    const catalog: DeepWriteFreeModelCatalog = {
+      revision: "v1",
+      enabled: true,
+      message: "",
+      manifestAvailable: true,
+      canDeprecateMissingModels: true,
+      defaultModelId: "deepwrite-free-writing",
+      models: [managedModel("vendor/writer-v1")],
+      apiKeys: {}
+    };
+    const store = new ModelConfigStore(root, {
+      freeModelCatalog: {
+        initialize: async () => undefined,
+        getCatalog: async () => structuredClone(catalog)
+      }
+    });
+
+    const settings = await store.list();
+    expect(settings.deepwriteFreeEnabledModelIds).toEqual([
+      "deepwrite-free-writing"
+    ]);
+    expect(settings.models.map((model) => model.id)).toEqual([
+      "deepwrite-free-writing",
+      "custom-writer"
+    ]);
+    expect(settings.defaultModelId).toBe("deepwrite-free-writing");
+
+    const disk = JSON.parse(
+      await readFile(join(configDirectory, "models.json"), "utf8")
+    ) as Record<string, unknown>;
+    expect(disk).toMatchObject({
+      version: 2,
+      enabledFreeModelIds: ["deepwrite-free-writing"]
+    });
+    expect(disk).toHaveProperty("knownFreeModels");
+    expect(JSON.stringify(disk)).not.toContain("apiKey");
+  });
+
+  it("deprecates only after an authoritative removal and keeps a reappearing id disabled", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-model-store-free-deprecated-")
+    );
+    temporaryRoots.push(root);
+    const catalog: DeepWriteFreeModelCatalog = {
+      revision: "v1",
+      enabled: true,
+      message: "",
+      manifestAvailable: true,
+      canDeprecateMissingModels: true,
+      defaultModelId: "deepwrite-free-writing",
+      models: [managedModel("vendor/writer-v1")],
+      apiKeys: {}
+    };
+    const freeModelCatalog = {
+      initialize: async () => undefined,
+      getCatalog: async () => structuredClone(catalog),
+      refreshCatalog: async () => structuredClone(catalog)
+    };
+    const store = new ModelConfigStore(root, { freeModelCatalog });
+    await store.save({
+      models: [customModel()],
+      defaultModelId: "custom-writer"
+    });
+    await store.setFreeModelEnabled("deepwrite-free-writing", true);
+
+    catalog.revision = "v2";
+    catalog.models = [];
+    catalog.defaultModelId = "";
+    const removed = await store.refreshFreeModels();
+    expect(removed.deepwriteFreeEnabledModelIds).toEqual([]);
+    expect(removed.deepwriteFreeDeprecatedModels).toEqual([
+      expect.objectContaining({
+        id: "deepwrite-free-writing",
+        modelId: "vendor/writer-v1",
+        hasApiKey: false
+      })
+    ]);
+    expect(removed.models.map((model) => model.id)).toEqual(["custom-writer"]);
+    expect(removed.defaultModelId).toBe("custom-writer");
+
+    catalog.revision = "v3";
+    catalog.models = [managedModel("vendor/writer-v3")];
+    catalog.defaultModelId = "deepwrite-free-writing";
+    const returned = await store.refreshFreeModels();
+    expect(returned.deepwriteFreeDeprecatedModels).toEqual([]);
+    expect(returned.deepwriteFreeEnabledModelIds).toEqual([]);
+    expect(returned.deepwriteFreeModels?.[0]?.modelId).toBe("vendor/writer-v3");
+    expect(returned.models.map((model) => model.id)).toEqual(["custom-writer"]);
+  });
+
+  it("keeps history for a catalog model that was never enabled", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-model-store-free-never-enabled-")
+    );
+    temporaryRoots.push(root);
+    const catalog: DeepWriteFreeModelCatalog = {
+      revision: "v1",
+      enabled: true,
+      message: "",
+      manifestAvailable: true,
+      canDeprecateMissingModels: true,
+      defaultModelId: "deepwrite-free-writing",
+      models: [managedModel("vendor/never-enabled")],
+      apiKeys: { "deepwrite-free-writing": "never-enabled-secret" }
+    };
+    const store = new ModelConfigStore(root, {
+      freeModelCatalog: {
+        initialize: async () => undefined,
+        getCatalog: async () => structuredClone(catalog),
+        refreshCatalog: async () => structuredClone(catalog)
+      }
+    });
+
+    const initial = await store.list();
+    expect(initial.models).toEqual([]);
+    expect(initial.deepwriteFreeEnabledModelIds).toEqual([]);
+    catalog.revision = "v2";
+    catalog.defaultModelId = "";
+    catalog.models = [];
+    catalog.apiKeys = {};
+
+    const removed = await store.refreshFreeModels();
+    expect(removed.deepwriteFreeDeprecatedModels).toEqual([
+      expect.objectContaining({
+        id: "deepwrite-free-writing",
+        modelId: "vendor/never-enabled"
+      })
+    ]);
+    const secrets = JSON.parse(
+      await readFile(join(root, "config", "model-secrets.json"), "utf8")
+    ) as { encryptedApiKeys: Record<string, string> };
+    expect(secrets.encryptedApiKeys).not.toHaveProperty(
+      "deepwrite-free-writing"
+    );
+  });
+
+  it("retains enablement without deprecating during pause or a non-authoritative cache fallback", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-model-store-free-pause-")
+    );
+    temporaryRoots.push(root);
+    const catalog: DeepWriteFreeModelCatalog = {
+      revision: "v1",
+      enabled: true,
+      message: "",
+      manifestAvailable: true,
+      canDeprecateMissingModels: true,
+      defaultModelId: "deepwrite-free-writing",
+      models: [managedModel("vendor/writer-v1")],
+      apiKeys: {}
+    };
+    const freeModelCatalog = {
+      initialize: async () => undefined,
+      getCatalog: async () => structuredClone(catalog),
+      refreshCatalog: async () => structuredClone(catalog)
+    };
+    const store = new ModelConfigStore(root, { freeModelCatalog });
+    await store.setFreeModelEnabled("deepwrite-free-writing", true);
+
+    catalog.enabled = false;
+    catalog.message = "暂停服务";
+    catalog.canDeprecateMissingModels = false;
+    catalog.models = [
+      managedModel("vendor/paused-v2"),
+      managedModel("vendor/paused-new", {
+        id: "deepwrite-free-new",
+        label: "新免费模型"
+      })
+    ];
+    catalog.defaultModelId = "deepwrite-free-writing";
+    const paused = await store.refreshFreeModels();
+    expect(paused.deepwriteFreeEnabledModelIds).toEqual([
+      "deepwrite-free-writing"
+    ]);
+    expect(paused.deepwriteFreeDeprecatedModels).toEqual([]);
+    expect(paused.models).toEqual([]);
+    expect(paused.deepwriteFreeModels).toEqual([
+      expect.objectContaining({
+        id: "deepwrite-free-writing",
+        modelId: "vendor/paused-v2",
+        status: 1
+      }),
+      expect.objectContaining({ id: "deepwrite-free-new", status: 1 })
+    ]);
+
+    catalog.enabled = true;
+    catalog.message = "";
+    catalog.models = [managedModel("vendor/cached")];
+    const cached = await store.refreshFreeModels();
+    expect(cached.deepwriteFreeEnabledModelIds).toEqual([
+      "deepwrite-free-writing"
+    ]);
+    expect(cached.deepwriteFreeDeprecatedModels).toEqual([]);
+    expect(cached.models[0]?.modelId).toBe("vendor/cached");
+  });
+
+  it("requires exact, available ids while allowing idempotent disable", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-model-store-free-exact-")
+    );
+    temporaryRoots.push(root);
+    const unavailable = managedModel("vendor/unavailable", {
+      id: "deepwrite-free-unavailable",
+      status: 1
+    });
+    const catalog: DeepWriteFreeModelCatalog = {
+      revision: "v1",
+      enabled: true,
+      message: "",
+      manifestAvailable: true,
+      canDeprecateMissingModels: true,
+      defaultModelId: "deepwrite-free-writing",
+      models: [managedModel("vendor/default"), unavailable],
+      apiKeys: {}
+    };
+    const store = new ModelConfigStore(root, {
+      freeModelCatalog: {
+        initialize: async () => undefined,
+        getCatalog: async () => structuredClone(catalog)
+      }
+    });
+
+    await expect(
+      store.setFreeModelEnabled("deepwrite-free-missing", true)
+    ).rejects.toThrow(/废弃|不再受支持/u);
+    await expect(
+      store.setFreeModelEnabled(unavailable.id, true)
+    ).rejects.toThrow(/当前不可用/u);
+    await expect(
+      store.resolveDraft(
+        managedModel("vendor/ignored", { id: "deepwrite-free-missing" })
+      )
+    ).rejects.toThrow(/废弃|不再受支持/u);
+    await expect(
+      store.setFreeModelEnabled("deepwrite-free-missing", false)
+    ).resolves.toMatchObject({ deepwriteFreeEnabledModelIds: [] });
+  });
+
+  it("serializes refresh and enable so an old catalog cannot revive a removed model", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-model-store-free-race-")
+    );
+    temporaryRoots.push(root);
+    let current: DeepWriteFreeModelCatalog = {
+      revision: "v1",
+      enabled: true,
+      message: "",
+      manifestAvailable: true,
+      canDeprecateMissingModels: true,
+      defaultModelId: "deepwrite-free-writing",
+      models: [managedModel("vendor/writer-v1")],
+      apiKeys: {}
+    };
+    let releaseRefresh!: () => void;
+    let markRefreshStarted!: () => void;
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    const refreshStarted = new Promise<void>((resolve) => {
+      markRefreshStarted = resolve;
+    });
+    const store = new ModelConfigStore(root, {
+      freeModelCatalog: {
+        initialize: async () => undefined,
+        getCatalog: async () => structuredClone(current),
+        refreshCatalog: async () => {
+          markRefreshStarted();
+          await refreshGate;
+          current = {
+            ...current,
+            revision: "v2",
+            defaultModelId: "",
+            models: [],
+            apiKeys: {}
+          };
+          return structuredClone(current);
+        }
+      }
+    });
+    await store.setFreeModelEnabled("deepwrite-free-writing", true);
+
+    const refresh = store.refreshFreeModels();
+    await refreshStarted;
+    const staleEnable = store.setFreeModelEnabled(
+      "deepwrite-free-writing",
+      true
+    );
+    const staleEnableRejected =
+      expect(staleEnable).rejects.toThrow(/废弃|不再受支持/u);
+    const concurrentSave = store.save({
+      models: [customModel()],
+      defaultModelId: "custom-writer"
+    });
+    releaseRefresh();
+
+    await expect(refresh).resolves.toMatchObject({
+      deepwriteFreeEnabledModelIds: [],
+      deepwriteFreeDeprecatedModels: [
+        expect.objectContaining({ id: "deepwrite-free-writing" })
+      ]
+    });
+    await staleEnableRejected;
+    await expect(concurrentSave).resolves.toMatchObject({
+      defaultModelId: "custom-writer",
+      deepwriteFreeDeprecatedModels: [
+        expect.objectContaining({ id: "deepwrite-free-writing" })
+      ]
+    });
+    const finalSettings = await store.list();
+    expect(finalSettings.models.map((model) => model.id)).toEqual([
+      "custom-writer"
+    ]);
+    expect(finalSettings.deepwriteFreeDeprecatedModels).toHaveLength(1);
+  });
+
+  it("deletes deprecated encrypted keys and does not reuse them after a keyless reappearance", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-model-store-free-secret-retirement-")
+    );
+    temporaryRoots.push(root);
+    const catalog: DeepWriteFreeModelCatalog = {
+      revision: "v1",
+      enabled: true,
+      message: "",
+      manifestAvailable: true,
+      canDeprecateMissingModels: true,
+      defaultModelId: "deepwrite-free-writing",
+      models: [managedModel("vendor/writer-v1")],
+      apiKeys: { "deepwrite-free-writing": "retired-test-secret" }
+    };
+    const store = new ModelConfigStore(root, {
+      freeModelCatalog: {
+        initialize: async () => undefined,
+        getCatalog: async () => structuredClone(catalog),
+        refreshCatalog: async () => structuredClone(catalog)
+      }
+    });
+    await store.setFreeModelEnabled("deepwrite-free-writing", true);
+
+    catalog.revision = "v1-keyless";
+    catalog.models = [managedModel("vendor/writer-keyless")];
+    catalog.apiKeys = {};
+    const keyless = await store.refreshFreeModels();
+    expect(keyless.deepwriteFreeEnabledModelIds).toEqual([
+      "deepwrite-free-writing"
+    ]);
+    expect(keyless.deepwriteFreeModels?.[0]?.hasApiKey).toBe(false);
+    await expect(
+      store.resolve("deepwrite-free-writing")
+    ).resolves.toMatchObject({ modelId: "vendor/writer-keyless", apiKey: "" });
+
+    catalog.revision = "v1-new-key";
+    catalog.apiKeys = { "deepwrite-free-writing": "replacement-test-secret" };
+    await store.refreshFreeModels();
+    await expect(
+      store.resolve("deepwrite-free-writing")
+    ).resolves.toMatchObject({ apiKey: "replacement-test-secret" });
+
+    catalog.revision = "v2";
+    catalog.defaultModelId = "";
+    catalog.models = [];
+    catalog.apiKeys = {};
+    const deprecated = await store.refreshFreeModels();
+    expect(deprecated.deepwriteFreeDeprecatedModels).toHaveLength(1);
+    const secretsAfterRemoval = JSON.parse(
+      await readFile(join(root, "config", "model-secrets.json"), "utf8")
+    ) as { encryptedApiKeys: Record<string, string> };
+    expect(secretsAfterRemoval.encryptedApiKeys).not.toHaveProperty(
+      "deepwrite-free-writing"
+    );
+
+    await writeFile(
+      join(root, "config", "model-secrets.json"),
+      JSON.stringify({
+        version: 1,
+        encryptedApiKeys: {
+          "deepwrite-free-writing": Buffer.from(
+            "stale-retired-secret",
+            "utf8"
+          ).toString("base64")
+        }
+      }),
+      "utf8"
+    );
+    await store.save({ models: [], defaultModelId: "" });
+    const secretsAfterSave = JSON.parse(
+      await readFile(join(root, "config", "model-secrets.json"), "utf8")
+    ) as { encryptedApiKeys: Record<string, string> };
+    expect(secretsAfterSave.encryptedApiKeys).not.toHaveProperty(
+      "deepwrite-free-writing"
+    );
+
+    catalog.revision = "v2-return-with-key";
+    catalog.defaultModelId = "deepwrite-free-writing";
+    catalog.models = [managedModel("vendor/writer-return-with-key")];
+    catalog.apiKeys = { "deepwrite-free-writing": "new-returned-secret" };
+    const returnedThroughSave = await store.save({
+      models: [],
+      defaultModelId: ""
+    });
+    expect(returnedThroughSave.deepwriteFreeDeprecatedModels).toEqual([]);
+    expect(returnedThroughSave.deepwriteFreeModels?.[0]?.hasApiKey).toBe(true);
+
+    catalog.revision = "v2-removed-again";
+    catalog.defaultModelId = "";
+    catalog.models = [];
+    catalog.apiKeys = {};
+    await store.refreshFreeModels();
+
+    catalog.revision = "v3";
+    catalog.defaultModelId = "deepwrite-free-writing";
+    catalog.models = [managedModel("vendor/writer-v3")];
+    catalog.apiKeys = {};
+    const returned = await store.refreshFreeModels();
+    expect(returned.deepwriteFreeDeprecatedModels).toEqual([]);
+    expect(returned.deepwriteFreeEnabledModelIds).toEqual([]);
+    expect(returned.deepwriteFreeModels?.[0]?.hasApiKey).toBe(false);
+
+    await store.setFreeModelEnabled("deepwrite-free-writing", true);
+    await expect(
+      store.resolve("deepwrite-free-writing")
+    ).resolves.toMatchObject({ modelId: "vendor/writer-v3", apiKey: "" });
   });
 });
 
@@ -427,6 +878,45 @@ describe("ModelConfigStore draft API keys", () => {
     });
     await expect(store.resolve("custom-writer")).resolves.toMatchObject({
       toolSchemaProfile: "portable"
+    });
+  });
+
+  it("persists custom context window and max output tokens into runtime config", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "deepwrite-model-store-capacity-")
+    );
+    temporaryRoots.push(root);
+    const store = new ModelConfigStore(root);
+    const saved = await store.save({
+      models: [
+        {
+          ...customModel(),
+          contextWindow: 32_000,
+          maxTokens: 4_096,
+          apiKey: "sk-capacity-test-only"
+        }
+      ],
+      defaultModelId: "custom-writer"
+    });
+
+    expect(saved.models[0]).toMatchObject({
+      id: "custom-writer",
+      contextWindow: 32_000,
+      maxTokens: 4_096
+    });
+    await expect(store.resolve("custom-writer")).resolves.toMatchObject({
+      contextWindow: 32_000,
+      maxTokens: 4_096
+    });
+    await expect(
+      store.resolveDraft({
+        ...customModel(),
+        contextWindow: 16_000,
+        maxTokens: 2_048
+      })
+    ).resolves.toMatchObject({
+      contextWindow: 16_000,
+      maxTokens: 2_048
     });
   });
 

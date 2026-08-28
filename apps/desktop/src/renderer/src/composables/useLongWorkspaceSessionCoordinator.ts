@@ -52,6 +52,30 @@ export interface LongWorkspaceEditorPort {
   ): boolean;
 }
 
+const LONG_WORKSPACE_EDITOR_PORT_METHODS = [
+  "saveAllChanges",
+  "selectBookLineVolume",
+  "focusFile",
+  "focusTarget",
+  "captureNavigationSelection",
+  "captureForeshadowingFocus",
+  "ensureDocumentsLoaded",
+  "synchronizeProjectRevisions",
+  "synchronizeProjectRevisionsIfClean"
+] as const satisfies readonly (keyof LongWorkspaceEditorPort)[];
+
+export function isLongWorkspaceEditorPort(
+  value: unknown
+): value is LongWorkspaceEditorPort {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<
+    Record<keyof LongWorkspaceEditorPort, unknown>
+  >;
+  return LONG_WORKSPACE_EDITOR_PORT_METHODS.every(
+    (method) => typeof candidate[method] === "function"
+  );
+}
+
 export interface LongWorkspaceSessionState {
   longBooks: Ref<readonly LongBookSummary[]>;
   activeBookId: Ref<string | null>;
@@ -179,6 +203,10 @@ export function useLongWorkspaceSessionCoordinator<TimerHandle>(
     if (!state.activeBookId.value) return true;
     const currentEditor = editor.value;
     if (!currentEditor) return true;
+    if (!isLongWorkspaceEditorPort(currentEditor)) {
+      notifications.error("长篇编辑器尚未准备好，已取消当前操作，请重试。");
+      return false;
+    }
     try {
       return await currentEditor.saveAllChanges();
     } catch (error: unknown) {

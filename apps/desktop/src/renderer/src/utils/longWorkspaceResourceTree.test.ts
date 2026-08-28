@@ -386,6 +386,7 @@ describe("long workspace resource-tree projection", () => {
 
     const continuity = roots.find(({ label }) => label === "连续性账本");
     const pendingChapter = continuity?.children?.[0]?.children?.[0];
+    expect(pendingChapter?.badge).toBe("待提交");
     expect(pendingChapter?.children?.length).toBeGreaterThan(0);
     expect(
       pendingChapter?.children?.every(

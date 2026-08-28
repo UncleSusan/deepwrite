@@ -10,6 +10,8 @@ describe("MarkdownContent", () => {
     );
     expect(source).toContain('class="markdown-content"');
     expect(source).toContain('v-html="html"');
+    expect(source).toContain("annotateHeadings?: boolean");
+    expect(source).toContain("annotateHeadings: false");
   });
 
   it("is also reused by conversation messages", () => {
@@ -17,6 +19,7 @@ describe("MarkdownContent", () => {
       'import MarkdownContent from "./MarkdownContent.vue"'
     );
     expect(messageSource).toContain('class="message-markdown"');
+    expect(messageSource).not.toContain("annotate-headings");
   });
 
   it("renders both long-form preview surfaces through the shared component", () => {

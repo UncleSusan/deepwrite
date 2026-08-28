@@ -89,7 +89,7 @@ describe("agent welcome content", () => {
 
   it("prefers configured short-agent welcome shortcuts over builtin defaults", () => {
     expect(
-      resolveAgentWelcome("character_design", undefined, undefined, [
+      resolveAgentWelcome("short", undefined, undefined, [
         "自定义按钮一",
         "自定义按钮二",
         "自定义按钮三"

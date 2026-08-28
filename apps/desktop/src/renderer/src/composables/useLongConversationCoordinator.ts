@@ -23,7 +23,10 @@ import {
   MATERIAL_STAGE_KINDS,
   SKILL_KIND_LABELS
 } from "../data/catalogWorkspace";
-import type { ComposerReferenceOption } from "../types/conversation";
+import type {
+  ComposerReferenceOption,
+  ConversationMessageRewriteRequest
+} from "../types/conversation";
 import type {
   LongForeshadowingFocus,
   LongWorkspaceRendererApi,
@@ -31,6 +34,7 @@ import type {
 } from "../types/longWorkspace";
 import type { WorkspaceDocument } from "../types/workspace";
 import type { LibraryAttachmentBuildResult } from "../utils/libraryAttachments";
+import { createConversationHistoryRewriteDispatcher } from "./agent-conversation/history-rewrite-dispatcher";
 
 type LongReadableAttachments = Pick<
   LibraryAttachmentBuildResult,
@@ -304,6 +308,10 @@ export function useLongConversationCoordinator(
         : null;
     }
   );
+  const resendLongMessage = createConversationHistoryRewriteDispatcher({
+    conversation: () => activeConversation.value,
+    dispatch: (request) => sendLongMessage([], undefined, request)
+  });
   const availableSkillReferences = computed(() =>
     longSkillReferences(
       options.catalog.indexSnapshot.value,
@@ -527,8 +535,19 @@ export function useLongConversationCoordinator(
   }
 
   function sendLongMessage(
-    promptAttachments: UserPromptAttachment[] = []
+    request: UserPromptAttachment[] | ConversationMessageRewriteRequest = [],
+    rewriteCompletion?: (started: boolean) => void,
+    rewriteRequest?: ConversationMessageRewriteRequest
   ): Promise<void> {
+    if (!Array.isArray(request)) {
+      const rewrite = resendLongMessage(request);
+      void rewrite.then(
+        (started) => rewriteCompletion?.(started),
+        () => rewriteCompletion?.(false)
+      );
+      return rewrite.then(() => undefined);
+    }
+    const promptAttachments = request;
     if (disposed) return Promise.resolve();
     if (activeSend || options.state.sendPreflightPending.value) {
       options.notifications.info("正在准备上一条长篇消息，请稍候。");
@@ -537,6 +556,12 @@ export function useLongConversationCoordinator(
     const target = captureSendTarget();
     if (!target) {
       options.notifications.warning("长篇工作区上下文尚未就绪，请稍后重试。");
+      return Promise.resolve();
+    }
+    if (rewriteRequest && !target.conversation.canRewriteHistory.value) {
+      options.notifications.info(
+        "请先等待当前回复、审批和长篇修改保存全部完成。"
+      );
       return Promise.resolve();
     }
     options.state.sendPreflightPending.value = true;
@@ -720,11 +745,20 @@ export function useLongConversationCoordinator(
         if (!confirmSendTarget(target)) return;
 
         target.conversation.selectApprovalMode(target.approvalMode);
-        await target.conversation.sendLongMessage(
-          runtimeContext,
-          readableAttachments,
-          promptAttachments
-        );
+        if (rewriteRequest) {
+          const rewriteStarted = await target.conversation.resendLongMessage(
+            rewriteRequest,
+            runtimeContext,
+            readableAttachments
+          );
+          if (!rewriteStarted) return;
+        } else {
+          await target.conversation.sendLongMessage(
+            runtimeContext,
+            readableAttachments,
+            promptAttachments
+          );
+        }
         sendTargetIsCurrent(target, { includeDraft: false });
       } catch (error: unknown) {
         if (!sendTargetIsCurrent(target, { includeDraft: false })) return;
@@ -838,6 +872,7 @@ export function useLongConversationCoordinator(
     selectModel,
     selectTemperature,
     selectThinking,
+    resendLongMessage,
     sendLongMessage,
     sendPreflightPending: options.state.sendPreflightPending,
     stopGeneration,

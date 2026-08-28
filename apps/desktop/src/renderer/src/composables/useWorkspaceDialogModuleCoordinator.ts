@@ -91,6 +91,9 @@ export interface WorkspaceDialogShortStructureState {
   characterDialog: Readonly<Ref<CharacterItemDialogState | null>>;
   plotBookId: Readonly<Ref<string | null>>;
   plotBook: Readonly<Ref<Book | null>>;
+  writingContext?: Readonly<Ref<string | null>>;
+  writingContextLoading?: Readonly<Ref<boolean>>;
+  writingContextPending?: Readonly<Ref<boolean>>;
 }
 
 export interface WorkspaceDialogLongStructureState {
@@ -388,7 +391,12 @@ export function useWorkspaceDialogModuleCoordinator(
       return {
         kind: "plot-structure",
         book: options.shortStructure.plotBook.value,
-        pending: options.catalog.mutationPending.value
+        pending: options.catalog.mutationPending.value,
+        writingContext: options.shortStructure.writingContext?.value ?? null,
+        writingContextLoading:
+          options.shortStructure.writingContextLoading?.value ?? false,
+        writingContextPending:
+          options.shortStructure.writingContextPending?.value ?? false
       };
     }
 

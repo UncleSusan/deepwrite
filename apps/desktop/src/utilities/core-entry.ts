@@ -10,6 +10,7 @@ import {
   CatalogOpenProjectResultSchema,
   CatalogIndexSnapshotSchema,
   CatalogReadDocumentResultSchema,
+  ReadWritingContextResultSchema,
   CatalogSnapshotSchema,
   BookSchema,
   DeleteCatalogProjectResultSchema,
@@ -45,6 +46,7 @@ import {
   RendererStateLoadResultSchema,
   RendererStateMutationResultSchema,
   UnregisterCatalogProjectResultSchema,
+  WriteWritingContextResultSchema,
   type CommandEnvelope,
   type CommandResult
 } from "@deepwrite/contracts";
@@ -440,6 +442,24 @@ async function handleCatalogCommand(
         requestId: command.id,
         payload: CatalogReadDocumentResultSchema.parse(
           await catalogStore.readDocument(command.payload)
+        )
+      };
+    }
+    if (command.type === "catalog.readWritingContext") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: ReadWritingContextResultSchema.parse(
+          await catalogStore.readWritingContext(command.payload)
+        )
+      };
+    }
+    if (command.type === "catalog.writeWritingContext") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: WriteWritingContextResultSchema.parse(
+          await catalogStore.writeWritingContext(command.payload)
         )
       };
     }

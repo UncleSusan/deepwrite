@@ -753,9 +753,7 @@ describe("agent conversation controller: failures-retries-and-timeouts", () => {
       );
       if (activeStageId === "draft") {
         expect(context?.activeResource?.id).toBe("draft");
-        expect(context?.shortWorkspace?.activeAgentId).toBe(
-          "expert_draft_coordinator"
-        );
+        expect(context?.shortWorkspace?.activeAgentId).toBe("short");
       }
       controller.dispose();
     }

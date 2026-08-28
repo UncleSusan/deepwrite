@@ -55,6 +55,7 @@ export async function assertPinnedSetIntegrity(
   loaded: LoadedLongProject
 ): Promise<ProjectTransactionFileOperation[]> {
   const checks = new Map<string, ProjectTransactionFileOperation>();
+  const continuityFileContents = new Map<string, string>();
   const addCheck = (file: LoadedIndexedFile): void => {
     checks.set(file.reference.path, {
       action: "check",
@@ -80,8 +81,6 @@ export async function assertPinnedSetIntegrity(
     records.push(record);
     addCheck(recordFile);
   }
-  assertLongLedgerRecordChain(loaded.index, records);
-
   for (const chapter of loaded.index.chapters) {
     if (chapter.commitId === null) continue;
     for (const reference of [
@@ -96,9 +95,19 @@ export async function assertPinnedSetIntegrity(
         entry.history
       ])
     ]) {
-      addCheck(await loadIndexedFile(loaded, reference.id));
+      const file = await loadIndexedFile(loaded, reference.id);
+      addCheck(file);
+      if (file.kind === "markdown") {
+        continuityFileContents.set(reference.id, file.disk.content);
+      }
     }
   }
+  assertLongLedgerRecordChain(
+    loaded.index,
+    records,
+    loaded.index.revision,
+    continuityFileContents
+  );
   if (loaded.index.ledger.commits.some(({ mode }) => mode === "structured")) {
     for (const entry of loaded.index.characterFiles) {
       for (const reference of [entry.relationships]) {

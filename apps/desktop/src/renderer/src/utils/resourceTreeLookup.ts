@@ -31,7 +31,7 @@ export function createResourceTreeLookup(
     }
     const targetDocumentId =
       node.targetDocumentId ??
-      (node.shortAgentId === "expert_draft_coordinator"
+      (node.stageCategoryId === "draft"
         ? node.children?.find((child) => child.targetDocumentId)
             ?.targetDocumentId
         : undefined) ??

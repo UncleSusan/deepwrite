@@ -6,7 +6,7 @@ import type {
   SystemEventEnvelope
 } from "@deepwrite/contracts";
 import type { AgentTeamConfigStore } from "../agent-team-config-store";
-import type { AppearanceConfigStore } from "../appearance-config-store";
+import type { AppearanceService } from "../appearance-service";
 import type { ChatAssistantProjectConfigStore } from "../chat-assistant-project-config-store";
 import type { ContinuationImportPreviewRegistry } from "../continuation-import-preview-registry";
 import type { readExternalSkills } from "../external-skill-import";
@@ -45,7 +45,7 @@ export interface IpcCommandContext {
   getMainWindow: () => BrowserWindow;
   supervisor: UtilitySupervisor;
   broadcastEvent: (event: SystemEventEnvelope) => void;
-  dialog: Pick<Electron.Dialog, "showOpenDialog">;
+  dialog: Pick<Electron.Dialog, "showOpenDialog" | "showSaveDialog">;
   continuationImportPreviews: ContinuationImportPreviewRegistry;
   legacySyncPreviews: LegacySyncPreviewRegistry;
   authorizeMainInternalCommand: typeof authorizeMainInternalCommand;
@@ -64,7 +64,7 @@ export interface IpcCommandContext {
   requireLongAgentConfigStore: () => LongAgentConfigStore;
   requireLearningImitationConfigStore: () => LearningImitationConfigStore;
   requireWorkspaceDirectoryStore: () => WorkspaceDirectoryStore;
-  requireAppearanceConfigStore: () => AppearanceConfigStore;
+  requireAppearanceService: () => AppearanceService;
   requireGeneralSettingsStore: () => GeneralSettingsStore;
   exportShortManuscript: typeof exportShortManuscript;
   exportLongManuscript: typeof exportLongManuscript;

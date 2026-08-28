@@ -10,25 +10,6 @@ import {
   buildLoadSkillTool,
   buildQueryLinkedMaterialEntriesTool
 } from "./catalog-tools";
-import { buildCharacterTools } from "./character-tools";
-import {
-  buildCreateExpertDraftSectionsTool,
-  buildDeleteExpertDraftSectionTool,
-  buildRenameExpertDraftSectionTool,
-  buildReplaceDraftSectionTextTool,
-  buildWriteDraftSectionTool
-} from "./draft-tools";
-import {
-  buildReplaceStageTextTool,
-  buildSwitchStorylineStageTool,
-  buildWriteWorkspaceEditorTool
-} from "./editor-tools";
-import type { ShortDocumentReadCoverage } from "./paging";
-import {
-  buildReadDraftSectionsTool,
-  buildReadWorkspaceContentTool,
-  buildSearchWorkspaceTextTool
-} from "./read-tools";
 import {
   type BuildScriptWorkspaceToolsInput,
   type BuildShortWorkspaceToolsInput,
@@ -38,6 +19,13 @@ import {
   type ShortWorkspaceToolSharedState,
   type WritingWorkspaceSnapshot
 } from "./shared";
+import { buildShortUnifiedCreateTool } from "./unified-create-tool";
+import { buildShortUnifiedEditTool } from "./unified-edit-tool";
+import {
+  buildShortUnifiedReadTool,
+  createShortUnifiedReadState
+} from "./unified-read-tool";
+import { buildShortUnifiedWriteTool } from "./unified-write-tool";
 
 export { SHORT_WORKSPACE_TOOL_MANIFEST } from "./manifest";
 export { sanitizeToolSchemaForGemini } from "./schema";
@@ -91,7 +79,8 @@ function createWritingWorkspaceToolSharedState(
                   title: item.title,
                   order: item.order,
                   content: item.content,
-                  revision: item.revision
+                  revision: item.revision,
+                  ...(item.truncated ? { truncated: true } : {})
                 }
               ] as const
           )
@@ -104,6 +93,11 @@ function createWritingWorkspaceToolSharedState(
             .map(({ id }) => id)
         : [],
     pendingCharacterSeq: 0,
+    plotStages: new Map(
+      workspace.plotStages.map((stage) => [stage.id, { ...stage }])
+    ),
+    plotStageOrder: workspace.plotStages.map(({ id }) => id),
+    pendingPlotStageSeq: 0,
     expertSections,
     expertSectionOrder: workspace.expertDraft.sections.map(
       (section) => section.id
@@ -126,85 +120,27 @@ export function createScriptWorkspaceToolSharedState(
   return createWritingWorkspaceToolSharedState(workspace);
 }
 
-function buildWritingWorkspaceTools(
+function buildUnifiedWritingWorkspaceTools(
   input: BuildWritingWorkspaceToolsInput
 ): AgentTool[] {
   const sharedState =
     input.sharedState ?? createWritingWorkspaceToolSharedState(input.workspace);
-  const toolInput: BuildWritingWorkspaceToolsInput = { ...input, sharedState };
-  const { stageBodies, stageRevisions, expertSections } = sharedState;
-  // This is intentionally agent-local. A child reading a file must never grant
-  // its parent permission to overwrite that file (or vice versa).
-  const readExpertFileIds = new Set<string>();
-  const readExpertFileCoverage = new Map<string, ShortDocumentReadCoverage>();
-  let activeStageId = toolInput.workspace.activeStageId;
-  const readTools = [
-    buildReadWorkspaceContentTool(toolInput, stageBodies),
-    buildSearchWorkspaceTextTool(toolInput, stageBodies, expertSections),
+  const toolInput = { ...input, sharedState };
+  const readState = createShortUnifiedReadState();
+  return [
+    buildShortUnifiedReadTool(toolInput, sharedState, readState),
+    buildShortUnifiedCreateTool(toolInput, sharedState),
+    buildShortUnifiedEditTool(toolInput, sharedState, readState),
+    buildShortUnifiedWriteTool(toolInput, sharedState, readState),
     buildQueryLinkedMaterialEntriesTool(toolInput),
-    buildLoadSkillTool(toolInput),
-    ...buildCharacterTools(toolInput, stageBodies, stageRevisions, sharedState),
-    buildReadDraftSectionsTool(
-      toolInput,
-      expertSections,
-      readExpertFileIds,
-      readExpertFileCoverage
-    )
+    buildLoadSkillTool(toolInput)
   ];
-
-  if (toolInput.profile.id === "expert_draft_coordinator") {
-    const draftTools = [
-      buildWriteDraftSectionTool(toolInput, expertSections, readExpertFileIds),
-      buildReplaceDraftSectionTextTool(
-        toolInput,
-        expertSections,
-        readExpertFileIds
-      ),
-      buildRenameExpertDraftSectionTool(toolInput, expertSections, sharedState),
-      buildDeleteExpertDraftSectionTool(toolInput, expertSections, sharedState)
-    ];
-    return [
-      ...readTools,
-      buildCreateExpertDraftSectionsTool(toolInput, sharedState),
-      ...draftTools
-    ];
-  }
-
-  const tools = [...readTools];
-  if (toolInput.profile.id === "plot_design") {
-    tools.push(
-      buildSwitchStorylineStageTool(toolInput, (stageId) => {
-        activeStageId = stageId;
-      })
-    );
-  }
-  if (
-    toolInput.profile.id === "character_design" &&
-    (toolInput.workspace.characterStructure?.format ?? "text") === "list"
-  ) {
-    return tools;
-  }
-  tools.push(
-    buildWriteWorkspaceEditorTool(
-      toolInput,
-      stageBodies,
-      stageRevisions,
-      () => activeStageId
-    ),
-    buildReplaceStageTextTool(
-      toolInput,
-      stageBodies,
-      stageRevisions,
-      () => activeStageId
-    )
-  );
-  return tools;
 }
 
 export function buildShortWorkspaceTools(
   input: BuildShortWorkspaceToolsInput
 ): AgentTool[] {
-  return buildWritingWorkspaceTools({
+  return buildUnifiedWritingWorkspaceTools({
     workspaceType: "short",
     ...input
   });
@@ -213,7 +149,7 @@ export function buildShortWorkspaceTools(
 export function buildScriptWorkspaceTools(
   input: BuildScriptWorkspaceToolsInput
 ): AgentTool[] {
-  return buildWritingWorkspaceTools({
+  return buildUnifiedWritingWorkspaceTools({
     workspaceType: "script",
     ...input
   });
@@ -229,6 +165,7 @@ export function isShortWorkspaceToolDetails(
     kind === "workspace-editor-mutation" ||
     kind === "workspace-character-file-mutation" ||
     kind === "workspace-character-structure-mutation" ||
+    kind === "workspace-plot-structure-mutation" ||
     kind === "workspace-expert-draft-file-mutation" ||
     kind === "workspace-expert-draft-section-creation" ||
     kind === "workspace-expert-draft-section-rename" ||

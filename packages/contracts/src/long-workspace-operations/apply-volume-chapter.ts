@@ -6,6 +6,7 @@ import {
   addFileCreateIntent,
   addFileDeleteIntent,
   assertBeatIsMutable,
+  assertChapterContinuityIsMutable,
   assertChapterIsMutable,
   assertExactOrder,
   assertNewEntityId,
@@ -362,7 +363,7 @@ export function applyVolumeChapterOperation(
       break;
     }
     case "chapterContinuity.worldReveals.create": {
-      assertChapterIsMutable(
+      assertChapterContinuityIsMutable(
         workspace,
         operation.chapterCardId,
         "create world-reveals continuity for"
@@ -394,7 +395,7 @@ export function applyVolumeChapterOperation(
       break;
     }
     case "chapterContinuity.worldReveals.delete": {
-      assertChapterIsMutable(
+      assertChapterContinuityIsMutable(
         workspace,
         operation.chapterCardId,
         "delete world-reveals continuity from"
@@ -425,7 +426,7 @@ export function applyVolumeChapterOperation(
       break;
     }
     case "chapterContinuity.character.create": {
-      assertChapterIsMutable(
+      assertChapterContinuityIsMutable(
         workspace,
         operation.chapterCardId,
         "create character continuity for"
@@ -469,7 +470,7 @@ export function applyVolumeChapterOperation(
       break;
     }
     case "chapterContinuity.character.delete": {
-      assertChapterIsMutable(
+      assertChapterContinuityIsMutable(
         workspace,
         operation.chapterCardId,
         "delete character continuity from"

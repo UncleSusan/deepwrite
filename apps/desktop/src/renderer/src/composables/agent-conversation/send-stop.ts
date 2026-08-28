@@ -16,6 +16,7 @@ import {
 } from "@deepwrite/contracts";
 import type { AgentApprovalMode } from "../../types/conversation";
 import type { WorkspaceDocument } from "../../types/workspace";
+import { finalizeUnfinishedMessageTools } from "./attempt-state";
 import { cloneMessage } from "./clone";
 import type { AgentConversationContext } from "./context";
 import { nextConversationTimestamp } from "./context";
@@ -37,6 +38,7 @@ import {
 import { rememberRunApprovalMode } from "./approvals";
 import { normalizeChatAssistantRequestContext } from "./chat-assistant-request";
 import { buildConversationHistory } from "./history";
+import { loadWritingContextForPrompt } from "./writing-context";
 import { id, rememberBounded } from "./shared";
 import type { AgentRunSettings, WorkspaceContextAttachments } from "./types";
 
@@ -289,11 +291,21 @@ export async function sendMessage(
           wordCountRequirement: section.wordCountRequirement
         }))
       );
+      const agentsMd = await loadWritingContextForPrompt(
+        api.catalog,
+        activeDocument.workspaceId,
+        workspaceType,
+        ctx.options.onContextWarning
+      );
+      if (ctx.epoch !== sendEpoch || ctx.sessionId.value !== sendSessionId) {
+        return;
+      }
       const creativeWorkspace = {
         id: activeDocument.workspaceId,
         title: activeDocument.workspaceTitle,
         categories: [...(activeDocument.workspaceCategories ?? [])],
         activeStageId: activeDocument.stageId,
+        ...(agentsMd === undefined ? {} : { agentsMd }),
         plotStages,
         characterStructure,
         ...(activeDocument.shortAgentId
@@ -371,7 +383,11 @@ export async function sendMessage(
       ...(requestAttachments.length ? { attachments: requestAttachments } : {}),
       ...(mode === "chat-assistant"
         ? {}
-        : { writeApprovalMode: ctx.approvalModeByAttempt.get(attemptId) }),
+        : {
+            writeApprovalMode: ctx.approvalModeByAttempt.get(attemptId),
+            autoApproveCrossStageOperations:
+              ctx.options.autoApproveCrossStageOperations?.() === true
+          }),
       ...(ctx.selectedModelId.value
         ? { modelId: ctx.selectedModelId.value }
         : {}),
@@ -583,6 +599,11 @@ export function stopStreamingMessages(ctx: AgentConversationContext): void {
       "stopped",
       completedAt,
       "会话已切换或关闭，子任务同步停止。"
+    );
+    finalizeUnfinishedMessageTools(
+      message,
+      completedAt,
+      "会话已切换或关闭，工具调用未返回完整终态。"
     );
     for (const run of message.subagentRuns ?? []) {
       if (run.retry) delete run.retry;

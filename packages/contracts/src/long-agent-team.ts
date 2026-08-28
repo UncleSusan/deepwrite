@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ShortAgentSubagentDefinitionsSchema } from "./agent-team";
+import { LongAgentSubagentDefinitionsSchema } from "./agent-team";
 import {
   LONG_AGENT_IDS,
   LongAgentIdSchema,
@@ -9,7 +9,7 @@ import {
 export const LongAgentTeamSchema = z
   .object({
     parentAgentId: LongAgentIdSchema,
-    subagents: ShortAgentSubagentDefinitionsSchema
+    subagents: LongAgentSubagentDefinitionsSchema
   })
   .strict();
 export type LongAgentTeam = z.infer<typeof LongAgentTeamSchema>;

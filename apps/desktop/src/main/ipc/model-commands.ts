@@ -1,5 +1,6 @@
 import {
   CommandEnvelopeSchema,
+  ModelCapacityResultSchema,
   ModelConnectionTestResultSchema,
   ModelSettingsSchema,
   ModelUsageDashboardSchema,
@@ -14,8 +15,16 @@ import { createUsageModelSnapshot } from "../usage-observation";
 import { safeErrorDetails } from "./errors";
 import type { IpcCommandContext } from "./command-types";
 
+export type ModelCommandContext = Pick<
+  IpcCommandContext,
+  | "requireModelConfigStore"
+  | "requireModelUsageStore"
+  | "listRemoteModels"
+  | "supervisor"
+>;
+
 export async function handleModelCommands(
-  ctx: IpcCommandContext,
+  ctx: ModelCommandContext,
   command: CommandEnvelope
 ): Promise<CommandResult | undefined> {
   if (command.type === "models.list") {
@@ -43,12 +52,14 @@ export async function handleModelCommands(
 
   if (command.type === "models.refreshFree") {
     try {
+      const settings = ModelSettingsSchema.parse(
+        await ctx.requireModelConfigStore().refreshFreeModels()
+      );
+      await ctx.requireModelUsageStore().syncConfiguredModels(settings.models);
       return {
         status: "accepted",
         requestId: command.id,
-        payload: ModelSettingsSchema.parse(
-          await ctx.requireModelConfigStore().refreshFreeModels()
-        )
+        payload: settings
       };
     } catch (error: unknown) {
       return {
@@ -58,6 +69,35 @@ export async function handleModelCommands(
           code: "models.refresh_free_failed",
           message:
             error instanceof Error ? error.message : "刷新免费模型配置失败。",
+          details: safeErrorDetails(error)
+        }
+      };
+    }
+  }
+
+  if (command.type === "models.setFreeModelEnabled") {
+    try {
+      const settings = ModelSettingsSchema.parse(
+        await ctx
+          .requireModelConfigStore()
+          .setFreeModelEnabled(command.payload.modelId, command.payload.enabled)
+      );
+      await ctx.requireModelUsageStore().syncConfiguredModels(settings.models);
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: settings
+      };
+    } catch (error: unknown) {
+      return {
+        status: "rejected",
+        requestId: command.id,
+        error: {
+          code: "models.set_free_model_enabled_failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "更新免费模型启用状态失败。",
           details: safeErrorDetails(error)
         }
       };
@@ -343,6 +383,47 @@ export async function handleModelCommands(
           code: "models.test_failed",
           message:
             error instanceof Error ? error.message : "模型连接测试失败。",
+          details: safeErrorDetails(error)
+        }
+      };
+    }
+  }
+
+  if (command.type === "models.resolveCapacity") {
+    try {
+      const runtimeConfig = await ctx
+        .requireModelConfigStore()
+        .resolveDraft(command.payload.model);
+      const internalCommand = CommandEnvelopeSchema.parse(
+        createEnvelope(
+          "agent.model_capacity",
+          { runtimeConfig },
+          { id: command.id, context: command.context }
+        )
+      );
+      const result = await ctx.supervisor.requestCommand(
+        "agent",
+        internalCommand,
+        10_000
+      );
+      if (result.status === "accepted") {
+        return {
+          status: "accepted",
+          requestId: command.id,
+          payload: ModelCapacityResultSchema.parse(result.payload)
+        };
+      }
+      return result;
+    } catch (error: unknown) {
+      return {
+        status: "rejected",
+        requestId: command.id,
+        error: {
+          code: "models.resolve_capacity_failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "读取模型实际请求容量失败。",
           details: safeErrorDetails(error)
         }
       };

@@ -1,6 +1,7 @@
+import type { TextViewMode } from "@deepwrite/contracts";
 import type { WorkspaceDocument } from "../types/workspace";
 
-export type EditorScrollView = "edit" | "preview";
+export type EditorScrollView = TextViewMode;
 
 interface EditorScrollPosition {
   edit: number;

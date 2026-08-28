@@ -100,9 +100,15 @@ export const useSettingsStore = defineStore("settings", () => {
   const modelSaving = ref(false);
   const modelsLoaded = ref(false);
   const freeModelsRefreshing = ref(false);
+  const freeModelsSaving = ref(false);
   const modelError = ref<string | null>(null);
   const modelTestMessage = ref<string | null>(null);
   const testingModelId = ref<string | null>(null);
+  const lastModelTestCapacity = shallowRef<{
+    modelId: string;
+    contextWindow: number;
+    maxTokens: number;
+  } | null>(null);
   const modelAlertMessages = shallowRef<string[]>([
     "官方模型已经上线！直连厂商！软件整体用量越多，折扣会越大！"
   ]);
@@ -445,9 +451,11 @@ export const useSettingsStore = defineStore("settings", () => {
     modelSaving,
     modelsLoaded,
     freeModelsRefreshing,
+    freeModelsSaving,
     modelError,
     modelTestMessage,
     testingModelId,
+    lastModelTestCapacity,
     modelAlertMessages,
     startupAlertMessages,
     startupAlertRevision,

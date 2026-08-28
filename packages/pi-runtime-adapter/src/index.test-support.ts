@@ -31,6 +31,7 @@ import {
   buildRawUserMessage,
   buildRuntimeUserPrompt,
   interceptToolCallStream,
+  resolveProviderModelCapacity,
   PiAgentRuntimeAdapter,
   reconcileToolCallArguments,
   toRuntimeEvents,
@@ -98,9 +99,7 @@ function normalChatContext(): ChatAssistantRuntimeContext {
 }
 
 function scriptAgentProfile(): ScriptWorkspaceAgentProfile {
-  const profile = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES.find(
-    ({ id }) => id === "expert_draft_coordinator"
-  )!;
+  const profile = DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES[0]!;
   return {
     ...profile,
     systemPrompt: "用户在设置中编辑的剧本正文专家提示词。"
@@ -114,7 +113,7 @@ function screenplayWorkspace(): ScriptWorkspaceSnapshot {
     title: "雾港剧本",
     categories: ["悬疑"],
     activeStageId: "draft",
-    activeAgentId: "expert_draft_coordinator",
+    activeAgentId: "script",
     activeSectionId: "episode-1",
     characterStructure: { format: "text" },
     plotStages: createDefaultCreativePlotStages(),
@@ -319,6 +318,7 @@ export {
   buildProviderRuntime,
   buildRawUserMessage,
   buildRuntimeUserPrompt,
+  resolveProviderModelCapacity,
   captureDisabledThinkingPayload,
   captureThinkingPayload,
   captureToolPayload,

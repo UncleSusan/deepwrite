@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import appSource from "../WorkspaceShell.vue?raw";
 import catalogProjectionSource from "./useCatalogWorkspaceProjectionCoordinator.ts?raw";
 import lazySource from "./useLazyProposalCoordinator.ts?raw";
+import plotStructureLaneSource from "./proposal-coordinator/plot-structure-lane.ts?raw";
+import queueSource from "./proposal-coordinator/queue.ts?raw";
 import source from "./useProposalCoordinator.ts?raw";
 
 describe("useProposalCoordinator extraction boundary", () => {
@@ -56,6 +58,28 @@ describe("useProposalCoordinator extraction boundary", () => {
     expect(catalogProjectionSource).toContain('proposal.status === "pending"');
   });
 
+  it("keeps the eager conversation queue check safe before lazy coordinator wiring", () => {
+    const bridgeDeclaration = appSource.indexOf(
+      "const proposalEditQueueBridge = {"
+    );
+    const conversationWiring = appSource.indexOf(
+      "} = useShortConversationCoordinator({"
+    );
+    const coordinatorWiring = appSource.indexOf(
+      "} = useLazyProposalCoordinator({"
+    );
+    const bridgeBinding = appSource.indexOf(
+      "proposalEditQueueBridge.hasQueued = hasQueuedAgentEdits;"
+    );
+
+    expect(bridgeDeclaration).toBeGreaterThanOrEqual(0);
+    expect(bridgeDeclaration).toBeLessThan(conversationWiring);
+    expect(appSource).toContain(
+      "hasQueued: () => proposalEditQueueBridge.hasQueued()"
+    );
+    expect(bridgeBinding).toBeGreaterThan(coordinatorWiring);
+  });
+
   it("uses an explicit typed context and injected runtime services", () => {
     expect(source).toContain("export interface ProposalCoordinatorContext");
     expect(source).toContain("api(): DeepWriteApi | undefined");
@@ -78,22 +102,26 @@ describe("useProposalCoordinator extraction boundary", () => {
   });
 
   it("keeps the queue and revision bookkeeping private and ordered", () => {
-    expect(source).toContain(
+    expect(source).toContain("const proposalQueue = createProposalQueue({");
+    expect(queueSource).toContain(
       "const queuedAgentEdits = new Map<string, QueuedAgentEdit>()"
     );
-    expect(source).toContain(
+    expect(queueSource).toContain(
+      "const deferredAgentEditKeys = new Set<string>()"
+    );
+    expect(queueSource).toContain(
       "const agentEditCommitQueue = createKeyedSerialTaskQueue<string>()"
     );
-    expect(source).toContain("stageAgentEditProposalRevision(");
-    expect(source).toContain("beginAgentEditProposalCommit(");
+    expect(queueSource).toContain("stageAgentEditProposalRevision(");
+    expect(queueSource).toContain("beginAgentEditProposalCommit(");
     expect(source).toContain("expectedMutationDurableRevision(");
-    expect(source).toContain(
-      ".enqueue(workspaceId, () =>\n          drainQueuedAgentEditsForWorkspace(workspaceId)"
+    expect(queueSource).toContain(
+      ".enqueue(workspaceId, () => drainWorkspace(workspaceId))"
     );
-    expect(source).toContain("function hasQueuedAgentEdits(): boolean");
-    expect(source).toContain("activeAgentEditCommitTasks.add(task)");
-    expect(source).toContain("async function drain(): Promise<void>");
-    expect(source).toContain("function dispose(): Promise<void>");
+    expect(queueSource).toContain("function hasQueuedAgentEdits(): boolean");
+    expect(queueSource).toContain("activeAgentEditCommitTasks.add(task)");
+    expect(queueSource).toContain("async function drain(): Promise<void>");
+    expect(queueSource).toContain("function dispose(): Promise<void>");
     expect(source).not.toContain("queue: {");
   });
 
@@ -128,6 +156,15 @@ describe("useProposalCoordinator extraction boundary", () => {
       "async function acceptDraftSectionCreationProposal("
     );
     expect(source).toContain("currentApi.catalog.createDraftSections({");
+    expect(source).toContain("createPlotStructureProposalLane({");
+    expect(source).toContain("plotStructureProposalLane.stage(");
+    expect(source).toContain("plotStructureProposalLane.accept(");
+    expect(plotStructureLaneSource).toContain(
+      "await api.catalog.mutatePlotStructure({"
+    );
+    expect(plotStructureLaneSource).toContain(
+      "await api.catalog.saveDocument({"
+    );
     expect(source).toContain("async function acceptLongPlotDesignProposal(");
     expect(source).toContain("async function acceptLongCharacterFileProposal(");
     expect(source).toContain(

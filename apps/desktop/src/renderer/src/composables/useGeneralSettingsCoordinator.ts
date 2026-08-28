@@ -3,6 +3,7 @@ import {
   type DeepWriteApi,
   type GeneralPermissionMode,
   type GeneralSettings,
+  type TextViewMode,
   type WorkspacePaneLayout
 } from "@deepwrite/contracts";
 import type { Ref } from "vue";
@@ -151,6 +152,11 @@ export function useGeneralSettingsCoordinator(
     }
   }
 
+  function updateAutoApproveCrossStageOperations(enabled: boolean): void {
+    applyLocalPatch({ autoApproveCrossStageOperations: enabled });
+    queueSave();
+  }
+
   function updateAutoSave(enabled: boolean): void {
     options.autoSaveEnabled.value = enabled;
     applyLocalPatch({ autoSave: enabled });
@@ -180,6 +186,11 @@ export function useGeneralSettingsCoordinator(
     queueSave();
   }
 
+  function updateDefaultTextViewMode(mode: TextViewMode): void {
+    applyLocalPatch({ defaultTextViewMode: mode });
+    queueSave();
+  }
+
   async function drain(): Promise<void> {
     await saveChain;
   }
@@ -195,7 +206,9 @@ export function useGeneralSettingsCoordinator(
     dispose,
     drain,
     load,
+    updateAutoApproveCrossStageOperations,
     updateAutoSave,
+    updateDefaultTextViewMode,
     updateLanguage,
     updatePermissionMode,
     updateShowInMenuBar,

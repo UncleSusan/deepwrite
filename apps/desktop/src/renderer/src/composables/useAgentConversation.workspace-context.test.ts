@@ -13,7 +13,8 @@ import {
   expect,
   it,
   runtime,
-  useAgentConversation
+  useAgentConversation,
+  vi
 } from "./useAgentConversation.test-support";
 
 describe("agent conversation controller: workspace-context", () => {
@@ -21,6 +22,7 @@ describe("agent conversation controller: workspace-context", () => {
     const deferred = createDeferredApi();
     const controller = useAgentConversation({
       api: () => deferred.api,
+      autoApproveCrossStageOperations: () => true,
       idleTimeoutMs: 10_000
     });
     const workspaceDocuments = createShortWorkspaceDocuments();
@@ -42,12 +44,15 @@ describe("agent conversation controller: workspace-context", () => {
     });
     await sending;
 
+    expect(deferred.prompts[0]?.autoApproveCrossStageOperations).toBe(true);
+
     const context = deferred.prompts[0]?.workspaceContext;
     const plotStage = context?.shortWorkspace?.stages.find(
       ({ stageId }) => stageId === "plot_design"
     );
     expect(plotStage?.content).toContain(tail);
     expect(plotStage?.truncated).toBeUndefined();
+    expect(context?.shortWorkspace?.agentsMd).toBe("# 测试作品上下文");
     expect(context?.activeResource).toMatchObject({
       truncated: true,
       originalLength: activeDocument.content.length
@@ -84,8 +89,9 @@ describe("agent conversation controller: workspace-context", () => {
     expect(context?.scriptWorkspace).toMatchObject({
       id: "script_story_1",
       title: "雨夜剧本",
+      agentsMd: "# 测试作品上下文",
       activeStageId: "draft",
-      activeAgentId: "expert_draft_coordinator",
+      activeAgentId: "script",
       activeSectionId: "episode-1",
       stages: SCRIPT_WORKSPACE_TEXT_STAGE_IDS.map((stageId) => ({
         stageId,
@@ -103,6 +109,84 @@ describe("agent conversation controller: workspace-context", () => {
     expect(
       context?.scriptWorkspace?.stages.map((stage) => stage.stageId)
     ).toContain("intro_design");
+    controller.dispose();
+  });
+
+  it("warns and still sends when the per-book context cannot be read", async () => {
+    const deferred = createDeferredApi();
+    const warning = vi.fn();
+    vi.mocked(deferred.api.catalog.readWritingContext).mockRejectedValueOnce(
+      new Error("AGENTS.md 暂时不可读")
+    );
+    const controller = useAgentConversation({
+      api: () => deferred.api,
+      idleTimeoutMs: 10_000,
+      onContextWarning: warning
+    });
+    const workspaceDocuments = createShortWorkspaceDocuments();
+    const activeDocument = workspaceDocuments.find(
+      (candidate) => candidate.draftFileKind === "body"
+    );
+    if (!activeDocument) throw new Error("Missing short draft body.");
+
+    controller.draft.value = "继续写短篇";
+    const sending = controller.sendMessage(activeDocument, workspaceDocuments);
+    deferred.resolveAccepted(0, {
+      sessionId: controller.sessionId.value,
+      runId: "run_without_context",
+      acceptedAt: new Date().toISOString(),
+      runtime
+    });
+    await sending;
+
+    expect(warning).toHaveBeenCalledWith(
+      "短篇上下文未注入：AGENTS.md 暂时不可读"
+    );
+    expect(
+      deferred.prompts[0]?.workspaceContext?.shortWorkspace
+    ).not.toHaveProperty("agentsMd");
+    expect(deferred.prompts).toHaveLength(1);
+    controller.dispose();
+  });
+
+  it("abandons a send whose context preflight outlives its conversation", async () => {
+    const deferred = createDeferredApi();
+    let resolveContext!: (value: {
+      bookId: string;
+      workspaceType: "short";
+      content: string;
+      truncated: boolean;
+    }) => void;
+    vi.mocked(deferred.api.catalog.readWritingContext).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveContext = resolve;
+        })
+    );
+    const controller = useAgentConversation({
+      api: () => deferred.api,
+      idleTimeoutMs: 10_000
+    });
+    const workspaceDocuments = createShortWorkspaceDocuments();
+    const activeDocument = workspaceDocuments.find(
+      (candidate) => candidate.draftFileKind === "body"
+    );
+    if (!activeDocument) throw new Error("Missing short draft body.");
+
+    controller.draft.value = "这条消息不应进入新会话";
+    const sending = controller.sendMessage(activeDocument, workspaceDocuments);
+    await Promise.resolve();
+    controller.newConversation();
+    resolveContext({
+      bookId: activeDocument.workspaceId!,
+      workspaceType: "short",
+      content: "# 旧会话上下文",
+      truncated: false
+    });
+    await sending;
+
+    expect(deferred.prompts).toHaveLength(0);
+    expect(controller.messages.value).toHaveLength(0);
     controller.dispose();
   });
 
@@ -134,7 +218,7 @@ describe("agent conversation controller: workspace-context", () => {
     expect(deferred.prompts[0]?.workspaceContext?.shortWorkspace).toMatchObject(
       {
         activeStageId: "draft",
-        activeAgentId: "expert_draft_coordinator",
+        activeAgentId: "short",
         activeSectionId: "section-1",
         expertDraft: {
           sections: [
@@ -215,7 +299,7 @@ describe("agent conversation controller: workspace-context", () => {
     const context = deferred.prompts[0]?.workspaceContext;
     expect(context?.shortWorkspace).toMatchObject({
       activeStageId: "draft",
-      activeAgentId: "expert_draft_coordinator",
+      activeAgentId: "short",
       activeSectionId: "section-2"
     });
     expect(
@@ -256,7 +340,7 @@ describe("agent conversation controller: workspace-context", () => {
           workspaceTitle: "雨夜来信",
           workspaceCategories: ["都市", "悬疑"],
           stageId: "draft" as const,
-          shortAgentId: "expert_draft_coordinator" as const,
+          shortAgentId: "short" as const,
           expertSectionId: sectionId,
           expertSectionOrder: index,
           expertWordCountRequirement: "1200 字",

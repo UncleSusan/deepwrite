@@ -212,32 +212,37 @@ export function toRuntimeEvents(
         details.kind === "workspace-editor-mutation" ||
         details.kind === "workspace-character-file-mutation" ||
         details.kind === "workspace-character-structure-mutation" ||
+        details.kind === "workspace-plot-structure-mutation" ||
         details.kind === "workspace-expert-draft-file-mutation" ||
         details.kind === "workspace-expert-draft-section-creation" ||
         details.kind === "workspace-expert-draft-section-rename" ||
         details.kind === "workspace-expert-draft-section-deletion"
       ) {
         const text =
-          details.kind === "workspace-character-structure-mutation"
-            ? details.mutation.type === "deleteItem"
-              ? details.mutation.deletedText
-              : details.mutation.type === "updateItem"
-                ? `${details.mutation.previousTitle} → ${details.mutation.title}`
-                : details.mutation.type === "moveItem"
-                  ? `${details.mutation.title}：${details.mutation.direction === "up" ? "上移" : "下移"}`
-                  : `创建：${details.mutation.title}`
-            : details.kind === "workspace-expert-draft-section-creation"
-              ? details.sections
-                  .map(
-                    (section, index) =>
-                      `${index + 1}. ${section.title}${section.wordCountRequirement ? `（${section.wordCountRequirement}）` : ""}`
-                  )
-                  .join("\n")
-              : details.kind === "workspace-expert-draft-section-rename"
-                ? `${details.previousTitle} → ${details.title}`
-                : details.kind === "workspace-expert-draft-section-deletion"
-                  ? `删除：${details.title}`
-                  : details.text;
+          details.kind === "workspace-plot-structure-mutation"
+            ? details.mutation.type === "create"
+              ? details.mutation.content || `创建：${details.mutation.title}`
+              : `${details.mutation.previousTitle} → ${details.mutation.title}\n${details.mutation.description}`
+            : details.kind === "workspace-character-structure-mutation"
+              ? details.mutation.type === "deleteItem"
+                ? details.mutation.deletedText
+                : details.mutation.type === "updateItem"
+                  ? `${details.mutation.previousTitle} → ${details.mutation.title}`
+                  : details.mutation.type === "moveItem"
+                    ? `${details.mutation.title}：${details.mutation.direction === "up" ? "上移" : "下移"}`
+                    : `创建：${details.mutation.title}`
+              : details.kind === "workspace-expert-draft-section-creation"
+                ? details.sections
+                    .map(
+                      (section, index) =>
+                        `${index + 1}. ${section.title}${section.wordCountRequirement ? `（${section.wordCountRequirement}）` : ""}`
+                    )
+                    .join("\n")
+                : details.kind === "workspace-expert-draft-section-rename"
+                  ? `${details.previousTitle} → ${details.title}`
+                  : details.kind === "workspace-expert-draft-section-deletion"
+                    ? `删除：${details.title}`
+                    : details.text;
         events.push({
           type: "workspace.editor_mutation",
           runId: input.runId,
@@ -268,38 +273,48 @@ export function toRuntimeEvents(
                   ? {
                       mutationTarget: {
                         kind: "character-structure" as const,
-                        mutation: details.mutation
+                        mutation: details.mutation,
+                        ...(details.initialContent
+                          ? { initialContent: details.initialContent }
+                          : {})
                       }
                     }
-                  : details.kind === "workspace-expert-draft-section-creation"
+                  : details.kind === "workspace-plot-structure-mutation"
                     ? {
                         mutationTarget: {
-                          kind: "expert-draft-section-creation" as const,
-                          sections: details.sections,
-                          ...(details.afterSectionId
-                            ? { afterSectionId: details.afterSectionId }
-                            : {})
+                          kind: "plot-structure" as const,
+                          mutation: details.mutation
                         }
                       }
-                    : details.kind === "workspace-expert-draft-section-rename"
+                    : details.kind === "workspace-expert-draft-section-creation"
                       ? {
                           mutationTarget: {
-                            kind: "expert-draft-section-rename" as const,
-                            sectionId: details.sectionId,
-                            previousTitle: details.previousTitle,
-                            title: details.title
+                            kind: "expert-draft-section-creation" as const,
+                            sections: details.sections,
+                            ...(details.afterSectionId
+                              ? { afterSectionId: details.afterSectionId }
+                              : {})
                           }
                         }
-                      : details.kind ===
-                          "workspace-expert-draft-section-deletion"
+                      : details.kind === "workspace-expert-draft-section-rename"
                         ? {
                             mutationTarget: {
-                              kind: "expert-draft-section-deletion" as const,
+                              kind: "expert-draft-section-rename" as const,
                               sectionId: details.sectionId,
+                              previousTitle: details.previousTitle,
                               title: details.title
                             }
                           }
-                        : {}),
+                        : details.kind ===
+                            "workspace-expert-draft-section-deletion"
+                          ? {
+                              mutationTarget: {
+                                kind: "expert-draft-section-deletion" as const,
+                                sectionId: details.sectionId,
+                                title: details.title
+                              }
+                            }
+                          : {}),
             baseRevision: details.baseRevision,
             summary: details.summary,
             runtime

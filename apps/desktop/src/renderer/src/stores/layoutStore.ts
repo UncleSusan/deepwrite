@@ -122,6 +122,13 @@ export const useLayoutStore = defineStore("layout", () => {
     "--right-pane-width": `${rightPaneWidth.value}px`
   }));
 
+  const writingRightPaneViewModel = computed(() => ({
+    collapsed: rightCollapsed.value,
+    minWidth: RIGHT_PANE_MIN,
+    maxWidth: RIGHT_PANE_MAX,
+    width: rightPaneWidth.value
+  }));
+
   function showSettings(initialCategory = "general"): void {
     settingsInitialCategory.value = initialCategory;
     currentView.value = "settings";
@@ -359,6 +366,7 @@ export const useLayoutStore = defineStore("layout", () => {
     paneTransitionSuppressed,
     shellClasses,
     shellStyle,
+    writingRightPaneViewModel,
     showSettings,
     showWorkspace,
     showWorkspaceFeature,

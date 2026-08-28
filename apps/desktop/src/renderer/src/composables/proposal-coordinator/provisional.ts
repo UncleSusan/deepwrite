@@ -193,7 +193,6 @@ export function createProvisionalSectionHelpers(ctx: ProposalLaneContext) {
       ) {
         continue;
       }
-      removeQueuedAgentEdit(conversation, runId, proposal.id);
       conversation.updateEditProposal(runId, proposal.id, {
         status: "pending",
         statusMessage: message

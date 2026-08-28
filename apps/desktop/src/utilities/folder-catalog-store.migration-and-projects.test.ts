@@ -559,6 +559,10 @@ describe("FolderCatalogStore: migration-and-projects", () => {
       { title: "剧情结构测试", genre: "悬疑" },
       join(root, "books")
     );
+    const secondBook = await store.createShortBook(
+      { title: "剧情结构顺序同步", genre: "其他" },
+      join(root, "books")
+    );
     const created = await store.mutatePlotStructure({
       bookId: opened.resource.id,
       baseProjectRevision: 0,
@@ -609,6 +613,16 @@ describe("FolderCatalogStore: migration-and-projects", () => {
       mutation: { type: "move", stageId: stage.id, direction: "up" }
     });
     expect(moved.plotStages.at(-2)?.id).toBe(stage.id);
+    expect(
+      (await store.snapshot()).books
+        .find(({ id }) => id === secondBook.resource.id)
+        ?.plotStages.at(-2)?.id
+    ).toBe(stage.id);
+    const afterMove = await store.createShortBook(
+      { title: "沿用剧情结构顺序", genre: "其他" },
+      join(root, "books")
+    );
+    expect(afterMove.resource.plotStages.at(-2)?.id).toBe(stage.id);
     await store.saveDocument({
       bookId: opened.resource.id,
       documentId: stage.id,

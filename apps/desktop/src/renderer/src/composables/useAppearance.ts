@@ -1,120 +1,51 @@
 import { computed, reactive, readonly, watch } from "vue";
 import {
-  APPEARANCE_FONT_SIZE_LIMITS,
-  AppearanceEditorFontFamilySchema,
+  AppearanceEditorFontSelectionSchema,
   AppearanceSettingsSchema,
-  AppearanceUiFontFamilySchema,
+  AppearanceUiFontSelectionSchema,
   createDefaultAppearanceSettings,
-  createDefaultAppearanceTheme,
-  resolveAppearanceEditorFontStack,
-  resolveAppearanceUiFontStack,
+  isAppearanceCustomFontId,
   type AppearanceColorScheme,
-  type AppearanceEditorFontFamily,
+  type AppearanceEditorFontSelection,
   type AppearanceMode,
   type AppearanceSettings,
   type AppearanceThemeConfig,
-  type AppearanceUiFontFamily
-} from "@deepwrite/contracts";
+  type AppearanceUiFontSelection
+} from "@deepwrite/contracts/renderer";
+import {
+  applyAppearanceThemeToDocument,
+  defaultAppearanceTheme,
+  FONT_SIZE_LIMITS,
+  sanitizeAppearanceTheme,
+  serializeAppearanceThemeFile,
+  themePresets,
+  type ThemePreset
+} from "./appearanceThemeRuntime";
+import {
+  ensureAppearanceFontLoaded,
+  hydrateAppearanceFontCatalog
+} from "./useAppearanceFonts";
 
 export type { AppearanceMode };
 export type ColorScheme = AppearanceColorScheme;
 export type ThemeConfig = AppearanceThemeConfig;
+export { FONT_SIZE_LIMITS, themePresets };
+export { parseAppearanceThemeFile as parseThemeFile } from "./appearanceThemeRuntime";
+export type { ThemePreset };
 
 interface AppearanceState {
   mode: AppearanceMode;
   systemScheme: ColorScheme;
   light: ThemeConfig;
   dark: ThemeConfig;
-  uiFontFamily: AppearanceUiFontFamily;
-  editorFontFamily: AppearanceEditorFontFamily;
-}
-
-export interface ThemePreset {
-  id: string;
-  label: string;
-  light: Pick<ThemeConfig, "accent" | "background" | "foreground">;
-  dark: Pick<ThemeConfig, "accent" | "background" | "foreground">;
+  uiFontFamily: AppearanceUiFontSelection;
+  editorFontFamily: AppearanceEditorFontSelection;
 }
 
 const LEGACY_STORAGE_KEY = "deepwrite.appearance.v1";
 const PERSIST_DEBOUNCE_MS = 300;
-
-export const FONT_SIZE_LIMITS = APPEARANCE_FONT_SIZE_LIMITS;
-
-export const themePresets: ThemePreset[] = [
-  {
-    id: "codex",
-    label: "Codex",
-    light: { accent: "#339CFF", background: "#FFFFFF", foreground: "#1A1C1F" },
-    dark: { accent: "#5EACFF", background: "#17191C", foreground: "#F3F4F6" }
-  },
-  {
-    id: "paper",
-    label: "暖纸",
-    light: { accent: "#B5683B", background: "#FBF7EF", foreground: "#2E2823" },
-    dark: { accent: "#E49B66", background: "#201C19", foreground: "#F7EFE5" }
-  },
-  {
-    id: "ocean",
-    label: "海雾",
-    light: { accent: "#257F8B", background: "#F4FAFA", foreground: "#193135" },
-    dark: { accent: "#5CC3CF", background: "#102124", foreground: "#E5F3F4" }
-  }
-];
-
-function defaultTheme(scheme: ColorScheme): ThemeConfig {
-  return createDefaultAppearanceTheme(scheme);
-}
-
-function isHexColor(value: unknown): value is string {
-  return typeof value === "string" && /^#[\da-f]{6}$/i.test(value);
-}
-
-function sanitizeFontSize(
-  value: unknown,
-  fallback: number,
-  limits: { min: number; max: number }
-): number {
-  return typeof value === "number" &&
-    Number.isFinite(value) &&
-    value >= limits.min &&
-    value <= limits.max
-    ? Math.round(value * 2) / 2
-    : fallback;
-}
-
-function sanitizeTheme(value: unknown, scheme: ColorScheme): ThemeConfig {
-  const fallback = defaultTheme(scheme);
-  if (!value || typeof value !== "object") return fallback;
-  const candidate = value as Partial<ThemeConfig>;
-  return {
-    preset:
-      typeof candidate.preset === "string" ? candidate.preset : fallback.preset,
-    accent: isHexColor(candidate.accent)
-      ? candidate.accent.toUpperCase()
-      : fallback.accent,
-    background: isHexColor(candidate.background)
-      ? candidate.background.toUpperCase()
-      : fallback.background,
-    foreground: isHexColor(candidate.foreground)
-      ? candidate.foreground.toUpperCase()
-      : fallback.foreground,
-    uiFontSize: sanitizeFontSize(
-      candidate.uiFontSize,
-      fallback.uiFontSize,
-      FONT_SIZE_LIMITS.uiFontSize
-    ),
-    codeFontSize: sanitizeFontSize(
-      candidate.codeFontSize,
-      fallback.codeFontSize,
-      FONT_SIZE_LIMITS.codeFontSize
-    ),
-    translucentSidebar:
-      typeof candidate.translucentSidebar === "boolean"
-        ? candidate.translucentSidebar
-        : fallback.translucentSidebar
-  };
-}
+let uiFontSelectionIntent = 0;
+let editorFontSelectionIntent = 0;
 
 function captureSettings(): AppearanceSettings {
   return AppearanceSettingsSchema.parse({
@@ -127,6 +58,8 @@ function captureSettings(): AppearanceSettings {
 }
 
 function applySettings(settings: AppearanceSettings): void {
+  uiFontSelectionIntent += 1;
+  editorFontSelectionIntent += 1;
   suppressPersist = true;
   state.mode = settings.mode;
   state.uiFontFamily = settings.uiFontFamily;
@@ -176,8 +109,8 @@ function readLegacyStoredState(systemScheme: ColorScheme): AppearanceState {
           ? parsed.mode
           : fallback.mode,
       systemScheme,
-      light: sanitizeTheme(parsed.light, "light"),
-      dark: sanitizeTheme(parsed.dark, "dark"),
+      light: sanitizeAppearanceTheme(parsed.light, "light"),
+      dark: sanitizeAppearanceTheme(parsed.dark, "dark"),
       uiFontFamily: sanitizeUiFontFamily(
         parsed.uiFontFamily,
         fallback.uiFontFamily
@@ -217,54 +150,6 @@ function persistToLegacyStorage(): void {
   }
 }
 
-function hexToRgb(hex: string): [number, number, number] {
-  return [
-    Number.parseInt(hex.slice(1, 3), 16),
-    Number.parseInt(hex.slice(3, 5), 16),
-    Number.parseInt(hex.slice(5, 7), 16)
-  ];
-}
-
-function mixChannels(
-  background: string,
-  foreground: string,
-  foregroundRatio: number
-): [number, number, number] {
-  const bg = hexToRgb(background);
-  const fg = hexToRgb(foreground);
-  return bg.map((channel, index) =>
-    Math.round(channel * (1 - foregroundRatio) + fg[index]! * foregroundRatio)
-  ) as [number, number, number];
-}
-
-function mix(
-  background: string,
-  foreground: string,
-  foregroundRatio: number
-): string {
-  return `rgb(${mixChannels(background, foreground, foregroundRatio).join(" ")})`;
-}
-
-function rgba(hex: string, alpha: number): string {
-  const [r, g, b] = hexToRgb(hex);
-  return `rgb(${r} ${g} ${b} / ${alpha})`;
-}
-
-function readableAccentText(hex: string): string {
-  const [r, g, b] = hexToRgb(hex);
-  const perceivedBrightness = (r * 299 + g * 587 + b * 114) / 1000;
-  return perceivedBrightness > 158 ? "#17191C" : "#FFFFFF";
-}
-
-function mixRgba(
-  background: string,
-  foreground: string,
-  foregroundRatio: number,
-  alpha: number
-): string {
-  return `rgb(${mixChannels(background, foreground, foregroundRatio).join(" ")} / ${alpha})`;
-}
-
 const media = window.matchMedia("(prefers-color-scheme: dark)");
 const state = reactive<AppearanceState>(
   readLegacyStoredState(media.matches ? "dark" : "light")
@@ -280,82 +165,12 @@ let persistChain: Promise<void> = Promise.resolve();
 let hydratePromise: Promise<void> | undefined;
 
 function applyToDocument(): void {
-  const scheme = resolvedScheme.value;
-  const theme = activeTheme.value;
-  const root = document.documentElement;
-  root.dataset.theme = scheme;
-  root.style.colorScheme = scheme;
-  root.style.setProperty("--accent", theme.accent);
-  root.style.setProperty("--accent-contrast", readableAccentText(theme.accent));
-  root.style.setProperty(
-    "--accent-soft",
-    rgba(theme.accent, scheme === "dark" ? 0.18 : 0.12)
-  );
-  root.style.setProperty("--theme-background", theme.background);
-  root.style.setProperty("--theme-foreground", theme.foreground);
-  root.style.setProperty("--surface-main", theme.background);
-  root.style.setProperty(
-    "--surface-raised",
-    mix(theme.background, theme.foreground, scheme === "dark" ? 0.055 : 0.018)
-  );
-  root.style.setProperty(
-    "--surface-muted",
-    mix(theme.background, theme.foreground, scheme === "dark" ? 0.09 : 0.045)
-  );
-  root.style.setProperty(
-    "--surface-hover",
-    mix(theme.background, theme.foreground, scheme === "dark" ? 0.14 : 0.085)
-  );
-  root.style.setProperty(
-    "--surface-selected",
-    mix(theme.background, theme.foreground, scheme === "dark" ? 0.2 : 0.12)
-  );
-  root.style.setProperty(
-    "--theme-line",
-    mix(theme.background, theme.foreground, scheme === "dark" ? 0.2 : 0.14)
-  );
-  root.style.setProperty(
-    "--theme-line-soft",
-    mix(theme.background, theme.foreground, scheme === "dark" ? 0.13 : 0.075)
-  );
-  root.style.setProperty("--text-primary", theme.foreground);
-  root.style.setProperty(
-    "--text-secondary",
-    mix(theme.background, theme.foreground, scheme === "dark" ? 0.72 : 0.67)
-  );
-  root.style.setProperty(
-    "--text-tertiary",
-    mix(theme.background, theme.foreground, scheme === "dark" ? 0.52 : 0.5)
-  );
-  root.style.setProperty("--ui-font-size", `${theme.uiFontSize}px`);
-  root.style.setProperty("--code-font-size", `${theme.codeFontSize}px`);
-  root.style.setProperty(
-    "--ui-font",
-    resolveAppearanceUiFontStack(state.uiFontFamily)
-  );
-  root.style.setProperty(
-    "--editor-font",
-    resolveAppearanceEditorFontStack(state.editorFontFamily)
-  );
-  root.style.setProperty(
-    "--sidebar-surface",
-    theme.translucentSidebar
-      ? mixRgba(
-          theme.background,
-          theme.foreground,
-          scheme === "dark" ? 0.08 : 0.035,
-          0.84
-        )
-      : mix(
-          theme.background,
-          theme.foreground,
-          scheme === "dark" ? 0.08 : 0.035
-        )
-  );
-  root.dataset.translucentSidebar = String(theme.translucentSidebar);
-  document
-    .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-    ?.setAttribute("content", theme.background);
+  applyAppearanceThemeToDocument({
+    scheme: resolvedScheme.value,
+    theme: activeTheme.value,
+    uiFontFamily: state.uiFontFamily,
+    editorFontFamily: state.editorFontFamily
+  });
 }
 
 function queueDesktopPersist(settings: AppearanceSettings): void {
@@ -382,15 +197,74 @@ function persist(): void {
   }
   persistTimer = setTimeout(() => {
     persistTimer = undefined;
+    if (typeof window === "undefined") return;
     queueDesktopPersist(captureSettings());
   }, PERSIST_DEBOUNCE_MS);
+}
+
+async function normalizeLoadedFontSelections(
+  settings: AppearanceSettings
+): Promise<AppearanceSettings> {
+  const defaults = createDefaultAppearanceSettings();
+  let uiFontFamily = settings.uiFontFamily;
+  let editorFontFamily = settings.editorFontFamily;
+
+  if (isAppearanceCustomFontId(uiFontFamily)) {
+    try {
+      await ensureAppearanceFontLoaded(uiFontFamily);
+    } catch {
+      uiFontFamily = defaults.uiFontFamily;
+    }
+  }
+  if (isAppearanceCustomFontId(editorFontFamily)) {
+    try {
+      await ensureAppearanceFontLoaded(editorFontFamily);
+    } catch {
+      editorFontFamily = defaults.editorFontFamily;
+    }
+  }
+  return AppearanceSettingsSchema.parse({
+    ...settings,
+    uiFontFamily,
+    editorFontFamily
+  });
+}
+
+function fontSelectionsChanged(
+  before: AppearanceSettings,
+  after: AppearanceSettings
+): boolean {
+  return (
+    before.uiFontFamily !== after.uiFontFamily ||
+    before.editorFontFamily !== after.editorFontFamily
+  );
+}
+
+async function applyHydratedSettings(
+  settings: AppearanceSettings,
+  persistRepair = false
+): Promise<void> {
+  const normalized = await normalizeLoadedFontSelections(settings);
+  applySettings(normalized);
+  if (persistRepair && fontSelectionsChanged(settings, normalized)) {
+    await window.deepwrite?.appearance.save(normalized);
+  }
+}
+
+async function applyDesktopSettings(
+  settings: AppearanceSettings
+): Promise<void> {
+  await applyHydratedSettings(settings, true);
 }
 
 async function hydrateFromDesktop(): Promise<void> {
   const api = window.deepwrite?.appearance;
   if (!api) return;
   try {
-    const snapshot = await api.list();
+    const [snapshot] = await Promise.all([
+      api.list(),
+      hydrateAppearanceFontCatalog()
+    ]);
     if (!snapshot.persisted) {
       const legacyRaw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
       if (legacyRaw) {
@@ -398,8 +272,9 @@ async function hydrateFromDesktop(): Promise<void> {
           JSON.parse(legacyRaw) as unknown
         );
         if (legacy.success) {
-          applySettings(legacy.data);
-          await api.save(legacy.data);
+          const normalized = await normalizeLoadedFontSelections(legacy.data);
+          applySettings(normalized);
+          await api.save(normalized);
           clearLegacyStorage();
           return;
         }
@@ -407,7 +282,7 @@ async function hydrateFromDesktop(): Promise<void> {
       clearLegacyStorage();
       return;
     }
-    applySettings(snapshot.settings);
+    await applyHydratedSettings(snapshot.settings, true);
     clearLegacyStorage();
   } catch {
     // Keep the bootstrapped theme (legacy localStorage or defaults) if hydration fails.
@@ -440,29 +315,39 @@ export function setAppearanceMode(mode: AppearanceMode): void {
 
 function sanitizeUiFontFamily(
   value: unknown,
-  fallback: AppearanceUiFontFamily
-): AppearanceUiFontFamily {
-  const parsed = AppearanceUiFontFamilySchema.safeParse(value);
+  fallback: AppearanceUiFontSelection
+): AppearanceUiFontSelection {
+  const parsed = AppearanceUiFontSelectionSchema.safeParse(value);
   return parsed.success ? parsed.data : fallback;
 }
 
 function sanitizeEditorFontFamily(
   value: unknown,
-  fallback: AppearanceEditorFontFamily
-): AppearanceEditorFontFamily {
-  const parsed = AppearanceEditorFontFamilySchema.safeParse(value);
+  fallback: AppearanceEditorFontSelection
+): AppearanceEditorFontSelection {
+  const parsed = AppearanceEditorFontSelectionSchema.safeParse(value);
   return parsed.success ? parsed.data : fallback;
 }
 
-export function setUiFontFamily(family: string): void {
-  const parsed = AppearanceUiFontFamilySchema.safeParse(family);
+export async function setUiFontFamily(family: string): Promise<void> {
+  const intent = ++uiFontSelectionIntent;
+  const parsed = AppearanceUiFontSelectionSchema.safeParse(family);
   if (!parsed.success || parsed.data === state.uiFontFamily) return;
+  if (isAppearanceCustomFontId(parsed.data)) {
+    await ensureAppearanceFontLoaded(parsed.data);
+  }
+  if (intent !== uiFontSelectionIntent) return;
   state.uiFontFamily = parsed.data;
 }
 
-export function setEditorFontFamily(family: string): void {
-  const parsed = AppearanceEditorFontFamilySchema.safeParse(family);
+export async function setEditorFontFamily(family: string): Promise<void> {
+  const intent = ++editorFontSelectionIntent;
+  const parsed = AppearanceEditorFontSelectionSchema.safeParse(family);
   if (!parsed.success || parsed.data === state.editorFontFamily) return;
+  if (isAppearanceCustomFontId(parsed.data)) {
+    await ensureAppearanceFontLoaded(parsed.data);
+  }
+  if (intent !== editorFontSelectionIntent) return;
   state.editorFontFamily = parsed.data;
 }
 
@@ -480,13 +365,13 @@ export function applyThemePreset(scheme: ColorScheme, presetId: string): void {
 }
 
 export function importTheme(scheme: ColorScheme, value: unknown): void {
-  Object.assign(state[scheme], sanitizeTheme(value, scheme), {
+  Object.assign(state[scheme], sanitizeAppearanceTheme(value, scheme), {
     preset: "custom"
   });
 }
 
 export function resetTheme(scheme: ColorScheme): void {
-  Object.assign(state[scheme], defaultTheme(scheme));
+  Object.assign(state[scheme], defaultAppearanceTheme(scheme));
 }
 
 export function useAppearance() {
@@ -498,6 +383,7 @@ export function useAppearance() {
     setMode: setAppearanceMode,
     setUiFontFamily,
     setEditorFontFamily,
+    applyDesktopSettings,
     updateTheme,
     applyPreset: applyThemePreset,
     importTheme,
@@ -507,23 +393,5 @@ export function useAppearance() {
 }
 
 export function serializeTheme(scheme: ColorScheme): string {
-  return JSON.stringify({ version: 2, scheme, theme: state[scheme] }, null, 2);
-}
-
-export function parseThemeFile(value: string): {
-  scheme?: ColorScheme;
-  theme: unknown;
-} {
-  const parsed: unknown = JSON.parse(value);
-  if (!parsed || typeof parsed !== "object")
-    throw new Error("主题文件格式无效");
-  const record = parsed as { scheme?: unknown; theme?: unknown };
-  const scheme =
-    record.scheme === "light" || record.scheme === "dark"
-      ? record.scheme
-      : undefined;
-  return {
-    ...(scheme ? { scheme } : {}),
-    theme: record.theme ?? parsed
-  };
+  return serializeAppearanceThemeFile(scheme, state[scheme]);
 }

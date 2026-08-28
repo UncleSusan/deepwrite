@@ -2,8 +2,15 @@
 import { computed } from "vue";
 import { renderMarkdown } from "../utils/renderMarkdown";
 
-const props = defineProps<{ content: string }>();
-const html = computed(() => renderMarkdown(props.content));
+const props = withDefaults(
+  defineProps<{ content: string; annotateHeadings?: boolean }>(),
+  { annotateHeadings: false }
+);
+const html = computed(() =>
+  renderMarkdown(props.content, {
+    annotateHeadings: props.annotateHeadings
+  })
+);
 </script>
 
 <template>

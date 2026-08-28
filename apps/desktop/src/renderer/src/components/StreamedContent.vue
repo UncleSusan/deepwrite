@@ -1,25 +1,33 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import MessageMarkdown from "./MessageMarkdown.vue";
+import StreamingMarkdown from "./StreamingMarkdown.vue";
 import StreamingText from "./StreamingText.vue";
 
 const props = withDefaults(
   defineProps<{
     content: string;
+    format: "markdown" | "plain";
     streaming?: boolean;
   }>(),
   { streaming: false }
 );
 
-// A completed response only needs one Markdown pass. Very large model traces stay
-// as a single text node so opening a completed thinking disclosure is also safe.
+// Thinking explicitly stays plain. Extremely large output also remains one text
+// node so a model trace cannot monopolize the renderer with repeated DOM rebuilds.
 const MAX_SAFE_MARKDOWN_LENGTH = 100_000;
-const useIncrementalText = computed(
-  () => props.streaming || props.content.length > MAX_SAFE_MARKDOWN_LENGTH
+const usePlainText = computed(
+  () =>
+    props.format === "plain" || props.content.length > MAX_SAFE_MARKDOWN_LENGTH
 );
 </script>
 
 <template>
-  <StreamingText v-if="useIncrementalText" :content="content" />
+  <StreamingText v-if="usePlainText" :content="content" />
+  <StreamingMarkdown
+    v-else-if="streaming"
+    :content="content"
+    :streaming="streaming"
+  />
   <MessageMarkdown v-else :content="content" />
 </template>

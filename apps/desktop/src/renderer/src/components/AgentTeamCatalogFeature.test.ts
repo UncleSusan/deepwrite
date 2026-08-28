@@ -29,6 +29,7 @@ describe("AgentTeamCatalogFeature", () => {
     expect(source).not.toContain('emit("setEnabled"');
     expect(source).toContain("pendingExistingTeamIds");
     expect(source).toContain("<PopupSelect");
+    expect(source).toContain(':menu-z-index="2200"');
   });
 
   it("resets detail state whenever the primary navigation is activated", () => {
@@ -41,5 +42,12 @@ describe("AgentTeamCatalogFeature", () => {
     expect(source).toContain('<AppIcon name="chevron" :size="14" />');
     expect(source).toContain('@click="selectedTeamId = team.id"');
     expect(source).toContain("@click.stop");
+  });
+
+  it("downloads each complete team and installs uploaded team archives", () => {
+    expect(source).toContain("安装团队");
+    expect(source).toContain("emit('install')");
+    expect(source).toContain("emit('download', { teamId: team.id })");
+    expect(source).toContain('<AppIcon name="download"');
   });
 });

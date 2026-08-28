@@ -43,6 +43,8 @@ import {
   LegacyBookProjectManifestSchema,
   MutateCharacterStructureInputSchema,
   MutatePlotStructureInputSchema,
+  ReadWritingContextInputSchema,
+  ReadWritingContextResultSchema,
   SaveDocumentInputSchema,
   SaveDocumentResultSchema,
   MaterialGroupProjectManifestSchema,
@@ -61,6 +63,8 @@ import {
   ScriptBookSchema,
   UpdateBookInputSchema,
   UpdateLibraryGroupInputSchema,
+  WriteWritingContextInputSchema,
+  WriteWritingContextResultSchema,
   catalogDraftBodyDocumentId,
   catalogDraftCharacterStateDocumentId,
   createCatalogDraftDirectory,
@@ -114,6 +118,8 @@ import {
   type CatalogInstallMarketplaceSkillContentResult,
   type MutateCharacterStructureInput,
   type MutatePlotStructureInput,
+  type ReadWritingContextInput,
+  type ReadWritingContextResult,
   type SaveLibraryEntryInput,
   type MoveLibraryEntryInput,
   type MoveLibraryEntryResult,
@@ -128,9 +134,16 @@ import {
   type SkillStageId,
   type UpdateBookInput,
   type UpdateLibraryGroupInput,
+  type WriteWritingContextInput,
+  type WriteWritingContextResult,
   type V2BookProjectManifest,
   type V3BookProjectManifest
 } from "@deepwrite/contracts";
+import {
+  initializeWritingContextFile,
+  readOrCreateWritingContext,
+  writeWritingContextFile
+} from "./folder-catalog-store/writing-context";
 import type { ImportedLegacyBook } from "./legacy-book-import";
 import type { ImportedLegacyLibrary } from "./legacy-library-import";
 import { nextCopyTitle } from "./copy-title";
@@ -320,6 +333,7 @@ interface DuplicateProjectWritePlan {
   domain: FolderCatalogProjectDomain;
   parentDirectory: string;
   resource: FolderCatalogResource;
+  writingContext?: string;
 }
 
 export type SaveFolderDocumentInput = SaveDocumentInput;
@@ -486,6 +500,54 @@ export class FolderCatalogStore {
     });
   }
 
+  async readWritingContext(
+    rawInput: ReadWritingContextInput
+  ): Promise<ReadWritingContextResult> {
+    const input = ReadWritingContextInputSchema.parse(rawInput);
+    return await this.readAfterWrites(async () => {
+      const registry = await this.ensureRegistry();
+      const registration = findRegistration(registry, input.bookId, "book");
+      const projectDirectory = await secureProjectRoot(
+        registration.projectDirectory
+      );
+      const manifest = await this.readCurrentBookManifest(
+        projectDirectory,
+        input.bookId
+      );
+      const result = await readOrCreateWritingContext(
+        projectDirectory,
+        manifest.bookType
+      );
+      return ReadWritingContextResultSchema.parse({
+        bookId: input.bookId,
+        workspaceType: manifest.bookType,
+        ...result
+      });
+    });
+  }
+
+  async writeWritingContext(
+    rawInput: WriteWritingContextInput
+  ): Promise<WriteWritingContextResult> {
+    const input = WriteWritingContextInputSchema.parse(rawInput);
+    return await this.mutate(async () => {
+      const registry = await this.ensureRegistry();
+      const registration = findRegistration(registry, input.bookId, "book");
+      const projectDirectory = await secureProjectRoot(
+        registration.projectDirectory
+      );
+      const manifest = await this.readCurrentBookManifest(
+        projectDirectory,
+        input.bookId
+      );
+      await writeWritingContextFile(projectDirectory, input.content);
+      return WriteWritingContextResultSchema.parse({
+        bookId: input.bookId,
+        workspaceType: manifest.bookType
+      });
+    });
+  }
+
   async loadDraftRecovery(): Promise<CatalogDraftRecovery> {
     return await this.readAfterWrites(async () => {
       const text = await readOptionalUtf8File(
@@ -600,32 +662,35 @@ export class FolderCatalogStore {
     const parent =
       (wrapped ? rawInput.parentDirectory : parentDirectory)?.trim() ||
       this.defaultProjectParents.book;
-    return await this.createBookProject(parent, (now) =>
-      ShortBookSchema.parse({
-        id: createCatalogId("book"),
-        title: input.title,
-        bookType: "short",
-        genre: input.genre,
-        status: "editing",
-        linkedMaterialIdsByKind: linkedMaterialIdsFromInput(
-          input.linkedMaterialIdsByKind
-        ),
-        linkedSkillIdsByKind: linkedSkillIdsFromInput(
-          input.linkedSkillIdsByKind
-        ),
-        characterStructure: createDefaultBookCharacterStructure(),
-        plotStages: createDefaultBookPlotStages(),
-        documents: DEFAULT_SHORT_DOCUMENTS.map(([id, title]) => ({
-          id,
-          title,
-          content: "",
+    return await this.createBookProject(
+      parent,
+      (now) =>
+        ShortBookSchema.parse({
+          id: createCatalogId("book"),
+          title: input.title,
+          bookType: "short",
+          genre: input.genre,
+          status: "editing",
+          linkedMaterialIdsByKind: linkedMaterialIdsFromInput(
+            input.linkedMaterialIdsByKind
+          ),
+          linkedSkillIdsByKind: linkedSkillIdsFromInput(
+            input.linkedSkillIdsByKind
+          ),
+          characterStructure: createDefaultBookCharacterStructure(),
+          plotStages: createDefaultBookPlotStages(),
+          documents: DEFAULT_SHORT_DOCUMENTS.map(([id, title]) => ({
+            id,
+            title,
+            content: "",
+            createdAt: now,
+            updatedAt: now
+          })),
+          draft: createCatalogDraftDirectory(now),
           createdAt: now,
           updatedAt: now
-        })),
-        draft: createCatalogDraftDirectory(now),
-        createdAt: now,
-        updatedAt: now
-      })
+        }),
+      input.defaultPlotStageIds
     );
   }
 
@@ -678,14 +743,16 @@ export class FolderCatalogStore {
 
   private async createBookProject<Resource extends Book>(
     parentDirectory: string,
-    createBook: (now: string) => Resource
+    createBook: (now: string) => Resource,
+    defaultPlotStageIds?: readonly string[]
   ): Promise<OpenFolderCatalogProjectResult<Resource>> {
     return await this.mutate(async () => {
       const now = this.now();
       const registry = await this.ensureRegistry();
       const book = applyGlobalPlotStagesToNewBook(
         createBook(now),
-        registry.creativePlotStages
+        registry.creativePlotStages,
+        defaultPlotStageIds
       );
       const snapshot = await this.aggregateSnapshot(registry);
       assertBookLibraryReferences(book, snapshot);
@@ -1199,7 +1266,7 @@ export class FolderCatalogStore {
       const now = this.now();
       const mutation = input.mutation;
 
-      if (mutation.type === "move" || mutation.type === "setEnabled") {
+      if (mutation.type === "move") {
         const plotStages = manifest.plotStages.map((stage) => ({ ...stage }));
         const stageIndex = plotStages.findIndex(
           ({ id }) => id === mutation.stageId
@@ -1207,28 +1274,54 @@ export class FolderCatalogStore {
         if (stageIndex < 0) {
           throw new Error("该剧情结构已删除或不存在。");
         }
-        if (mutation.type === "move") {
-          const targetIndex =
-            mutation.direction === "up" ? stageIndex - 1 : stageIndex + 1;
-          if (targetIndex < 0 || targetIndex >= plotStages.length) {
-            throw new Error("该剧情结构已经位于列表边界。");
-          }
-          const [stage] = plotStages.splice(stageIndex, 1);
-          plotStages.splice(targetIndex, 0, stage!);
-        } else {
-          if (
-            !mutation.enabled &&
-            !plotStages.some(
-              (stage, index) => index !== stageIndex && stage.enabled
-            )
-          ) {
-            throw new Error("至少需要保留一个启用的剧情结构项。");
-          }
-          plotStages[stageIndex] = {
-            ...plotStages[stageIndex]!,
-            enabled: mutation.enabled
-          };
+        const targetIndex =
+          mutation.direction === "up" ? stageIndex - 1 : stageIndex + 1;
+        if (targetIndex < 0 || targetIndex >= plotStages.length) {
+          throw new Error("该剧情结构已经位于列表边界。");
         }
+        const [stage] = plotStages.splice(stageIndex, 1);
+        plotStages.splice(targetIndex, 0, stage!);
+        const definitionsById = new Map(
+          registry.creativePlotStages.map((definition) => [
+            definition.id,
+            definition
+          ])
+        );
+        registry.creativePlotStages = CreativePlotStagesSchema.parse([
+          ...plotStages.flatMap((item) => {
+            const definition = definitionsById.get(item.id);
+            return definition ? [definition] : [];
+          }),
+          ...registry.creativePlotStages.filter(
+            (definition) => !plotStages.some(({ id }) => id === definition.id)
+          )
+        ]);
+        await this.applyGlobalPlotStageOrder(registry, now);
+        await this.bumpRegistry(registry, now);
+        return (await this.readProject(projectDirectory, "book", input.bookId))
+          .resource as Book;
+      }
+
+      if (mutation.type === "setEnabled") {
+        const plotStages = manifest.plotStages.map((stage) => ({ ...stage }));
+        const stageIndex = plotStages.findIndex(
+          ({ id }) => id === mutation.stageId
+        );
+        if (stageIndex < 0) {
+          throw new Error("该剧情结构已删除或不存在。");
+        }
+        if (
+          !mutation.enabled &&
+          !plotStages.some(
+            (stage, index) => index !== stageIndex && stage.enabled
+          )
+        ) {
+          throw new Error("至少需要保留一个启用的剧情结构项。");
+        }
+        plotStages[stageIndex] = {
+          ...plotStages[stageIndex]!,
+          enabled: mutation.enabled
+        };
         const nextManifest = FolderCurrentBookProjectManifestSchema.parse({
           ...manifest,
           revision: manifest.revision + 1,
@@ -1760,6 +1853,49 @@ export class FolderCatalogStore {
         revision: manifest.revision + 1,
         plotStages: BookPlotStagesSchema.parse(plotStages),
         documents,
+        updatedAt: now
+      });
+      await atomicWriteJson(
+        join(projectDirectory, MANIFEST_FILE),
+        nextManifest,
+        this.maxManifestBytes
+      );
+    }
+  }
+
+  private async applyGlobalPlotStageOrder(
+    registry: FolderCatalogRegistry,
+    now: string
+  ): Promise<void> {
+    const order = new Map(
+      registry.creativePlotStages.map(({ id }, index) => [id, index])
+    );
+    for (const registration of registry.projects.filter(
+      (project) => project.domain === "book"
+    )) {
+      const projectDirectory = await secureProjectRoot(
+        registration.projectDirectory
+      );
+      const manifest = await this.readCurrentBookManifest(
+        projectDirectory,
+        registration.id
+      );
+      const plotStages = [...manifest.plotStages].sort(
+        (left, right) =>
+          (order.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+          (order.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+      );
+      if (
+        plotStages.every(
+          (stage, index) => stage.id === manifest.plotStages[index]?.id
+        )
+      ) {
+        continue;
+      }
+      const nextManifest = FolderCurrentBookProjectManifestSchema.parse({
+        ...manifest,
+        revision: manifest.revision + 1,
+        plotStages: BookPlotStagesSchema.parse(plotStages),
         updatedAt: now
       });
       await atomicWriteJson(
@@ -3346,10 +3482,15 @@ export class FolderCatalogStore {
           snapshot.books.map((book) => book.title)
         );
         primaryResource = duplicateBookResource(source, title, now);
+        const sourceWritingContext = await readOrCreateWritingContext(
+          registration.projectDirectory,
+          source.bookType
+        );
         plans.push({
           domain: "book",
           parentDirectory: dirname(registration.projectDirectory),
-          resource: primaryResource
+          resource: primaryResource,
+          writingContext: sourceWritingContext.content
         });
       } else if (input.domain === "material" || input.domain === "skill") {
         const registryDomain = libraryProjectDomain(input.domain);
@@ -3499,6 +3640,12 @@ export class FolderCatalogStore {
             plan.parentDirectory,
             plan.resource
           );
+          if (plan.writingContext !== undefined) {
+            await writeWritingContextFile(
+              projectDirectory,
+              plan.writingContext
+            );
+          }
           createdProjectDirectories.push(projectDirectory);
           registrations.push({
             id: plan.resource.id,
@@ -4015,6 +4162,12 @@ export class FolderCatalogStore {
         resource,
         this.maxMarkdownBytes
       );
+      if (domain === "book") {
+        await initializeWritingContextFile(
+          stagingDirectory,
+          (resource as Book).bookType
+        );
+      }
       await atomicWriteJson(
         join(stagingDirectory, MANIFEST_FILE),
         manifest,
@@ -5009,9 +5162,6 @@ function mergeCreativePlotStageDefinitions(
   >
 ): CreativePlotStage[] {
   const definitions = new Map<string, CreativePlotStage>();
-  for (const stage of createDefaultCreativePlotStages()) {
-    definitions.set(stage.id, stage);
-  }
   for (const group of groups) {
     for (const stage of group) {
       if (!definitions.has(stage.id)) {
@@ -5022,6 +5172,9 @@ function mergeCreativePlotStageDefinitions(
         });
       }
     }
+  }
+  for (const stage of createDefaultCreativePlotStages()) {
+    if (!definitions.has(stage.id)) definitions.set(stage.id, stage);
   }
   return CreativePlotStagesSchema.parse([...definitions.values()]);
 }
@@ -5044,7 +5197,8 @@ function sameCreativePlotStageDefinitions(
 
 function applyGlobalPlotStagesToNewBook<Resource extends Book>(
   book: Resource,
-  globalStages: readonly CreativePlotStage[]
+  globalStages: readonly CreativePlotStage[],
+  defaultPlotStageIds?: readonly string[]
 ): Resource {
   const definitions =
     globalStages.length > 0
@@ -5053,9 +5207,18 @@ function applyGlobalPlotStagesToNewBook<Resource extends Book>(
   const existingDocuments = new Map(
     book.documents.map((document) => [document.id, document])
   );
+  const existingStages = new Map(
+    book.plotStages.map((stage) => [stage.id, stage])
+  );
+  const configuredStageIds = defaultPlotStageIds
+    ? new Set(defaultPlotStageIds)
+    : undefined;
   const plotStages: BookPlotStage[] = definitions.map((stage) => ({
     ...stage,
-    enabled: DEFAULT_NEW_BOOK_ENABLED_PLOT_STAGE_IDS.has(stage.id)
+    enabled:
+      configuredStageIds?.has(stage.id) ??
+      existingStages.get(stage.id)?.enabled ??
+      DEFAULT_NEW_BOOK_ENABLED_PLOT_STAGE_IDS.has(stage.id)
   }));
   const documents = [
     ...(existingDocuments.get("character_design")

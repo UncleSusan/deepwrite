@@ -14,6 +14,7 @@ import {
   resolveDraftSectionCreationCommitPlan
 } from "../../utils/draftSectionCreationRevision";
 import type { AgentConversationController } from "../useAgentConversation";
+import { saveCreatedDraftSectionContents } from "./creation-content";
 import { agentEditProposalId } from "../../utils/agentEditReview";
 import { buildAgentTextDiff } from "../../utils/agentTextDiff";
 import type {
@@ -334,6 +335,12 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
           result.section.id
         );
       }
+      await saveCreatedDraftSectionContents(currentApi.catalog, {
+        bookId: proposal.workspaceId,
+        requested: target.sections,
+        created: created.sections,
+        projectRevision: created.projectRevision
+      });
       await loadCatalogSnapshot();
       const savedDirectoryRevision = currentExpertDraftDirectoryRevision(
         proposal.workspaceId
@@ -383,8 +390,8 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
           }))
         },
         statusMessage: automatic
-          ? `已自动批准并创建 ${createdCount} 个空白章节；每章均包含正文和人物状态文件。`
-          : `已创建 ${createdCount} 个空白章节并保存到本地 Markdown。`
+          ? `已自动批准并创建 ${createdCount} 个章节；随创建提交的正文与人物状态已一并保存。`
+          : `已创建 ${createdCount} 个章节，并保存随创建提交的正文与人物状态。`
       });
       if (!automatic) {
         uiMessage.success(`已创建 ${createdCount} 个空白章节文件`);
@@ -969,7 +976,17 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
         createdAt: event.timestamp,
         updatedAt: event.timestamp,
         draftSectionCreationTarget: {
-          sections: mutationTarget.sections.map((section) => ({ ...section })),
+          sections: mutationTarget.sections.map((section) => ({
+            title: section.title,
+            wordCountRequirement: section.wordCountRequirement,
+            provisionalSectionId: section.provisionalSectionId,
+            ...(section.bodyContent === undefined
+              ? {}
+              : { bodyContent: section.bodyContent }),
+            ...(section.characterStateContent === undefined
+              ? {}
+              : { characterStateContent: section.characterStateContent })
+          })),
           ...(mutationTarget.afterSectionId
             ? { afterSectionId: mutationTarget.afterSectionId }
             : {}),

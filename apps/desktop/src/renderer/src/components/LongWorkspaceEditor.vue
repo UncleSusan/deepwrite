@@ -9,7 +9,8 @@ import {
   type LongFileRevision,
   type LongWorkspaceIndexSnapshot,
   type LongWorkspaceOperationBatch,
-  type LongWriteDocumentResult
+  type LongWriteDocumentResult,
+  type TextViewMode
 } from "@deepwrite/contracts";
 import { LONG_EDITOR_LIST_MIN_WIDTH } from "../utils/longEditorPanePreferences";
 import { countNonWhitespaceCharacters } from "../utils/boundedTextHistory";
@@ -21,6 +22,7 @@ import {
   type LongWorkspaceSelection
 } from "../types/longWorkspace";
 import AppIcon from "./AppIcon.vue";
+import DocumentMetaRow from "./DocumentMetaRow.vue";
 import LongCharacterNavigation from "./LongCharacterNavigation.vue";
 import LongContinuityLedgerNavigation from "./LongContinuityLedgerNavigation.vue";
 import LongEditorDeleteDialogs from "./LongEditorDeleteDialogs.vue";
@@ -52,6 +54,7 @@ import {
   type LongEditorStructureHost,
   type LongStructureTitleTarget
 } from "../composables/useLongEditorStructureSelection";
+import { useTextViewMode } from "../composables/useTextViewMode";
 
 const props = defineProps<{
   bookId: string;
@@ -62,6 +65,7 @@ const props = defineProps<{
   lockedReason?: string | undefined;
   rightPane?: boolean;
   rightPaneCollapsed?: boolean;
+  defaultViewMode: TextViewMode;
 }>();
 
 const emit = defineEmits<{
@@ -130,8 +134,11 @@ const volumeOutlineDrafts = ref<Record<string, LongVolumeOutlineDraft>>({});
 const plotPointSummaryDrafts = ref<Record<string, LongVolumeOutlineDraft>>({});
 const pendingWorldbuildingDeleteId = ref<string | null>(null);
 const editorInput = ref<HTMLTextAreaElement | null>(null);
+const documentPreview = ref<HTMLElement | null>(null);
 const editorToolsElement = ref<HTMLElement>();
-const viewMode = ref<"edit" | "preview">("edit");
+const { resetToDefault, setViewMode, viewMode } = useTextViewMode({
+  defaultMode: () => props.defaultViewMode
+});
 function setEditorInputElement(element: HTMLTextAreaElement | null): void {
   editorInput.value = element;
 }
@@ -990,7 +997,7 @@ const {
   orderedBookLineVolumes,
   currentCharacterNavigationItems,
   documentStates,
-  viewMode,
+  resetTextViewMode: resetToDefault,
   stateKey
 });
 
@@ -1270,12 +1277,18 @@ watch(
       props.selection?.chapterCardId
     ] as const,
   () => {
-    viewMode.value = currentSelectionFile.value?.readOnly ? "preview" : "edit";
+    resetToDefault(Boolean(currentSelectionFile.value?.readOnly));
     closeFindPanel();
     searchQuery.value = "";
     replacementText.value = "";
     resetEditorHistory();
   },
+  { immediate: true, flush: "sync" }
+);
+
+watch(
+  () => props.defaultViewMode,
+  () => resetToDefault(Boolean(currentSelectionFile.value?.readOnly)),
   { flush: "sync" }
 );
 
@@ -1653,7 +1666,7 @@ onBeforeUnmount(() => {
             :aria-selected="viewMode === 'edit'"
             :class="{ 'is-active': viewMode === 'edit' }"
             :disabled="!canUseTextTools || currentReadOnly"
-            @click="viewMode = 'edit'"
+            @click="setViewMode('edit')"
           >
             编辑
           </button>
@@ -1663,7 +1676,7 @@ onBeforeUnmount(() => {
             :aria-selected="viewMode === 'preview'"
             :class="{ 'is-active': viewMode === 'preview' }"
             :disabled="!canUseTextTools"
-            @click="viewMode = 'preview'"
+            @click="setViewMode('preview')"
           >
             预览
           </button>
@@ -1906,6 +1919,15 @@ onBeforeUnmount(() => {
                   'is-readonly': currentReadOnly
                 }"
               >
+                <DocumentMetaRow
+                  variant="long"
+                  :view-mode="viewMode"
+                  :content="currentVisibleContent"
+                  :preview-element="documentPreview"
+                  :document-key="currentStoryPlot.id"
+                >
+                  <span>故事情节正文</span>
+                </DocumentMetaRow>
                 <input
                   :value="currentStoryPlot.title"
                   class="long-story-plot-title-input"
@@ -1927,7 +1949,7 @@ onBeforeUnmount(() => {
                       :aria-selected="viewMode === 'edit'"
                       :class="{ 'is-active': viewMode === 'edit' }"
                       :disabled="!canUseTextTools"
-                      @click="viewMode = 'edit'"
+                      @click="setViewMode('edit')"
                     >
                       编辑
                     </button>
@@ -1937,7 +1959,7 @@ onBeforeUnmount(() => {
                       :aria-selected="viewMode === 'preview'"
                       :class="{ 'is-active': viewMode === 'preview' }"
                       :disabled="!canUseTextTools"
-                      @click="viewMode = 'preview'"
+                      @click="setViewMode('preview')"
                     >
                       预览
                     </button>
@@ -2038,11 +2060,13 @@ onBeforeUnmount(() => {
                 />
                 <article
                   v-else
+                  ref="documentPreview"
                   class="long-document-preview long-story-plot-editor"
                 >
                   <MarkdownContent
                     v-if="currentVisibleContent.trim()"
                     :content="currentVisibleContent"
+                    annotate-headings
                   />
                   <p v-else class="is-empty">暂无故事情节正文</p>
                 </article>
@@ -2089,6 +2113,7 @@ onBeforeUnmount(() => {
           :eyebrow="documentEyebrow"
           :format="currentDocumentFormat"
           :content="currentVisibleContent"
+          :document-key="currentSelectionFile?.file.id ?? selection?.key ?? ''"
           :view-mode="viewMode"
           :read-only="currentReadOnly"
           :busy="isDocumentContentBusy"
@@ -2145,7 +2170,15 @@ onBeforeUnmount(() => {
             </button>
           </div>
           <template v-else>
-            <div class="long-document-meta-row">
+            <DocumentMetaRow
+              variant="long"
+              :view-mode="viewMode"
+              :content="currentVisibleContent"
+              :preview-element="documentPreview"
+              :document-key="
+                currentSelectionFile?.file.id ?? selection?.key ?? ''
+              "
+            >
               <span>{{ documentEyebrow }}</span>
               <span v-if="currentDocumentFormat" class="long-document-format">
                 {{ currentDocumentFormat }}
@@ -2159,22 +2192,24 @@ onBeforeUnmount(() => {
               <span v-else-if="currentReadOnly" class="long-readonly-badge">
                 只读内容
               </span>
-              <button
-                v-if="
-                  currentUsesTopWorldbuildingTabs &&
-                  currentWorldbuildingItem &&
-                  !currentReadOnly
-                "
-                class="long-worldbuilding-delete-button"
-                type="button"
-                :disabled="locked"
-                @click="
-                  openWorldbuildingItemDelete(currentWorldbuildingItem.id)
-                "
-              >
-                删除条目
-              </button>
-            </div>
+              <template #actions>
+                <button
+                  v-if="
+                    currentUsesTopWorldbuildingTabs &&
+                    currentWorldbuildingItem &&
+                    !currentReadOnly
+                  "
+                  class="long-worldbuilding-delete-button"
+                  type="button"
+                  :disabled="locked"
+                  @click="
+                    openWorldbuildingItemDelete(currentWorldbuildingItem.id)
+                  "
+                >
+                  删除条目
+                </button>
+              </template>
+            </DocumentMetaRow>
             <input
               v-if="
                 currentIsWorldbuildingList &&
@@ -2239,10 +2274,11 @@ onBeforeUnmount(() => {
               @input="handleEditorInput"
               @keydown="handleEditorKeydown"
             />
-            <article v-else class="long-document-preview">
+            <article v-else ref="documentPreview" class="long-document-preview">
               <MarkdownContent
                 v-if="currentVisibleContent.trim()"
                 :content="currentVisibleContent"
+                annotate-headings
               />
               <p v-else class="is-empty">
                 {{
@@ -2951,16 +2987,6 @@ onBeforeUnmount(() => {
   background: var(--surface-raised);
 }
 
-.long-document-meta-row {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 7px;
-  padding-inline: var(--long-document-inline-padding);
-  color: var(--text-tertiary);
-  font-size: 0.714286rem;
-}
-
 .long-document-format,
 .long-readonly-badge,
 .long-committed-content-notice {
@@ -2986,7 +3012,7 @@ onBeforeUnmount(() => {
 }
 
 .long-worldbuilding-delete-button {
-  margin-left: auto;
+  margin-left: 0;
   padding: 2px 6px;
   border-radius: 6px;
   background: transparent;
@@ -3500,7 +3526,7 @@ onBeforeUnmount(() => {
 .long-story-plot-writing-surface {
   --long-document-inline-padding: clamp(16px, 2vw, 20px);
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   flex: 1 1 auto;
   height: 100%;
   min-height: 0;
@@ -3515,7 +3541,7 @@ onBeforeUnmount(() => {
 
 .long-story-plot-title-input {
   width: 100%;
-  margin: 0 0 8px;
+  margin: 6px 0 8px;
   padding: 0 var(--long-document-inline-padding);
   border: 0;
   outline: 0;

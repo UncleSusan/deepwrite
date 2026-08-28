@@ -1,7 +1,5 @@
 import {
-  AppearanceSettingsSchema,
   CommandEnvelopeSchema,
-  AppearanceSettingsSnapshotSchema,
   ExportLongManuscriptInputSchema,
   ExportLongManuscriptResultSchema,
   ExportShortManuscriptInputSchema,
@@ -9,6 +7,8 @@ import {
   GeneralSettingsSchema,
   GeneralSettingsSnapshotSchema,
   AgentTeamCatalogSnapshotSchema,
+  AgentTeamPackageExportResultSchema,
+  AgentTeamPackageInstallResultSchema,
   AgentTeamProfileCreateInputSchema,
   AgentTeamProfileRenameInputSchema,
   AgentTeamProfileSaveInputSchema,
@@ -30,8 +30,6 @@ import {
   WorkspaceDirectorySettingsSchema,
   WorkspaceTypeSchema,
   createEnvelope,
-  type AppearanceSettings,
-  type AppearanceSettingsSnapshot,
   type ExportLongManuscriptInput,
   type ExportLongManuscriptResult,
   type ExportShortManuscriptInput,
@@ -39,6 +37,8 @@ import {
   type GeneralSettings,
   type GeneralSettingsSnapshot,
   type AgentTeamCatalogSnapshot,
+  type AgentTeamPackageExportResult,
+  type AgentTeamPackageInstallResult,
   type AgentTeamProfileCreateInput,
   type AgentTeamProfileRenameInput,
   type AgentTeamProfileSaveInput,
@@ -62,6 +62,15 @@ import {
 } from "@deepwrite/contracts";
 
 import { browserId, invokeCommand } from "./invoke";
+
+export {
+  appearance,
+  installAppearanceFonts,
+  listAppearance,
+  listAppearanceFonts,
+  removeAppearanceFont,
+  saveAppearance
+} from "./appearance-api";
 
 export async function listWorkspaceAgents(
   rawWorkspaceType: WorkspaceType
@@ -168,6 +177,41 @@ export const saveAgentTeams = (input: AgentTeamProfileSaveInput) =>
     "agentTeams.save",
     AgentTeamProfileSaveInputSchema.parse(input)
   );
+
+export async function downloadAgentTeam(
+  rawInput: AgentTeamProfileTargetInput
+): Promise<AgentTeamPackageExportResult> {
+  const payload = AgentTeamProfileTargetInputSchema.parse(rawInput);
+  const id = browserId("cmd_agent_teams_export_package");
+  return AgentTeamPackageExportResultSchema.parse(
+    await invokeCommand<AgentTeamPackageExportResult>(
+      CommandEnvelopeSchema.parse(
+        createEnvelope("agentTeams.exportPackage", payload, {
+          id,
+          correlationId: id
+        })
+      )
+    )
+  );
+}
+
+export async function installAgentTeam(): Promise<AgentTeamPackageInstallResult> {
+  const id = browserId("cmd_agent_teams_install_package");
+  return AgentTeamPackageInstallResultSchema.parse(
+    await invokeCommand<AgentTeamPackageInstallResult>(
+      CommandEnvelopeSchema.parse(
+        createEnvelope(
+          "agentTeams.installPackage",
+          {},
+          {
+            id,
+            correlationId: id
+          }
+        )
+      )
+    )
+  );
+}
 
 export async function saveWorkspaceAgents(
   rawSettings: WorkspaceAgentSettingsInput
@@ -318,27 +362,6 @@ export async function chooseWorkspaceDirectory(): Promise<WorkspaceDirectorySett
   return WorkspaceDirectorySettingsSchema.nullable().parse(
     await invokeCommand<WorkspaceDirectorySettings | null>(
       createEnvelope("workspaceDirectory.choose", {}, { id, correlationId: id })
-    )
-  );
-}
-
-export async function listAppearance(): Promise<AppearanceSettingsSnapshot> {
-  const id = browserId("cmd_appearance_list");
-  return AppearanceSettingsSnapshotSchema.parse(
-    await invokeCommand<AppearanceSettingsSnapshot>(
-      createEnvelope("appearance.list", {}, { id, correlationId: id })
-    )
-  );
-}
-
-export async function saveAppearance(
-  rawSettings: AppearanceSettings
-): Promise<AppearanceSettingsSnapshot> {
-  const settings = AppearanceSettingsSchema.parse(rawSettings);
-  const id = browserId("cmd_appearance_save");
-  return AppearanceSettingsSnapshotSchema.parse(
-    await invokeCommand<AppearanceSettingsSnapshot>(
-      createEnvelope("appearance.save", settings, { id, correlationId: id })
     )
   );
 }

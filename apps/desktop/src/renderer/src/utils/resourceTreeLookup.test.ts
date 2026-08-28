@@ -14,7 +14,8 @@ describe("resource tree lookup", () => {
             id: "draft-directory",
             label: "正文",
             icon: "folder",
-            shortAgentId: "expert_draft_coordinator",
+            shortAgentId: "short",
+            stageCategoryId: "draft",
             children: [
               {
                 id: "draft-section",

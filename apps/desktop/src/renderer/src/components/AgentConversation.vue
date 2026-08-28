@@ -12,9 +12,6 @@ import {
   BUILT_IN_REASONING_LEVELS,
   type AgentUserInputAnswer,
   type AgentUserInputRequestedPayload,
-  PROMPT_ATTACHMENT_MAX_ITEMS,
-  PROMPT_IMAGE_ATTACHMENTS_MAX_BYTES,
-  PROMPT_TEXT_ATTACHMENTS_MAX_CONTENT_LENGTH,
   type BuiltInReasoningLevel,
   type LibraryAgentDomain,
   type LibraryAgentSkill,
@@ -32,29 +29,18 @@ import type {
   ChatMessage,
   ComposerReferenceOption,
   ConversationHistoryItem,
+  ConversationMessageRewriteRequest,
   EditorTextReference
 } from "../types/conversation";
 import type { IconName } from "../types/workspace";
-import { uiMessage } from "../ui-feedback";
-import {
-  PROMPT_ATTACHMENT_ACCEPT,
-  promptAttachmentFilesFromClipboard,
-  readPromptAttachment
-} from "../utils/promptAttachments";
-import {
-  findComposerReferenceMatch,
-  insertComposerReference,
-  type ComposerReferenceMatch
-} from "../utils/composerReferences";
-import { createEditorReferenceAttachment } from "../utils/editorTextReferences";
 import { createTransientScrollbarController } from "../utils/transientScrollbar";
 import { useConversationTurnNavigator } from "../composables/useConversationTurnNavigator";
 import AppIcon from "./AppIcon.vue";
 import AgentActivityFloatPanel from "./AgentActivityFloatPanel.vue";
 import AgentUserInputCard from "./AgentUserInputCard.vue";
+import ConversationComposer from "./ConversationComposer.vue";
 import ConversationMessageList from "./ConversationMessageList.vue";
 import ConversationTurnNavigator from "./ConversationTurnNavigator.vue";
-import PopupSelect from "./PopupSelect.vue";
 import { AGENT_ACTIVITY_CONTEXT_KEY } from "../composables/agentActivityContext";
 
 const props = withDefaults(
@@ -66,6 +52,10 @@ const props = withDefaults(
     responding: boolean;
     canSend: boolean;
     canSendAttachments: boolean;
+    canRewriteHistory?: boolean;
+    submitEditedMessage?:
+      | ((request: ConversationMessageRewriteRequest) => Promise<boolean>)
+      | undefined;
     canStop: boolean;
     runtimeAvailable: boolean;
     models: ModelConfig[];
@@ -96,6 +86,7 @@ const props = withDefaults(
   }>(),
   {
     allowLiveEditReview: false,
+    canRewriteHistory: false,
     longProposalItems: () => [],
     longWorkspaceIndex: null,
     rightPane: false,
@@ -139,10 +130,12 @@ const emit = defineEmits<{
     }
   ];
   locateEditProposal: [payload: { runId: string; proposalId: string }];
+  discardEditProposal: [payload: { runId: string; proposalId: string }];
   approveLongProposal: [eventId: string];
   rejectLongProposal: [eventId: string];
   retryLongProposalPreview: [eventId: string];
   locateLongProposal: [eventId: string];
+  discardLongProposal: [eventId: string];
   submitUserInput: [answers: AgentUserInputAnswer[]];
 }>();
 
@@ -156,10 +149,6 @@ function setConversationScroller(element: unknown): void {
 function setConversationMessageList(element: unknown): void {
   messageList.value = element instanceof HTMLElement ? element : undefined;
 }
-const composerInput = ref<HTMLTextAreaElement>();
-const attachmentInput = ref<HTMLInputElement>();
-const pendingAttachments = ref<UserPromptAttachment[]>([]);
-const readingAttachments = ref(false);
 const clock = ref(Date.now());
 const hasLiveProcessing = computed(
   () =>
@@ -171,11 +160,8 @@ const hasLiveProcessing = computed(
     )
 );
 const historyOpen = ref(false);
-const activeReference = ref<ComposerReferenceMatch | null>(null);
-const activeReferenceIndex = ref(0);
 let clockTimer: number | undefined;
 let scrollFrame: number | undefined;
-let attachmentReadEpoch = 0;
 const followsConversationTail = ref(true);
 const tailFollowLockedForResponse = ref(false);
 let lastConversationScrollTop = 0;
@@ -388,9 +374,6 @@ watch(
   () => props.currentSessionId,
   () => {
     historyOpen.value = false;
-    attachmentReadEpoch += 1;
-    readingAttachments.value = false;
-    pendingAttachments.value = [];
     tailFollowLockedForResponse.value = false;
     followsConversationTail.value = true;
     void nextTick(() => {
@@ -400,192 +383,7 @@ watch(
   }
 );
 
-const canSubmit = computed(
-  () =>
-    !readingAttachments.value &&
-    (props.canSend ||
-      (props.canSendAttachments &&
-        (pendingAttachments.value.length > 0 ||
-          props.editorReferences.length > 0)))
-);
-
-watch(
-  () => props.editorReferences.map((reference) => reference.id).join("\u0000"),
-  (ids) => {
-    if (!ids) return;
-    void nextTick(() => composerInput.value?.focus());
-  }
-);
-
-function openAttachmentPicker(): void {
-  attachmentInput.value?.click();
-}
-
-function attachmentKey(file: File): string {
-  return `${file.name}\u0000${file.size}\u0000${file.lastModified}`;
-}
-
-function pendingAttachmentKey(attachment: UserPromptAttachment): string {
-  return `${attachment.name}\u0000${attachment.size}`;
-}
-
-function validateAttachmentCapacity(
-  attachment: UserPromptAttachment
-): string | undefined {
-  if (pendingAttachments.value.length >= PROMPT_ATTACHMENT_MAX_ITEMS) {
-    return `每条消息最多上传 ${PROMPT_ATTACHMENT_MAX_ITEMS} 个附件。`;
-  }
-  if (attachment.kind === "text") {
-    const textLength = pendingAttachments.value.reduce(
-      (total, item) => total + (item.kind === "text" ? item.content.length : 0),
-      attachment.content.length
-    );
-    if (textLength > PROMPT_TEXT_ATTACHMENTS_MAX_CONTENT_LENGTH) {
-      return `文本附件合计最多携带 ${PROMPT_TEXT_ATTACHMENTS_MAX_CONTENT_LENGTH.toLocaleString("zh-CN")} 个字符。`;
-    }
-  } else {
-    const imageBytes = pendingAttachments.value.reduce(
-      (total, item) => total + (item.kind === "image" ? item.size : 0),
-      attachment.size
-    );
-    if (imageBytes > PROMPT_IMAGE_ATTACHMENTS_MAX_BYTES) {
-      return "图片附件合计不能超过 25 MB。";
-    }
-  }
-  return undefined;
-}
-
-async function addAttachmentFiles(files: File[]): Promise<void> {
-  if (!files.length || readingAttachments.value) return;
-  const readEpoch = ++attachmentReadEpoch;
-  readingAttachments.value = true;
-  const failures: string[] = [];
-  let added = 0;
-  try {
-    const existing = new Set(
-      pendingAttachments.value.map(pendingAttachmentKey)
-    );
-    const seenFiles = new Set<string>();
-    for (const file of files) {
-      const fileKey = attachmentKey(file);
-      const duplicateKey = `${file.name}\u0000${file.size}`;
-      if (seenFiles.has(fileKey) || existing.has(duplicateKey)) continue;
-      seenFiles.add(fileKey);
-      try {
-        const result = await readPromptAttachment(file);
-        if (readEpoch !== attachmentReadEpoch) return;
-        const capacityError = validateAttachmentCapacity(result.attachment);
-        if (capacityError) {
-          failures.push(capacityError);
-          continue;
-        }
-        pendingAttachments.value.push(result.attachment);
-        existing.add(duplicateKey);
-        added += 1;
-        if (result.warning) uiMessage.warning(result.warning);
-      } catch (error: unknown) {
-        failures.push(
-          error instanceof Error ? error.message : `读取“${file.name}”失败。`
-        );
-      }
-    }
-  } finally {
-    if (readEpoch === attachmentReadEpoch) {
-      readingAttachments.value = false;
-    }
-  }
-  if (readEpoch !== attachmentReadEpoch) return;
-  if (failures.length) {
-    uiMessage.error(
-      failures.length === 1
-        ? failures[0]!
-        : `${failures[0]}（另有 ${failures.length - 1} 个附件未添加）`
-    );
-  } else if (added > 0) {
-    uiMessage.success(`已添加 ${added} 个附件`);
-  }
-}
-
-function handleAttachmentChange(event: Event): void {
-  const input = event.target as HTMLInputElement;
-  const files = Array.from(input.files ?? []);
-  input.value = "";
-  void addAttachmentFiles(files);
-}
-
-function handleComposerPaste(event: ClipboardEvent): void {
-  const files = promptAttachmentFilesFromClipboard(event.clipboardData);
-  if (!files.length) return;
-
-  event.preventDefault();
-  closeReferenceMenu();
-  if (readingAttachments.value) {
-    uiMessage.warning("正在读取附件，请稍后再粘贴。");
-    return;
-  }
-  void addAttachmentFiles(files);
-}
-
-function removePendingAttachment(id: string): void {
-  pendingAttachments.value = pendingAttachments.value.filter(
-    (attachment) => attachment.id !== id
-  );
-}
-
-function formatFileSize(size: number): string {
-  if (size < 1_024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function attachmentPreview(
-  attachment: UserPromptAttachment
-): string | undefined {
-  return attachment.kind === "image"
-    ? `data:${attachment.mediaType};base64,${attachment.data}`
-    : undefined;
-}
-
-function editorReferenceTooltip(reference: EditorTextReference): string {
-  const preview =
-    reference.text.length > 1_000
-      ? `${reference.text.slice(0, 1_000)}…`
-      : reference.text;
-  return `${reference.documentPath.join(" / ")}\n第 ${reference.startLine}-${reference.endLine} 行\n\n${preview}`;
-}
-
-function submitMessage(): void {
-  if (!canSubmit.value) return;
-  const attachments = pendingAttachments.value.map((attachment) => ({
-    ...attachment
-  }));
-  attachments.push(
-    ...props.editorReferences.map(createEditorReferenceAttachment)
-  );
-  if (attachments.length > PROMPT_ATTACHMENT_MAX_ITEMS) {
-    uiMessage.warning(
-      `每条消息最多携带 ${PROMPT_ATTACHMENT_MAX_ITEMS} 项附件或正文引用。`
-    );
-    return;
-  }
-  const textLength = attachments.reduce(
-    (total, attachment) =>
-      total + (attachment.kind === "text" ? attachment.content.length : 0),
-    0
-  );
-  if (textLength > PROMPT_TEXT_ATTACHMENTS_MAX_CONTENT_LENGTH) {
-    uiMessage.warning(
-      `文本附件与正文引用合计最多携带 ${PROMPT_TEXT_ATTACHMENTS_MAX_CONTENT_LENGTH.toLocaleString("zh-CN")} 个字符。`
-    );
-    return;
-  }
-  pendingAttachments.value = [];
-  emit("send", attachments);
-  if (props.editorReferences.length) emit("clearEditorReferences");
-}
-
 onBeforeUnmount(() => {
-  attachmentReadEpoch += 1;
   if (clockTimer !== undefined) {
     globalThis.clearInterval(clockTimer);
   }
@@ -594,156 +392,6 @@ onBeforeUnmount(() => {
   }
   conversationScrollbar.dispose();
 });
-
-const referenceOptions = computed(() =>
-  activeReference.value?.trigger === "/"
-    ? props.availableSkills
-    : activeReference.value?.trigger === "@"
-      ? props.availableMaterials
-      : []
-);
-const filteredReferenceOptions = computed(() => {
-  const query =
-    activeReference.value?.query.trim().toLocaleLowerCase("zh-CN") ?? "";
-  const matches = query
-    ? referenceOptions.value.filter((option) =>
-        `${option.label} ${option.detail}`
-          .toLocaleLowerCase("zh-CN")
-          .includes(query)
-      )
-    : referenceOptions.value;
-  return matches.slice(0, 12);
-});
-const referenceMenuTitle = computed(() => {
-  if (activeReference.value?.trigger === "/") {
-    return "调用技能";
-  }
-  if (props.libraryDomain === "skill") {
-    return "引用技能";
-  }
-  return "引用素材";
-});
-const referenceMenuHint = computed(() => {
-  if (activeReference.value?.trigger === "/") {
-    return "输入名称搜索技能";
-  }
-  if (props.libraryDomain === "skill") {
-    return "输入名称搜索技能条目";
-  }
-  return "输入名称搜索素材条目";
-});
-const composerPlaceholder = computed(() => {
-  if (!props.runtimeAvailable) {
-    return "浏览器预览不可发送，请启动桌面客户端";
-  }
-  if (props.libraryDomain === "skill") {
-    return "描述资料库任务，输入 / 加载方法技能，输入 @ 引用当前库或同分组其它库的技能……";
-  }
-  if (props.libraryDomain === "material") {
-    return "描述资料库任务，输入 / 加载方法技能，输入 @ 引用当前库或同分组其它库的素材……";
-  }
-  return "随心输入，输入 / 调用技能，输入 @ 引用素材……";
-});
-
-watch(
-  () =>
-    filteredReferenceOptions.value.map((option) => option.id).join("\u0000"),
-  () => {
-    activeReferenceIndex.value = Math.min(
-      activeReferenceIndex.value,
-      Math.max(0, filteredReferenceOptions.value.length - 1)
-    );
-  }
-);
-
-function updateActiveReference(input: HTMLTextAreaElement): void {
-  const next = findComposerReferenceMatch(
-    input.value,
-    input.selectionStart ?? input.value.length
-  );
-  const changedTrigger =
-    next?.start !== activeReference.value?.start ||
-    next?.trigger !== activeReference.value?.trigger;
-  activeReference.value = next;
-  if (changedTrigger) {
-    activeReferenceIndex.value = 0;
-  }
-}
-
-function handleInput(event: Event): void {
-  const input = event.target as HTMLTextAreaElement;
-  emit("update:draft", input.value);
-  updateActiveReference(input);
-}
-
-function closeReferenceMenu(): void {
-  activeReference.value = null;
-  activeReferenceIndex.value = 0;
-}
-
-function scrollActiveReferenceOptionIntoView(): void {
-  void nextTick(() => {
-    document
-      .getElementById(`composer-reference-option-${activeReferenceIndex.value}`)
-      ?.scrollIntoView({ block: "nearest" });
-  });
-}
-
-function selectReference(option: ComposerReferenceOption): void {
-  const match = activeReference.value;
-  if (!match) {
-    return;
-  }
-  const insertion = insertComposerReference(
-    composerInput.value?.value ?? props.draft,
-    match,
-    option.label
-  );
-  emit("update:draft", insertion.value);
-  closeReferenceMenu();
-  void nextTick(() => {
-    composerInput.value?.focus();
-    composerInput.value?.setSelectionRange(insertion.caret, insertion.caret);
-  });
-}
-
-function handleKeydown(event: KeyboardEvent): void {
-  if (activeReference.value && !event.isComposing) {
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      const count = filteredReferenceOptions.value.length;
-      if (count) {
-        const offset = event.key === "ArrowDown" ? 1 : -1;
-        activeReferenceIndex.value =
-          (activeReferenceIndex.value + offset + count) % count;
-        scrollActiveReferenceOptionIntoView();
-      }
-      return;
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeReferenceMenu();
-      return;
-    }
-    if (event.key === "Enter" || event.key === "Tab") {
-      event.preventDefault();
-      const option = filteredReferenceOptions.value[activeReferenceIndex.value];
-      if (option) {
-        selectReference(option);
-      } else {
-        closeReferenceMenu();
-      }
-      return;
-    }
-  }
-  if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
-    return;
-  }
-  event.preventDefault();
-  if (canSubmit.value) {
-    submitMessage();
-  }
-}
 
 const welcomeContent = computed(() =>
   resolveAgentWelcome(
@@ -821,24 +469,6 @@ const approvalOptions = [
 const approvalModeIcon = computed<IconName>(() =>
   props.approvalMode === "request-approval" ? "user" : "check"
 );
-
-function handleModelChange(value: string | number): void {
-  emit("selectModel", String(value));
-}
-
-function handleThinkingChange(value: string | number): void {
-  emit("selectThinking", String(value) as ThinkingLevel);
-}
-
-function handleTemperatureChange(value: string | number): void {
-  emit("selectTemperature", Number(value));
-}
-
-function handleApprovalChange(value: string | number): void {
-  if (value === "request-approval" || value === "auto-approve") {
-    emit("selectApproval", value);
-  }
-}
 
 function formatHistoryTime(value: string): string {
   const timestamp = Date.parse(value);
@@ -1042,8 +672,11 @@ function selectHistoryConversation(item: ConversationHistoryItem): void {
       <ConversationMessageList
         :messages="messages"
         :responding="responding"
+        :conversation-session-id="currentSessionId"
         :runtime-available="runtimeAvailable"
         :clock="clock"
+        :can-rewrite-history="canRewriteHistory"
+        :submit-edited-message="submitEditedMessage"
         :allow-live-edit-review="allowLiveEditReview"
         :long-proposal-items="longProposalItems"
         :long-workspace-index="longWorkspaceIndex"
@@ -1055,10 +688,12 @@ function selectHistoryConversation(item: ConversationHistoryItem): void {
         @suggestion="emit('suggestion', $event)"
         @review-edit="emit('reviewEdit', $event)"
         @locate-edit-proposal="emit('locateEditProposal', $event)"
+        @discard-edit-proposal="emit('discardEditProposal', $event)"
         @approve-long-proposal="emit('approveLongProposal', $event)"
         @reject-long-proposal="emit('rejectLongProposal', $event)"
         @retry-long-proposal-preview="emit('retryLongProposalPreview', $event)"
         @locate-long-proposal="emit('locateLongProposal', $event)"
+        @discard-long-proposal="emit('discardLongProposal', $event)"
       />
 
       <ConversationTurnNavigator
@@ -1069,324 +704,54 @@ function selectHistoryConversation(item: ConversationHistoryItem): void {
       />
     </div>
 
-    <footer class="composer-wrap">
+    <footer v-if="userInputRequest" class="composer-wrap">
       <div class="composer-stack">
-        <div
-          v-if="activeReference"
-          id="composer-reference-menu"
-          class="composer-reference-menu"
-          role="listbox"
-          :aria-label="referenceMenuTitle"
-        >
-          <div class="composer-reference-heading">
-            <span class="composer-reference-trigger">{{
-              activeReference.trigger
-            }}</span>
-            <div>
-              <strong>{{ referenceMenuTitle }}</strong>
-              <span>{{ referenceMenuHint }}</span>
-            </div>
-            <kbd>Esc</kbd>
-          </div>
-          <div
-            v-if="filteredReferenceOptions.length"
-            class="composer-reference-options"
-          >
-            <button
-              v-for="(option, index) in filteredReferenceOptions"
-              :id="`composer-reference-option-${index}`"
-              :key="option.id"
-              type="button"
-              role="option"
-              :aria-selected="index === activeReferenceIndex"
-              :class="{ 'is-selected': index === activeReferenceIndex }"
-              @mouseenter="activeReferenceIndex = index"
-              @mousedown.prevent="selectReference(option)"
-            >
-              <span class="composer-reference-icon">
-                <AppIcon
-                  :name="
-                    activeReference.trigger === '/' ? 'sparkles' : 'archive'
-                  "
-                  :size="17"
-                />
-              </span>
-              <span class="composer-reference-copy">
-                <strong>{{ option.label }}</strong>
-                <small>{{ option.detail }}</small>
-              </span>
-              <span class="composer-reference-token">{{
-                activeReference.trigger
-              }}</span>
-            </button>
-          </div>
-          <div v-else class="composer-reference-empty">
-            {{
-              referenceOptions.length
-                ? "没有匹配的内容"
-                : activeReference.trigger === "/"
-                  ? "当前智能体没有可调用的技能"
-                  : "当前智能体没有可用素材"
-            }}
-          </div>
-          <div class="composer-reference-footer">
-            <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
-            <span><kbd>Enter</kbd> 插入</span>
-          </div>
-        </div>
-
         <AgentUserInputCard
-          v-if="userInputRequest"
           :request="userInputRequest"
           :submitting="userInputSubmitting"
           @submit="emit('submitUserInput', $event)"
         />
-
-        <div v-else class="composer" :class="{ 'is-disabled': responding }">
-          <div
-            v-if="messages.length === 0"
-            class="composer-context-bar"
-            role="group"
-            :aria-label="`当前绑定：书籍 ${bookTitle}，阶段 ${stageLabel}`"
-          >
-            <div
-              class="composer-context-item composer-book-context"
-              :title="`当前书籍：${bookTitle}`"
-            >
-              <AppIcon name="book" :size="16" />
-              <strong>{{ bookTitle }}</strong>
-            </div>
-            <div
-              class="composer-context-item composer-stage-context"
-              :title="`当前阶段：${stageLabel}`"
-            >
-              <AppIcon name="wand" :size="16" />
-              <strong>{{ stageLabel }}</strong>
-            </div>
-          </div>
-          <div class="composer-input-surface">
-            <input
-              ref="attachmentInput"
-              class="composer-file-input"
-              type="file"
-              multiple
-              :accept="PROMPT_ATTACHMENT_ACCEPT"
-              tabindex="-1"
-              aria-hidden="true"
-              @change="handleAttachmentChange"
-            />
-            <div
-              v-if="editorReferences.length"
-              class="composer-editor-reference-list"
-              aria-label="已引用正文选区列表"
-            >
-              <div
-                v-for="editorReference in editorReferences"
-                :key="editorReference.id"
-                class="composer-editor-reference"
-              >
-                <button
-                  class="composer-editor-reference-main"
-                  type="button"
-                  :title="editorReferenceTooltip(editorReference)"
-                  :aria-label="`定位到 ${editorReference.label}`"
-                  @click="emit('locateEditorReference', editorReference)"
-                >
-                  <AppIcon name="quote" :size="13" />
-                  <span>{{ editorReference.label }}</span>
-                </button>
-                <button
-                  class="composer-editor-reference-remove"
-                  type="button"
-                  :aria-label="`移除正文引用 ${editorReference.label}`"
-                  :disabled="responding"
-                  @click="emit('removeEditorReference', editorReference.id)"
-                >
-                  <AppIcon name="close" :size="11" />
-                </button>
-              </div>
-            </div>
-            <div
-              v-if="pendingAttachments.length || readingAttachments"
-              class="composer-attachment-list"
-              aria-label="待发送附件"
-            >
-              <article
-                v-for="attachment in pendingAttachments"
-                :key="attachment.id"
-                class="composer-attachment-chip"
-              >
-                <img
-                  v-if="attachmentPreview(attachment)"
-                  :src="attachmentPreview(attachment)"
-                  alt=""
-                />
-                <span
-                  v-else
-                  class="composer-attachment-icon"
-                  aria-hidden="true"
-                >
-                  <AppIcon name="file" :size="16" />
-                </span>
-                <span class="composer-attachment-copy">
-                  <strong>{{ attachment.name }}</strong>
-                  <small>
-                    {{
-                      attachment.kind === "image"
-                        ? "图片"
-                        : attachment.mediaType === "application/pdf"
-                          ? "PDF 文本"
-                          : "文本"
-                    }}
-                    · {{ formatFileSize(attachment.size) }}
-                    <template
-                      v-if="attachment.kind === 'text' && attachment.truncated"
-                    >
-                      · 已截断</template
-                    >
-                  </small>
-                </span>
-                <button
-                  type="button"
-                  :aria-label="`移除附件 ${attachment.name}`"
-                  :disabled="responding"
-                  @click="removePendingAttachment(attachment.id)"
-                >
-                  <AppIcon name="close" :size="13" />
-                </button>
-              </article>
-              <span
-                v-if="readingAttachments"
-                class="composer-attachment-loading"
-              >
-                正在读取附件…
-              </span>
-            </div>
-            <textarea
-              ref="composerInput"
-              :value="draft"
-              rows="1"
-              :placeholder="composerPlaceholder"
-              aria-label="智能体消息"
-              aria-autocomplete="list"
-              :aria-expanded="Boolean(activeReference)"
-              :aria-controls="
-                activeReference ? 'composer-reference-menu' : undefined
-              "
-              :aria-activedescendant="
-                activeReference && filteredReferenceOptions.length
-                  ? `composer-reference-option-${activeReferenceIndex}`
-                  : undefined
-              "
-              :disabled="responding || !runtimeAvailable"
-              @blur="closeReferenceMenu"
-              @click="
-                updateActiveReference($event.target as HTMLTextAreaElement)
-              "
-              @input="handleInput"
-              @keydown="handleKeydown"
-              @paste="handleComposerPaste"
-            />
-            <div class="composer-toolbar">
-              <div class="composer-tools">
-                <button
-                  class="round-tool-button"
-                  type="button"
-                  aria-label="上传附件"
-                  title="上传 TXT、MD、PDF 或图片"
-                  :disabled="
-                    responding || !runtimeAvailable || readingAttachments
-                  "
-                  @click="openAttachmentPicker"
-                >
-                  <AppIcon name="plus" :size="18" />
-                </button>
-                <PopupSelect
-                  :model-value="selectedModelId"
-                  :options="modelOptions"
-                  accessible-label="选择模型"
-                  placeholder="选择模型"
-                  variant="compact"
-                  :menu-min-width="210"
-                  @update:model-value="handleModelChange"
-                >
-                  <template #prefix
-                    ><AppIcon name="model" :size="14"
-                  /></template>
-                </PopupSelect>
-                <PopupSelect
-                  :model-value="thinkingLevel"
-                  :options="availableThinkingOptions"
-                  accessible-label="选择思考等级"
-                  variant="compact"
-                  :menu-min-width="180"
-                  @update:model-value="handleThinkingChange"
-                >
-                  <template #prefix
-                    ><AppIcon name="brain" :size="14"
-                  /></template>
-                </PopupSelect>
-                <PopupSelect
-                  v-if="showsTemperature"
-                  :model-value="temperature"
-                  :options="temperatureSelectOptions"
-                  accessible-label="选择温度"
-                  variant="compact"
-                  :menu-min-width="160"
-                  @update:model-value="handleTemperatureChange"
-                >
-                  <template #prefix
-                    ><AppIcon name="temperature" :size="14"
-                  /></template>
-                </PopupSelect>
-              </div>
-              <div class="composer-actions">
-                <PopupSelect
-                  :model-value="approvalMode"
-                  :options="approvalOptions"
-                  accessible-label="选择正文修改权限"
-                  variant="compact"
-                  align="end"
-                  :menu-min-width="300"
-                  @update:model-value="handleApprovalChange"
-                >
-                  <template #prefix
-                    ><AppIcon :name="approvalModeIcon" :size="14"
-                  /></template>
-                </PopupSelect>
-                <button
-                  class="round-tool-button"
-                  type="button"
-                  aria-label="语音输入"
-                >
-                  <AppIcon name="mic" :size="18" />
-                </button>
-                <button
-                  v-if="!responding"
-                  class="send-button"
-                  type="button"
-                  aria-label="发送消息"
-                  :disabled="!canSubmit"
-                  @click="submitMessage"
-                >
-                  <AppIcon name="arrow-up" :size="18" />
-                </button>
-                <button
-                  v-else
-                  class="send-button stop-button"
-                  type="button"
-                  aria-label="停止生成"
-                  title="停止生成"
-                  :disabled="!canStop"
-                  @click="emit('stop')"
-                >
-                  <AppIcon name="stop" :size="15" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </footer>
+
+    <ConversationComposer
+      v-else
+      :draft="draft"
+      :responding="responding"
+      :can-send="canSend"
+      :can-send-attachments="canSendAttachments"
+      :can-stop="canStop"
+      :runtime-available="runtimeAvailable"
+      :current-session-id="currentSessionId"
+      :messages="messages"
+      :messages-empty="messages.length === 0"
+      :book-title="bookTitle"
+      :stage-label="stageLabel"
+      :selected-model-id="selectedModelId"
+      :selected-model="selectedModel"
+      :thinking-level="thinkingLevel"
+      :temperature="temperature"
+      :approval-mode="approvalMode"
+      :library-domain="libraryDomain"
+      :available-skills="availableSkills"
+      :available-materials="availableMaterials"
+      :editor-references="editorReferences"
+      :model-options="modelOptions"
+      :available-thinking-options="availableThinkingOptions"
+      :shows-temperature="showsTemperature"
+      :temperature-select-options="temperatureSelectOptions"
+      :approval-options="approvalOptions"
+      :approval-mode-icon="approvalModeIcon"
+      @update:draft="emit('update:draft', $event)"
+      @send="emit('send', $event)"
+      @stop="emit('stop')"
+      @clear-editor-references="emit('clearEditorReferences')"
+      @remove-editor-reference="emit('removeEditorReference', $event)"
+      @locate-editor-reference="emit('locateEditorReference', $event)"
+      @select-model="emit('selectModel', $event)"
+      @select-thinking="emit('selectThinking', $event)"
+      @select-temperature="emit('selectTemperature', $event)"
+      @select-approval="emit('selectApproval', $event)"
+    />
   </main>
 </template>

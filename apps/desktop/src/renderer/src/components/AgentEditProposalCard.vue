@@ -1,15 +1,24 @@
 <script setup lang="ts">
 import type { AgentEditProposal, ChatMessage } from "../types/conversation";
 import AppIcon from "./AppIcon.vue";
+import ApprovalDiscardButton from "./ApprovalDiscardButton.vue";
+import {
+  approvalDiscardStatusLabel,
+  approvalDiscardStatusMessage,
+  approvalDiscardVisualStatus,
+  shouldShowApprovalDiscardButton
+} from "./approvalDiscardPresentation";
 
 const props = withDefaults(
   defineProps<{
     proposal: AgentEditProposal;
     messageStatus: ChatMessage["status"];
     allowLiveEditReview?: boolean;
+    discardable?: boolean;
   }>(),
   {
-    allowLiveEditReview: false
+    allowLiveEditReview: false,
+    discardable: false
   }
 );
 
@@ -22,6 +31,7 @@ const emit = defineEmits<{
     }
   ];
   locate: [payload: { runId: string; proposalId: string }];
+  discard: [payload: { runId: string; proposalId: string }];
 }>();
 
 const proposalStatusLabels: Record<AgentEditProposal["status"], string> = {
@@ -43,6 +53,8 @@ const proposalStatusMessages: Record<AgentEditProposal["status"], string> = {
 };
 
 function proposalStatusLabel(): string {
+  const discardLabel = approvalDiscardStatusLabel(props.proposal.discardState);
+  if (discardLabel) return discardLabel;
   if (
     props.proposal.status === "pending" &&
     props.proposal.approvalMode === "auto-approve"
@@ -50,6 +62,21 @@ function proposalStatusLabel(): string {
     return "待自动保存";
   }
   return proposalStatusLabels[props.proposal.status];
+}
+
+function proposalVisualStatus(): AgentEditProposal["status"] {
+  return (
+    approvalDiscardVisualStatus(props.proposal.discardState) ??
+    props.proposal.status
+  );
+}
+
+function showDiscardButton(): boolean {
+  return shouldShowApprovalDiscardButton(
+    props.discardable,
+    props.proposal.status === "accepted",
+    props.proposal.discardState
+  );
 }
 
 function proposalAcceptLabel(): string {
@@ -95,6 +122,8 @@ function proposalReviewDisabled(decision: "accept" | "reject"): boolean {
 
 function proposalStatusMessage(): string {
   const proposal = props.proposal;
+  const discardMessage = approvalDiscardStatusMessage(proposal.discardState);
+  if (discardMessage) return discardMessage;
   if (
     props.messageStatus === "streaming" &&
     proposal.status === "pending" &&
@@ -221,8 +250,11 @@ function diffLineMark(type: "context" | "addition" | "deletion"): string {
 <template>
   <article
     class="edit-proposal-card"
-    :class="`is-${proposal.status}`"
-    :aria-busy="proposal.status === 'accepting'"
+    :class="`is-${proposalVisualStatus()}`"
+    :aria-busy="
+      proposal.status === 'accepting' ||
+      proposal.discardState?.status === 'discarding'
+    "
   >
     <header class="edit-proposal-header">
       <span class="edit-proposal-icon" aria-hidden="true">
@@ -231,7 +263,10 @@ function diffLineMark(type: "context" | "addition" | "deletion"): string {
       <div class="edit-proposal-heading">
         <div class="edit-proposal-title-row">
           <strong>{{ proposal.title }}</strong>
-          <span class="edit-proposal-status" :class="`is-${proposal.status}`">
+          <span
+            class="edit-proposal-status"
+            :class="`is-${proposalVisualStatus()}`"
+          >
             {{ proposalStatusLabel() }}
           </span>
           <button
@@ -249,6 +284,16 @@ function diffLineMark(type: "context" | "addition" | "deletion"): string {
           >
             跳转到目标文件
           </button>
+          <ApprovalDiscardButton
+            v-if="showDiscardButton()"
+            :discarding="proposal.discardState?.status === 'discarding'"
+            @discard="
+              emit('discard', {
+                runId: proposal.runId,
+                proposalId: proposal.id
+              })
+            "
+          />
         </div>
         <p>{{ proposal.summary }}</p>
       </div>

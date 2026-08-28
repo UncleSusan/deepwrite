@@ -1,3 +1,4 @@
+import type { TextViewMode } from "@deepwrite/contracts";
 import { computed, nextTick, ref, type ComputedRef, type Ref } from "vue";
 import { uiMessage } from "../ui-feedback";
 import type { TextSelectionRange } from "../utils/boundedTextHistory";
@@ -11,7 +12,7 @@ export function useLongEditorFindReplace(options: {
   currentVisibleContent: ComputedRef<string>;
   currentReadOnly: ComputedRef<boolean>;
   canUseTextTools: ComputedRef<boolean>;
-  viewMode: Ref<"edit" | "preview">;
+  viewMode: Ref<TextViewMode>;
   editorInput: Ref<HTMLTextAreaElement | null>;
   editorToolsElement: Ref<HTMLElement | undefined>;
   updateVisibleContent: (content: string) => void;

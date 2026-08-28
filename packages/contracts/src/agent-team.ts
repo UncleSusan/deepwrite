@@ -11,7 +11,9 @@ import {
   type ScriptWorkspaceAgentId
 } from "./script-workspace";
 
-export const SHORT_AGENT_SUBAGENT_MAX_COUNT = 20;
+export const SHORT_AGENT_SUBAGENT_MAX_COUNT = 60;
+export const SCRIPT_AGENT_SUBAGENT_MAX_COUNT = 60;
+export const LONG_AGENT_SUBAGENT_MAX_COUNT = 20;
 export const SHORT_AGENT_SUBAGENT_ID_MAX_LENGTH = 120;
 export const SHORT_AGENT_SUBAGENT_NAME_MAX_LENGTH = 80;
 export const SHORT_AGENT_SUBAGENT_DESCRIPTION_MAX_LENGTH = 1_000;
@@ -131,8 +133,14 @@ export type ScriptAgentSubagentModelMode = ShortAgentSubagentModelMode;
 export const ScriptAgentSubagentDefinitionSchema =
   ShortAgentSubagentDefinitionSchema;
 export type ScriptAgentSubagentDefinition = ShortAgentSubagentDefinition;
-export const ScriptAgentSubagentDefinitionsSchema =
-  ShortAgentSubagentDefinitionsSchema;
+export const ScriptAgentSubagentDefinitionsSchema = z
+  .array(ScriptAgentSubagentDefinitionSchema)
+  .max(SCRIPT_AGENT_SUBAGENT_MAX_COUNT)
+  .superRefine(validateUniqueSubagents);
+export const LongAgentSubagentDefinitionsSchema = z
+  .array(ShortAgentSubagentDefinitionSchema)
+  .max(LONG_AGENT_SUBAGENT_MAX_COUNT)
+  .superRefine(validateUniqueSubagents);
 
 export const AgentTeamSchema = z.object({
   parentAgentId: ShortWorkspaceAgentIdSchema,

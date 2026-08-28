@@ -15,6 +15,7 @@ import {
   type Api,
   type AssistantMessage,
   type Model,
+  type ThinkingLevel as ProviderThinkingLevel,
   type UserMessage,
   type Usage
 } from "@earendil-works/pi-ai";
@@ -49,7 +50,10 @@ import {
 } from "./faux-local";
 import { buildLearningImitationTools } from "./learning-imitation-tools";
 import { buildLibraryAgentTools } from "./library-agent-tools";
-import { buildLongWorkspaceTools } from "./long-agent-tools";
+import {
+  buildLongWorkspaceTools,
+  createLongWorkspaceToolSharedState
+} from "./long-agent-tools";
 import {
   applyProviderToolSchemaCompatibility,
   resolvePortableToolSchemaProfile
@@ -61,10 +65,20 @@ import {
   buildRawUserMessage,
   buildRuntimeUserMessageContent,
   longAgentRefreshesDesignContextOnLaterTurns,
-  scriptRuntimeFormatRequirements
+  scriptRuntimeSystemRequirements,
+  shortRuntimeSystemRequirements
 } from "./prompts";
-import { buildProviderRuntime, toPiThinkingLevel } from "./provider-runtime";
+import {
+  buildProviderRuntime,
+  resolveProviderModelCapacity,
+  toPiThinkingLevel
+} from "./provider-runtime";
 import { enforceProviderToolSchemaCompatibility } from "./provider-tool-schema-compat";
+import {
+  cacheConversationAgent,
+  conversationAgentKey,
+  selectConversationAgentForRun
+} from "./conversation-agent-rebuild";
 import type {
   AgentRunInput,
   AgentRuntime,
@@ -221,10 +235,30 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     return this.userInputBroker.resolve(response);
   }
 
+  resolveModelCapacity(config: AgentProviderRuntimeConfig): {
+    modelId: string;
+    contextWindow: number;
+    maxTokens: number;
+  } {
+    return {
+      modelId: config.id,
+      ...resolveProviderModelCapacity(config)
+    };
+  }
+
   async testConnection(
     config: AgentProviderRuntimeConfig
   ): Promise<ModelConnectionTestResult> {
-    const { model, streamFn } = buildProviderRuntime(config);
+    const configuredThinkingLevel = config.defaultThinkingLevel;
+    const effectiveTemperature =
+      configuredThinkingLevel === "off"
+        ? config.temperatureOptions[1]
+        : undefined;
+    const { model, streamFn } = buildProviderRuntime(
+      config,
+      effectiveTemperature,
+      configuredThinkingLevel
+    );
     const stream = streamFn(
       model,
       {
@@ -235,6 +269,13 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
         ...(config.apiKey ? { apiKey: config.apiKey } : {}),
         maxTokens: 8,
         maxRetries: 0,
+        ...(configuredThinkingLevel === "off"
+          ? {}
+          : {
+              reasoning: toPiThinkingLevel(
+                configuredThinkingLevel
+              ) as ProviderThinkingLevel
+            }),
         timeoutMs: 15_000
       }
     );
@@ -248,6 +289,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       ok: true,
       message: "连接成功，模型已返回有效响应。",
       testedAt: new Date().toISOString(),
+      contextWindow: model.contextWindow,
+      maxTokens: model.maxTokens,
       ...(usage ? { usage } : {})
     };
   }
@@ -256,6 +299,12 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
     const queue = new AsyncEventQueue<AgentRuntimeEvent>();
     const runtime = this.describe(input.runtimeConfig);
     const messageId = `${input.runId}_assistant`;
+    const agentKey = conversationAgentKey(input);
+    const reusableConversationAgent = selectConversationAgentForRun(
+      this.conversationAgents,
+      agentKey,
+      input.conversationHistoryMode
+    );
     const portableToolSchemaProfile = resolvePortableToolSchemaProfile(
       input.workspaceContext
     );
@@ -382,14 +431,21 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
         : shortWorkspace && input.agentProfile
           ? createShortWorkspaceToolSharedState(shortWorkspace)
           : undefined;
+    const longToolSharedState =
+      longWorkspace && input.longAgentProfile
+        ? createLongWorkspaceToolSharedState()
+        : undefined;
     const buildWritingTools = (): AgentTool[] => {
       if (scriptWorkspace && input.scriptAgentProfile) {
         return buildScriptWorkspaceTools({
           workspace: scriptWorkspace,
           profile: input.scriptAgentProfile,
           writeApprovalMode: input.writeApprovalMode ?? "request-approval",
+          autoApproveCrossStageOperations:
+            input.autoApproveCrossStageOperations === true,
           attachedSkills: input.workspaceContext?.attachedSkills,
           attachedMaterials: input.workspaceContext?.attachedMaterials,
+          requestUserInput,
           ...(writingToolSharedState
             ? { sharedState: writingToolSharedState }
             : {})
@@ -400,8 +456,11 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
             workspace: shortWorkspace,
             profile: input.agentProfile,
             writeApprovalMode: input.writeApprovalMode ?? "request-approval",
+            autoApproveCrossStageOperations:
+              input.autoApproveCrossStageOperations === true,
             attachedSkills: input.workspaceContext?.attachedSkills,
             attachedMaterials: input.workspaceContext?.attachedMaterials,
+            requestUserInput,
             ...(writingToolSharedState
               ? { sharedState: writingToolSharedState }
               : {})
@@ -416,13 +475,16 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
             sessionId: input.sessionId,
             runId: input.runId,
             writeApprovalMode: input.writeApprovalMode ?? "request-approval",
+            autoApproveCrossStageOperations:
+              input.autoApproveCrossStageOperations === true,
             attachedSkills: input.workspaceContext?.attachedSkills,
             attachedMaterials: input.workspaceContext?.attachedMaterials,
             ...(input.longCommandExecutor
               ? { executor: input.longCommandExecutor }
               : {}),
             requestUserInput,
-            includeAskUserQuestion
+            includeAskUserQuestion,
+            ...(longToolSharedState ? { sharedState: longToolSharedState } : {})
           })
         : [];
     let tools: AgentTool[] =
@@ -499,16 +561,20 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
             : buildWritingTools,
         ...(scriptWorkspace
           ? {
-              systemPromptRequirements: scriptRuntimeFormatRequirements()
+              systemPromptRequirements: scriptRuntimeSystemRequirements(input)
             }
-          : longWorkspace
+          : shortWorkspace
             ? {
-                systemPromptRequirements:
-                  input.writeApprovalMode === "auto-approve"
-                    ? "这是长篇主智能体委派的单层子任务。只能使用继承的长篇查询/提案工具和当前 bookId；提案会进入实时自动保存队列，在客户端确认成功前不能宣称已落盘或已提交连续性账本。"
-                    : "这是长篇主智能体委派的单层子任务。只能使用继承的长篇查询/提案工具和当前 bookId；任何写入仍须形成可审阅提案，不能宣称已落盘或已提交连续性账本。"
+                systemPromptRequirements: shortRuntimeSystemRequirements(input)
               }
-            : {}),
+            : longWorkspace
+              ? {
+                  systemPromptRequirements:
+                    input.writeApprovalMode === "auto-approve"
+                      ? "这是长篇主智能体委派的单层子任务。只能使用继承的长篇查询/提案工具和当前 bookId；提案会进入实时自动保存队列，在客户端确认成功前不能宣称已落盘或已提交连续性账本。"
+                      : "这是长篇主智能体委派的单层子任务。只能使用继承的长篇查询/提案工具和当前 bookId；任何写入仍须形成可审阅提案，不能宣称已落盘或已提交连续性账本。"
+                }
+              : {}),
         toolExecutionHooks: this.toolExecutionHooks,
         ...(this.retryPolicy ? { retryPolicy: this.retryPolicy } : {}),
         ...(this.subagentTimeoutMs === undefined
@@ -518,23 +584,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       });
       if (spawnTool) tools = [...tools, spawnTool];
     }
-    const agentKey = `${input.sessionId}:${
-      input.mode === "chat-assistant"
-        ? input.chatAssistantRuntimeContext?.mode === "project"
-          ? `chat-assistant:project:${input.chatAssistantRuntimeContext.project.projectType}:${input.chatAssistantRuntimeContext.project.projectId}`
-          : "chat-assistant:normal"
-        : subagentAuthoring
-          ? `subagent-authoring:${subagentAuthoring.parentAgentId}`
-          : input.learningImitationProfile
-            ? `learning-imitation:${input.learningImitationProfile.id}`
-            : input.libraryAgentProfile && libraryWorkspace
-              ? `library:${input.libraryAgentProfile.domain}:${libraryWorkspace.libraryId}`
-              : input.scriptAgentProfile
-                ? `script:${input.scriptAgentProfile.id}`
-                : input.longAgentProfile && longWorkspace
-                  ? `long:${input.longAgentProfile.id}:${longWorkspace.bookId}`
-                  : (input.agentProfile?.id ?? "default")
-    }`;
     let emitToolCallEvent: (
       event: ToolCallAssistantEvent,
       assistantTurnIndex: number
@@ -544,7 +593,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       (event, assistantTurnIndex) =>
         emitToolCallEvent(event, assistantTurnIndex)
     );
-    let agent = this.conversationAgents.get(agentKey);
+    let agent = reusableConversationAgent;
     const createdAgent = agent === undefined;
     if (agent) {
       if (agent.state.isStreaming) {
@@ -573,8 +622,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
       }
       agent.sessionId = input.sessionId;
       agent.toolExecution = "sequential";
-      this.conversationAgents.delete(agentKey);
-      this.conversationAgents.set(agentKey, agent);
+      cacheConversationAgent(this.conversationAgents, agentKey, agent);
     } else {
       const restoredMessages = restoredConversationMessages(input, model);
       agent = new Agent({
@@ -590,7 +638,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
         sessionId: input.sessionId,
         toolExecution: "sequential"
       });
-      this.conversationAgents.set(agentKey, agent);
+      cacheConversationAgent(this.conversationAgents, agentKey, agent);
       this.trimConversationAgents();
     }
 
@@ -833,11 +881,14 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
           ? buildRawUserMessage(input).content
           : persistInitialRuntimeContext
             ? buildRuntimeUserMessageContent(input)
-            : longAgentRefreshesDesignContextOnLaterTurns(
-                  input.longAgentProfile?.id
-                ) && input.workspaceContext?.longWorkspace
-              ? buildLongFollowUpTurnUserMessageContent(input)
-              : buildRawUserMessage(input).content;
+            : (input.agentProfile && shortWorkspace) ||
+                (input.scriptAgentProfile && scriptWorkspace)
+              ? buildRuntimeUserMessageContent(input)
+              : longAgentRefreshesDesignContextOnLaterTurns(
+                    input.longAgentProfile?.id
+                  ) && input.workspaceContext?.longWorkspace
+                ? buildLongFollowUpTurnUserMessageContent(input)
+                : buildRawUserMessage(input).content;
       const runtimeUserMessage: UserMessage = {
         role: "user",
         content: runtimeUserContent,

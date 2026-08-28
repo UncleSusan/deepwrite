@@ -182,7 +182,7 @@ describe("long-form renderer vertical slice: agents-writing-and-navigation", () 
     expect(workspaceSystemEventRoutesSource).toContain(
       "dependencies.stageLongDraftEditProposal(event);"
     );
-    expect(proposalSource).not.toContain("long.ledger_commit_proposal");
+    expect(proposalSource).toContain("long.ledger_commit_proposal");
     expect(proposalSource).toContain("查看具体影响");
     expect(proposalSource).toContain("删除实体");
     expect(proposalSource).toContain("实体完整前后快照");
@@ -322,7 +322,10 @@ describe("long-form renderer vertical slice: agents-writing-and-navigation", () 
       "const prefix = `long:${encodeURIComponent(event.payload.bookId)}:`"
     );
     expect(agentRunPreferencesSource).toContain(
-      "return `${document.workspaceId}:${agentId}`"
+      "resolveShortWorkspaceConversationLaneIdForStage(document.stageId)"
+    );
+    expect(agentRunPreferencesSource).toContain(
+      "resolveScriptWorkspaceConversationLaneIdForStage(document.stageId)"
     );
     expect(agentRunPreferencesSource).not.toContain("longConversationKey");
   });

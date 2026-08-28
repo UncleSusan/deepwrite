@@ -79,6 +79,12 @@ withDefaults(defineProps<{ name: IconName; size?: number }>(), { size: 18 });
     <template v-else-if="name === 'library'">
       <path d="M5 4h4v16H5zM10 4h4v16h-4zM15.5 5l3.5-1 3.5 14-3.5 1z" />
     </template>
+    <template v-else-if="name === 'list'">
+      <circle cx="5" cy="7" r="1" fill="currentColor" stroke="none" />
+      <circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="5" cy="17" r="1" fill="currentColor" stroke="none" />
+      <path d="M9 7h10M9 12h10M9 17h10" />
+    </template>
     <template v-else-if="name === 'archive'">
       <path d="M4 7h16v13H4zM3 4h18v3H3zM9 11h6" />
     </template>

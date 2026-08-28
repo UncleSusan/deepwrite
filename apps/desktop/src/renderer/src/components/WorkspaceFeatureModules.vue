@@ -16,6 +16,7 @@ import type {
   ModelConfigInput,
   ModelSettingsInput,
   ModelUsageQueryInput,
+  TextViewMode,
   WorkspacePaneLayout,
   WorkspaceAgentSettingsInput
 } from "@deepwrite/contracts";
@@ -46,10 +47,12 @@ const emit = defineEmits<{
   expandLeft: [];
   back: [];
   updatePermissionMode: [mode: GeneralPermissionMode];
+  updateAutoApproveCrossStageOperations: [enabled: boolean];
   updateAutoSave: [enabled: boolean];
   updateLanguage: [language: AppLanguage];
   updateShowInMenuBar: [enabled: boolean];
   updateWorkspacePaneLayout: [layout: WorkspacePaneLayout];
+  updateDefaultTextViewMode: [mode: TextViewMode];
   saveWorkspaceAgents: [settings: WorkspaceAgentSettingsInput];
   retryLongAgents: [];
   saveLongAgents: [settings: LongAgentSettingsInput];
@@ -65,10 +68,13 @@ const emit = defineEmits<{
   saveOfficialToken: [apiKey: string];
   clearOfficialToken: [];
   setOfficialModelEnabled: [modelId: string, enabled: boolean];
+  setFreeModelEnabled: [modelId: string, enabled: boolean];
   retryAgentTeam: [];
   createAgentTeam: [input: AgentTeamProfileCreateInput];
   renameAgentTeam: [input: AgentTeamProfileRenameInput];
   deleteAgentTeam: [input: AgentTeamProfileTargetInput];
+  downloadAgentTeam: [input: AgentTeamProfileTargetInput];
+  installAgentTeam: [];
   setAgentTeamEnabled: [input: AgentTeamProfileSetEnabledInput];
   saveAgentTeam: [input: AgentTeamProfileSaveInput];
   chooseWorkspaceDirectory: [];
@@ -84,11 +90,16 @@ const emit = defineEmits<{
     v-if="module.kind === 'settings'"
     :initial-category="module.initialCategory"
     :permission-mode="module.permissionMode"
+    :auto-approve-cross-stage-operations="
+      module.autoApproveCrossStageOperations
+    "
     :auto-save-enabled="module.autoSaveEnabled"
     :language="module.language"
     :show-in-menu-bar="module.showInMenuBar"
     :workspace-pane-layout="module.workspacePaneLayout"
+    :default-text-view-mode="module.defaultTextViewMode"
     :workspace-agent-settings="module.workspaceAgentSettings"
+    :creative-plot-stages="module.creativePlotStages"
     :long-agent-settings="module.longAgentSettings"
     :workspace-agent-loading="module.workspaceAgentLoading"
     :workspace-agent-saving="module.workspaceAgentSaving"
@@ -106,6 +117,8 @@ const emit = defineEmits<{
     :model-settings="module.modelSettings"
     :model-loading="module.modelLoading"
     :model-saving="module.modelSaving"
+    :free-models-refreshing="module.freeModelsRefreshing"
+    :free-models-saving="module.freeModelsSaving"
     :model-error="module.modelError"
     :model-test-message="module.modelTestMessage"
     :testing-model-id="module.testingModelId"
@@ -116,10 +129,14 @@ const emit = defineEmits<{
     :runtime-available="module.runtimeAvailable"
     @back="emit('back')"
     @update-permission-mode="emit('updatePermissionMode', $event)"
+    @update-auto-approve-cross-stage-operations="
+      emit('updateAutoApproveCrossStageOperations', $event)
+    "
     @update-auto-save="emit('updateAutoSave', $event)"
     @update-language="emit('updateLanguage', $event)"
     @update-show-in-menu-bar="emit('updateShowInMenuBar', $event)"
     @update-workspace-pane-layout="emit('updateWorkspacePaneLayout', $event)"
+    @update-default-text-view-mode="emit('updateDefaultTextViewMode', $event)"
     @save-workspace-agents="emit('saveWorkspaceAgents', $event)"
     @retry-long-agents="emit('retryLongAgents')"
     @save-long-agents="emit('saveLongAgents', $event)"
@@ -136,6 +153,10 @@ const emit = defineEmits<{
     @clear-official-token="emit('clearOfficialToken')"
     @set-official-model-enabled="
       (modelId, enabled) => emit('setOfficialModelEnabled', modelId, enabled)
+    "
+    @refresh-free-models="emit('refreshFreeModels')"
+    @set-free-model-enabled="
+      (modelId, enabled) => emit('setFreeModelEnabled', modelId, enabled)
     "
   />
 
@@ -166,6 +187,8 @@ const emit = defineEmits<{
       @create="emit('createAgentTeam', $event)"
       @rename="emit('renameAgentTeam', $event)"
       @delete="emit('deleteAgentTeam', $event)"
+      @download="emit('downloadAgentTeam', $event)"
+      @install="emit('installAgentTeam')"
       @set-enabled="emit('setAgentTeamEnabled', $event)"
       @save="emit('saveAgentTeam', $event)"
       @authoring-generate="generateWorkspaceFeatureSubagent(module, $event)"
@@ -202,13 +225,11 @@ const emit = defineEmits<{
       :model-settings="module.settings"
       :model-loading="module.loading"
       :model-saving="module.saving"
-      :free-models-refreshing="module.freeModelsRefreshing"
       :model-error="module.error"
       :model-test-message="module.testMessage"
       :testing-model-id="module.testingModelId"
       :model-alert-messages="module.alertMessages"
       @save-models="emit('saveModels', $event)"
-      @refresh-free-models="emit('refreshFreeModels')"
       @test-model="emit('testModel', $event)"
       @open-official-models="emit('openOfficialModels')"
     />

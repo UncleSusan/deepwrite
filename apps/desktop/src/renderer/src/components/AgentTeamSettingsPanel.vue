@@ -6,6 +6,7 @@ import {
   SHORT_AGENT_SUBAGENT_MAX_COUNT,
   SHORT_AGENT_SUBAGENT_NAME_MAX_LENGTH,
   SHORT_AGENT_SUBAGENT_SYSTEM_PROMPT_MAX_LENGTH,
+  SCRIPT_AGENT_SUBAGENT_MAX_COUNT,
   SCRIPT_WORKSPACE_AGENT_IDS,
   SHORT_WORKSPACE_AGENT_IDS,
   type WorkspaceAgentTeamSettings,
@@ -27,7 +28,10 @@ import AppIcon from "./AppIcon.vue";
 import LoadSubagentFromSkillDialog from "./LoadSubagentFromSkillDialog.vue";
 import LongAgentTeamSettingsPanel from "./LongAgentTeamSettingsPanel.vue";
 import PopupSelect, { type PopupSelectOption } from "./PopupSelect.vue";
-import { PARENT_AGENTS } from "./agentTeamSettingsMeta";
+import {
+  SCRIPT_PARENT_AGENTS,
+  SHORT_PARENT_AGENT
+} from "./agentTeamSettingsMeta";
 import {
   agentTeamModelDefaults,
   agentTeamThinkingLabel,
@@ -70,11 +74,14 @@ const emit = defineEmits<{
 
 const loadFromSkillOpen = ref(false);
 
-const activeParentAgentId = ref<WorkspaceAgentId>(PARENT_AGENTS[0].id);
+const activeParentAgentId = ref<WorkspaceAgentId>(SHORT_PARENT_AGENT.id);
 const activeWorkspaceType = ref<"short" | "script" | "long">(
   props.workspaceType ?? "short"
 );
-type EditableTeam = WorkspaceAgentTeamSettingsInput["teams"][number];
+type EditableTeam = {
+  parentAgentId: WorkspaceAgentId;
+  subagents: ShortAgentSubagentDefinition[];
+};
 const draftTeams = ref<EditableTeam[]>([]);
 const editingSubagentId = ref<string | null>(null);
 let generatedIdSequence = 0;
@@ -85,12 +92,23 @@ const formDisabled = computed(
 
 const activeParentMeta = computed(
   () =>
-    PARENT_AGENTS.find((agent) => agent.id === activeParentAgentId.value) ??
-    PARENT_AGENTS[0]
+    visibleParentAgents.value.find(
+      (agent) => agent.id === activeParentAgentId.value
+    ) ?? visibleParentAgents.value[0]!
 );
 const activeParentDisplayLabel = computed(() => activeParentMeta.value.label);
 
-const visibleParentAgents = computed(() => PARENT_AGENTS);
+const visibleParentAgents = computed(() =>
+  activeWorkspaceType.value === "script"
+    ? SCRIPT_PARENT_AGENTS
+    : [SHORT_PARENT_AGENT]
+);
+
+const activeSubagentLimit = computed(() =>
+  activeWorkspaceType.value === "script"
+    ? SCRIPT_AGENT_SUBAGENT_MAX_COUNT
+    : SHORT_AGENT_SUBAGENT_MAX_COUNT
+);
 
 const activeSettings = computed(() =>
   activeWorkspaceType.value === "long"
@@ -170,7 +188,12 @@ function applyModelRunDefaults(
 watch(
   () => props.workspaceType,
   (workspaceType) => {
-    if (workspaceType) activeWorkspaceType.value = workspaceType;
+    if (workspaceType) {
+      activeWorkspaceType.value = workspaceType;
+      if (workspaceType === "short") {
+        activeParentAgentId.value = SHORT_PARENT_AGENT.id;
+      }
+    }
   }
 );
 
@@ -200,7 +223,7 @@ watch(
         (team) => team.parentAgentId === activeParentAgentId.value
       )
     ) {
-      activeParentAgentId.value = PARENT_AGENTS[0].id;
+      activeParentAgentId.value = visibleParentAgents.value[0]!.id;
     }
     editingSubagentId.value = null;
   },
@@ -224,9 +247,9 @@ function addSubagent(
 ): void {
   const team = activeTeam.value;
   if (!team || formDisabled.value) return;
-  if (team.subagents.length >= SHORT_AGENT_SUBAGENT_MAX_COUNT) {
+  if (team.subagents.length >= activeSubagentLimit.value) {
     uiMessage.warning(
-      `每个主智能体最多配置 ${SHORT_AGENT_SUBAGENT_MAX_COUNT} 个子智能体`
+      `当前团队最多配置 ${activeSubagentLimit.value} 个子智能体`
     );
     return;
   }
@@ -246,9 +269,9 @@ function addSubagent(
 function openLoadFromSkill(): void {
   if (formDisabled.value) return;
   if (!activeTeam.value) return;
-  if (activeTeam.value.subagents.length >= SHORT_AGENT_SUBAGENT_MAX_COUNT) {
+  if (activeTeam.value.subagents.length >= activeSubagentLimit.value) {
     uiMessage.warning(
-      `每个主智能体最多配置 ${SHORT_AGENT_SUBAGENT_MAX_COUNT} 个子智能体`
+      `当前团队最多配置 ${activeSubagentLimit.value} 个子智能体`
     );
     return;
   }
@@ -409,7 +432,10 @@ function saveSettings(): void {
       }))
     };
   });
-  const message = validateAgentTeamDraft(teams, props.models);
+  const message = validateAgentTeamDraft(
+    teams as WorkspaceAgentTeamSettingsInput["teams"],
+    props.models
+  );
   if (message) {
     uiMessage.warning(message);
     return;
@@ -438,6 +464,7 @@ defineExpose({
   LongAgentTeamSettingsPanel,
   PopupSelect,
   activeParentDisplayLabel,
+  activeSubagentLimit,
   visibleParentAgents,
   modelOptions,
   thinkingOptionsFor,

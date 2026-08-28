@@ -32,6 +32,9 @@ export async function confirmCrossStageWrite(
   if (LONG_STAGE_ROOTS[input.targetStage] === ctx.workspace.activeRoot) {
     return "continue";
   }
+  if (ctx.input.autoApproveCrossStageOperations === true) {
+    return "continue";
+  }
   if (!ctx.input.requestUserInput) {
     throw new Error("当前运行无法向用户请求跨阶段写入确认。");
   }

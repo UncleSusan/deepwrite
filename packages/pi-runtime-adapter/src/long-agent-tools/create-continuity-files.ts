@@ -38,6 +38,9 @@ function requireChapter(
   );
   const card = index.plot.chapterCards.find(({ id }) => id === chapterCardId);
   if (!chapter || !card) throw new Error(`章卡 ${chapterCardId} 不存在。`);
+  if (chapter.commitId !== null) {
+    throw new Error(`章卡 ${chapterCardId} 已提交账本，不能再创建连续性文件。`);
+  }
   return { chapter, card };
 }
 

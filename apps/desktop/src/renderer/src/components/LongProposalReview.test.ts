@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import conversationItemSource from "./ConversationMessageItem.vue?raw";
 import processingItemSource from "./ConversationProcessingItem.vue?raw";
 import editProposalSource from "./AgentEditProposalCard.vue?raw";
+import discardButtonSource from "./ApprovalDiscardButton.vue?raw";
+import ledgerFinalizationSource from "./LongLedgerFinalizationCard.vue?raw";
 import source from "./LongProposalReview.vue?raw";
 
 const conversationSource = `${conversationItemSource}\n${processingItemSource}`;
@@ -21,6 +23,20 @@ describe("LongProposalReview content file cards", () => {
         /@locate="emit\('locateLongProposal', \$event\)"/g
       )
     ).toHaveLength(2);
+  });
+
+  it("renders discard beside navigation only for explicitly eligible edits", () => {
+    expect(source).toContain("discardableEventIds?: readonly string[]");
+    expect(source).toContain("function showDiscardButton");
+    expect(source).toContain("<ApprovalDiscardButton");
+    expect(discardButtonSource).toContain("舍弃本次修改");
+    expect(source).toContain("emit('discard', item.event.id)");
+    expect(conversationSource).toContain(
+      ':discardable-event-ids="item.canDiscard ? [item.item.event.id] : []"'
+    );
+    expect(conversationSource).toContain(
+      "@discard=\"emit('discardLongProposal', $event)\""
+    );
   });
 
   it("supports inline rendering inside its originating conversation turn", () => {
@@ -55,7 +71,6 @@ describe("LongProposalReview content file cards", () => {
       );
     }
     expect(source).not.toContain("worldbuilding-file-card");
-    expect(source).not.toContain("long.ledger_commit_proposal");
     expect(source).not.toContain("查看提交内容");
     expect(source).toContain("contentProposalDiffStats(item)");
     expect(source).toContain("已自动批准并保存到本地 Markdown。");
@@ -63,6 +78,19 @@ describe("LongProposalReview content file cards", () => {
     expect(source).toContain("重试接受并保存");
     expect(source).toContain("等待前序文件");
     expect(source).toContain("正在等待前序文件创建或写入完成，随后继续校验。");
+  });
+
+  it("renders ledger finalization as a durable status card with retry", () => {
+    expect(source).toContain("LongLedgerFinalizationCard");
+    expect(source).toContain("long.ledger_commit_proposal");
+    expect(ledgerFinalizationSource).toContain("连续性账本归档");
+    expect(ledgerFinalizationSource).toContain("归档失败");
+    expect(ledgerFinalizationSource).toContain("重试归档");
+    expect(ledgerFinalizationSource).toContain("关闭并保留文件");
+    expect(ledgerFinalizationSource).toContain(
+      'v-if="item.errorRetryable !== false"'
+    );
+    expect(ledgerFinalizationSource).toContain("item.error");
   });
 
   it("keeps structure changes separate from worldbuilding file writes", () => {
@@ -79,7 +107,7 @@ describe("LongProposalReview content file cards", () => {
     expect(source).toContain("function structureProposalStatusMessage");
     expect(source).toContain("function structureProposalAcceptLabel");
     expect(source).toContain(
-      "usesEditProposalSurface(item)\n            ? ['edit-proposal-card'"
+      "usesEditProposalSurface(item)\n              ? ['edit-proposal-card'"
     );
     expect(source).toContain("结构变更已应用并保存到本机。");
   });

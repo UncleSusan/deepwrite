@@ -27,12 +27,6 @@ import {
 } from "../types/longWorkspace";
 import type { EditorDraftState, WorkspaceDocument } from "../types/workspace";
 import {
-  beginAgentEditProposalCommit,
-  createAgentEditProposalRevisionLane,
-  stageAgentEditProposalRevision,
-  type AgentEditProposalCommitSnapshot
-} from "../utils/agentEditProposalRevisionLane";
-import {
   agentEditProposalGenerationId,
   agentEditProposalId,
   classifyAgentEditAcceptance,
@@ -56,13 +50,24 @@ import {
   type DraftSectionCreationRevisionCursor
 } from "../utils/draftSectionCreationRevision";
 import { findLongWorldbuildingFile } from "../utils/longWorldbuildingFiles";
-import { createKeyedSerialTaskQueue } from "../utils/keyedSerialTaskQueue";
 import { resolveProvisionalWriteStagingMode } from "../utils/provisionalExpertSectionStaging";
+import {
+  buildLongEditUndoBatch,
+  textEditDiscardSnapshot
+} from "../utils/acceptedEditDiscard";
 import {
   longCharacterBatchForFiles,
   longWorldbuildingBatchForFile
 } from "./proposal-coordinator/long-file-proposal-batches";
 import { longProjectRevisionMatchesProposalChain } from "./proposal-coordinator/long-project-revision-chain";
+import { createPlotStructureProposalLane } from "./proposal-coordinator/plot-structure-lane";
+import { createProposalQueue } from "./proposal-coordinator/queue";
+import {
+  saveCreatedCharacterContent,
+  saveCreatedDraftSectionContents
+} from "./proposal-coordinator/creation-content";
+import { reconcileCreationDependencyAfterAttempt } from "./proposal-coordinator/creation-dependency";
+import { createAcceptedEditDiscardCoordinator } from "./accepted-edit-discard";
 import type { AgentConversationController } from "./useAgentConversation";
 import type { LongWorkspaceProposalEvent } from "./useLongWorkspaceProposals";
 
@@ -71,17 +76,7 @@ type LongChapterWriteProposalEvent = Extract<
   { type: "long.chapter_write_proposal" }
 >;
 
-export interface QueuedAgentEdit {
-  conversation: AgentConversationController;
-  sessionId: string;
-  runId: string;
-  proposalId: string;
-  workspaceId: string;
-  automatic: boolean;
-  expectedProposedRevision: string;
-  decisionToken: string;
-  snapshot: AgentEditProposalCommitSnapshot<AgentEditProposal>;
-}
+export type { QueuedAgentEdit } from "./proposal-coordinator/types";
 
 export interface ProposalCoordinatorNotifications {
   error(message: string): void;
@@ -170,6 +165,7 @@ export interface ProposalCoordinatorContext {
 }
 
 export function useProposalCoordinator(context: ProposalCoordinatorContext) {
+  const acceptedEditDiscard = createAcceptedEditDiscardCoordinator(context);
   const { api, notifications: uiMessage } = context;
   const {
     snapshot: catalogSnapshot,
@@ -212,13 +208,37 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
   } = context.longWorkspace;
   const { selectedResourceId, activeCreationResourceId, rightCollapsed } =
     context.navigation;
-  const queuedAgentEdits = new Map<string, QueuedAgentEdit>();
-  const agentEditCommitQueue = createKeyedSerialTaskQueue<string>();
-  const activeCoordinatorInvocations = new Set<Promise<void>>();
-  const activeAgentEditCommitTasks = new Set<Promise<void>>();
-  let coordinatorDisposed = false;
-  let coordinatorDisposePromise: Promise<void> | undefined;
-  let agentEditDecisionSequence = 0;
+  const proposalQueue = createProposalQueue({
+    apply: (queued) =>
+      applyAgentEdit(
+        queued.conversation,
+        {
+          runId: queued.runId,
+          proposalId: queued.proposalId,
+          decision: "accept"
+        },
+        queued.automatic,
+        {
+          decisionToken: queued.decisionToken,
+          expectedProposedRevision: queued.expectedProposedRevision
+        }
+      ),
+    priority: autoApproveEditPriority,
+    reportUnexpectedError: (error) => {
+      uiMessage.error(
+        error instanceof Error ? error.message : "批准智能体修改失败。"
+      );
+    }
+  });
+  const {
+    removeQueuedAgentEdit,
+    queueAgentEdit,
+    scheduleQueuedAgentEdits,
+    hasQueuedAgentEdits,
+    invokeWhileActive,
+    drain,
+    dispose
+  } = proposalQueue;
   const acceptedLibraryMutationCounts = new Map<string, number>();
   const acceptedDraftSectionCreationRevisions = new Map<
     string,
@@ -259,6 +279,18 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     proposalId: string;
     decision: "accept" | "reject";
   }
+
+  const plotStructureProposalLane = createPlotStructureProposalLane({
+    api,
+    catalogBook,
+    loadCatalogSnapshot,
+    isCatalogConflict,
+    isWorkspaceAccepting: (workspaceId) =>
+      acceptingAgentEditWorkspaceIds.value.has(workspaceId),
+    setWorkspaceAccepting: setAgentEditWorkspaceAccepting,
+    notifications: uiMessage,
+    queueAgentEdit: (...args) => queueAgentEdit(...args)
+  });
 
   function libraryMutationCountKey(proposal: AgentEditProposal): string {
     const target = proposal.libraryTarget!;
@@ -714,7 +746,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       ) {
         continue;
       }
-      removeQueuedAgentEdit(conversation, runId, proposal.id);
       conversation.updateEditProposal(runId, proposal.id, {
         status: "pending",
         statusMessage: message
@@ -762,6 +793,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
   ): number {
     const proposal = conversation.getEditProposal(runId, proposalId);
     if (!proposal) return 2;
+    if (proposal.plotStructureTarget?.mutation.type === "create") return 0;
     if (proposal.draftSectionCreationTarget) return 0;
     if (proposal.characterStructureTarget?.mutation.type === "createItem")
       return 0;
@@ -792,19 +824,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     if (proposal.provisionalExpertSection) return 1;
     if (proposal.provisionalCharacterItemId) return 1;
     return 2;
-  }
-
-  function agentEditQueueKey(
-    sessionId: string,
-    runId: string,
-    proposalId: string
-  ): string {
-    return `${sessionId}\u0000${runId}\u0000${proposalId}`;
-  }
-
-  function nextAgentEditDecisionToken(proposal: AgentEditProposal): string {
-    agentEditDecisionSequence += 1;
-    return `${proposal.runId}:${proposal.id}:${proposal.generation ?? 1}:${agentEditDecisionSequence}`;
   }
 
   function draftSectionCreationOperationId(
@@ -913,22 +932,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     );
   }
 
-  function removeQueuedAgentEdit(
-    conversation: AgentConversationController,
-    runId: string,
-    proposalId: string
-  ): void {
-    for (const [key, queued] of queuedAgentEdits) {
-      if (
-        queued.conversation === conversation &&
-        queued.runId === runId &&
-        queued.proposalId === proposalId
-      ) {
-        queuedAgentEdits.delete(key);
-      }
-    }
-  }
-
   function blockLaterAgentEditGenerations(
     conversation: AgentConversationController,
     rejected: AgentEditProposal
@@ -951,89 +954,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         statusMessage:
           "此前正文版本已被拒绝；该版本继承了被拒内容，因此未写入本地文件。"
       });
-    }
-  }
-
-  function queueAgentEdit(
-    conversation: AgentConversationController,
-    sessionId: string,
-    runId: string,
-    proposalId: string,
-    automatic: boolean,
-    scheduleImmediately: boolean
-  ): void {
-    const proposal = conversation.getEditProposal(runId, proposalId);
-    if (
-      !proposal ||
-      (proposal.status !== "pending" && proposal.status !== "error")
-    ) {
-      return;
-    }
-
-    const key = agentEditQueueKey(sessionId, runId, proposalId);
-    const existingQueued = queuedAgentEdits.get(key);
-    if (
-      existingQueued?.expectedProposedRevision === proposal.proposedRevision
-    ) {
-      if (scheduleImmediately) {
-        scheduleQueuedAgentEdits(
-          (queued) => queued === queuedAgentEdits.get(key)
-        );
-      }
-      return;
-    }
-    const decisionToken = nextAgentEditDecisionToken(proposal);
-    const staged = stageAgentEditProposalRevision(
-      createAgentEditProposalRevisionLane<AgentEditProposal>({
-        targetKey: proposal.laneId ?? proposal.id,
-        durableRevision: proposal.baseRevision,
-        overlayRevision: proposal.sourceBaseRevision ?? proposal.baseRevision,
-        generation: Math.max(0, (proposal.generation ?? 1) - 1)
-      }),
-      {
-        approvalMode:
-          proposal.approvalMode ??
-          (automatic ? "auto-approve" : "request-approval"),
-        sourceBaseRevision:
-          proposal.sourceBaseRevision ?? proposal.baseRevision,
-        proposedRevision: proposal.proposedRevision,
-        proposal
-      }
-    );
-    if (staged.status !== "staged") {
-      return;
-    }
-    const started = beginAgentEditProposalCommit(staged.lane, {
-      generation: proposal.generation ?? 1,
-      token: decisionToken
-    });
-    if (started.status !== "started") {
-      return;
-    }
-    if (scheduleImmediately && !automatic) {
-      conversation.updateEditProposal(runId, proposalId, {
-        status: "accepting",
-        decisionToken,
-        statusMessage: automatic
-          ? "已进入实时自动保存队列…"
-          : "已批准，正在等待本作品的保存队列…"
-      });
-    }
-    queuedAgentEdits.set(key, {
-      conversation,
-      sessionId,
-      runId,
-      proposalId,
-      workspaceId: proposal.workspaceId,
-      automatic,
-      expectedProposedRevision: proposal.proposedRevision,
-      decisionToken,
-      snapshot: started.snapshot
-    });
-    if (scheduleImmediately) {
-      scheduleQueuedAgentEdits(
-        (queued) => queued === queuedAgentEdits.get(key)
-      );
     }
   }
 
@@ -1091,15 +1011,39 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     });
     setAgentEditWorkspaceAccepting(proposal.workspaceId, true);
     try {
-      await currentApi.catalog.mutateCharacterStructure({
+      const updatedBook = await currentApi.catalog.mutateCharacterStructure({
         bookId: proposal.workspaceId,
         baseProjectRevision: book.projectRevision,
         mutation: target.mutation
       });
+      if (
+        target.mutation.type === "createItem" &&
+        target.initialContent?.trim()
+      ) {
+        if (!target.mutation.itemId) {
+          throw new Error("人物创建结果缺少稳定条目 id，无法写入人物正文。");
+        }
+        await saveCreatedCharacterContent(currentApi.catalog, {
+          bookId: proposal.workspaceId,
+          itemId: target.mutation.itemId,
+          content: target.initialContent,
+          ...(updatedBook.projectRevision === undefined
+            ? {}
+            : { projectRevision: updatedBook.projectRevision })
+        });
+      }
       await loadCatalogSnapshot();
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",
         proposedText: undefined,
+        ...(updatedBook.projectRevision === undefined
+          ? {}
+          : {
+              discardSnapshot: {
+                ...proposal.discardSnapshot,
+                appliedProjectRevision: updatedBook.projectRevision
+              }
+            }),
         statusMessage: automatic
           ? "已自动批准并保存人物结构变更。"
           : "人物结构变更已保存到本地。"
@@ -1162,6 +1106,15 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       ) ?? "request-approval";
 
     const mutationTarget = event.payload.mutationTarget;
+    if (
+      plotStructureProposalLane.stage(
+        event,
+        sourceConversation,
+        runApprovalMode
+      )
+    ) {
+      return;
+    }
     if (mutationTarget?.kind === "character-structure") {
       const book = catalogBook(event.payload.workspaceId);
       if (!book || book.characterStructure.format !== "list") {
@@ -1245,8 +1198,19 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         ...(diff.truncated ? { truncated: true } : {}),
         createdAt: event.timestamp,
         updatedAt: event.timestamp,
+        ...(source.type === "updateItem"
+          ? {
+              discardSnapshot: {
+                beforeText: source.previousTitle,
+                beforeTitle: source.previousTitle
+              }
+            }
+          : {}),
         characterStructureTarget: {
           mutation,
+          ...(mutationTarget.initialContent
+            ? { initialContent: mutationTarget.initialContent }
+            : {}),
           ...(book.projectRevision === undefined
             ? {}
             : { baseProjectRevision: book.projectRevision })
@@ -1339,7 +1303,17 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         createdAt: event.timestamp,
         updatedAt: event.timestamp,
         draftSectionCreationTarget: {
-          sections: mutationTarget.sections.map((section) => ({ ...section })),
+          sections: mutationTarget.sections.map((section) => ({
+            title: section.title,
+            wordCountRequirement: section.wordCountRequirement,
+            provisionalSectionId: section.provisionalSectionId,
+            ...(section.bodyContent === undefined
+              ? {}
+              : { bodyContent: section.bodyContent }),
+            ...(section.characterStateContent === undefined
+              ? {}
+              : { characterStateContent: section.characterStateContent })
+          })),
           ...(mutationTarget.afterSectionId
             ? { afterSectionId: mutationTarget.afterSectionId }
             : {}),
@@ -1814,6 +1788,12 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
               ? existing.createdAt
               : event.timestamp,
           updatedAt: event.timestamp,
+          discardSnapshot: textEditDiscardSnapshot(
+            existing,
+            identity.coalescesExisting,
+            realTarget.content,
+            realTarget.title
+          ),
           provisionalExpertSection: false
         };
         sourceConversation.upsertEditProposal(event.payload.runId, proposal);
@@ -2277,7 +2257,13 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         identity.coalescesExisting && existing
           ? existing.createdAt
           : event.timestamp,
-      updatedAt: event.timestamp
+      updatedAt: event.timestamp,
+      discardSnapshot: textEditDiscardSnapshot(
+        existing,
+        identity.coalescesExisting,
+        target.content,
+        target.title
+      )
     };
     sourceConversation.upsertEditProposal(event.payload.runId, proposal);
     if (!noChanges && runApprovalMode === "auto-approve") {
@@ -2876,6 +2862,16 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         : {}),
       createdAt: existing?.createdAt ?? event.timestamp,
       updatedAt: event.timestamp,
+      ...(event.payload.operation === "create"
+        ? {}
+        : {
+            discardSnapshot: textEditDiscardSnapshot(
+              existing,
+              existing?.status === "pending" || existing?.status === "error",
+              currentText,
+              target?.title ?? event.payload.title
+            )
+          }),
       libraryTarget: {
         operation: event.payload.operation,
         domain: event.payload.domain,
@@ -3075,6 +3071,12 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
           result.section.id
         );
       }
+      await saveCreatedDraftSectionContents(currentApi.catalog, {
+        bookId: proposal.workspaceId,
+        requested: target.sections,
+        created: created.sections,
+        projectRevision: created.projectRevision
+      });
       await loadCatalogSnapshot();
       const savedDirectoryRevision = currentExpertDraftDirectoryRevision(
         proposal.workspaceId
@@ -3124,8 +3126,8 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
           }))
         },
         statusMessage: automatic
-          ? `已自动批准并创建 ${createdCount} 个空白章节；每章均包含正文和人物状态文件。`
-          : `已创建 ${createdCount} 个空白章节并保存到本地 Markdown。`
+          ? `已自动批准并创建 ${createdCount} 个章节；随创建提交的正文与人物状态已一并保存。`
+          : `已创建 ${createdCount} 个章节，并保存随创建提交的正文与人物状态。`
       });
       if (!automatic) {
         uiMessage.success(`已创建 ${createdCount} 个空白章节文件`);
@@ -3769,6 +3771,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         baseProjectRevision: latest.projectRevision
       });
       applied = true;
+      const longUndoBatch = buildLongEditUndoBatch(batch, preview.preview);
       conversation.updateEditProposal(request.runId, request.proposalId, {
         longPlotDesignTarget: {
           ...target,
@@ -3780,6 +3783,15 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",
         proposedText: undefined,
+        ...(longUndoBatch
+          ? {
+              discardSnapshot: {
+                ...proposal.discardSnapshot,
+                appliedProjectRevision: result.projectRevision,
+                longUndoBatch
+              }
+            }
+          : {}),
         longPlotDesignTarget: {
           ...target,
           appliedProjectRevision: result.projectRevision
@@ -4252,19 +4264,13 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         await refreshLongProposalWorkspace(target.bookId);
         return;
       }
-      const predecessor = proposal.predecessorProposalId
-        ? conversation.getEditProposal(
-            request.runId,
-            proposal.predecessorProposalId
-          )
-        : undefined;
-      const predecessorProjectRevision =
-        predecessor?.status === "accepted"
-          ? predecessor.longDraftTarget?.appliedProjectRevision
-          : undefined;
       if (
-        latest.projectRevision !== target.baseProjectRevision &&
-        latest.projectRevision !== predecessorProjectRevision
+        !longProjectRevisionMatchesProposalChain({
+          proposals: conversation.listEditProposals(request.runId),
+          proposal,
+          baseProjectRevision: target.baseProjectRevision,
+          latestProjectRevision: latest.projectRevision
+        })
       ) {
         const message =
           "章节正文已在审阅期间发生变化，未覆盖最新内容。请基于当前正文重新生成。";
@@ -4528,6 +4534,17 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       return;
     }
 
+    if (proposal.plotStructureTarget) {
+      await plotStructureProposalLane.accept(
+        conversation,
+        request,
+        proposal,
+        automatic,
+        reserved
+      );
+      return;
+    }
+
     if (proposal.draftSectionCreationTarget) {
       await acceptDraftSectionCreationProposal(
         conversation,
@@ -4599,6 +4616,19 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
           creation,
           automatic
         );
+        if (
+          reconcileCreationDependencyAfterAttempt({
+            conversation,
+            runId: request.runId,
+            proposalId: request.proposalId,
+            creationProposalId: creation.id,
+            waitingMessage:
+              "章节创建结果尚未确认，正文内容已保留；请先重试章节创建。",
+            blockedMessage: "关联的空白章节确认未能创建，相关正文写入已取消。"
+          })
+        ) {
+          return;
+        }
       } else {
         const realSectionId = resolveProvisionalExpertSectionId(
           request.runId,
@@ -4623,6 +4653,10 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
                 ) && candidate.status === "accepting"
             );
           if (inFlight) {
+            conversation.updateEditProposal(request.runId, request.proposalId, {
+              status: "pending",
+              statusMessage: "正在等待关联章节创建完成…"
+            });
             uiMessage.info("同一作品正在保存其他修改，请稍候再接受");
             return;
           }
@@ -4676,6 +4710,19 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
           creation,
           automatic
         );
+        if (
+          reconcileCreationDependencyAfterAttempt({
+            conversation,
+            runId: request.runId,
+            proposalId: request.proposalId,
+            creationProposalId: creation.id,
+            waitingMessage:
+              "人物条目创建结果尚未确认，正文内容已保留；请先重试创建操作。",
+            blockedMessage: "关联人物条目未能创建，相关正文写入已取消。"
+          })
+        ) {
+          return;
+        }
       }
       const createdTarget = liveWorkspaceDocuments.value.find(
         (document) =>
@@ -5056,216 +5103,68 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     await applyAgentEdit(conversation, request);
   }
 
-  async function drainQueuedAgentEditsForWorkspace(
-    workspaceId: string
-  ): Promise<void> {
-    const entries = [...queuedAgentEdits.entries()]
-      .filter(([, queued]) => queued.workspaceId === workspaceId)
-      .sort(([, left], [, right]) => {
-        const priority =
-          autoApproveEditPriority(
-            left.conversation,
-            left.runId,
-            left.proposalId
-          ) -
-          autoApproveEditPriority(
-            right.conversation,
-            right.runId,
-            right.proposalId
-          );
-        if (priority !== 0) return priority;
-        const leftProposal = left.conversation.getEditProposal(
-          left.runId,
-          left.proposalId
-        );
-        const rightProposal = right.conversation.getEditProposal(
-          right.runId,
-          right.proposalId
-        );
-        return (
-          (leftProposal?.generation ?? 1) - (rightProposal?.generation ?? 1) ||
-          Date.parse(leftProposal?.createdAt ?? "") -
-            Date.parse(rightProposal?.createdAt ?? "")
-        );
-      });
-
-    for (const [key, queued] of entries) {
-      if (queuedAgentEdits.get(key) !== queued) {
-        continue;
-      }
-      const current = queued.conversation.getEditProposal(
-        queued.runId,
-        queued.proposalId
-      );
-      if (
-        !current ||
-        queued.snapshot.token !== queued.decisionToken ||
-        queued.snapshot.proposal.id !== queued.proposalId ||
-        queued.snapshot.proposedRevision !== queued.expectedProposedRevision ||
-        current.proposedRevision !== queued.expectedProposedRevision ||
-        (current.status !== "pending" &&
-          current.status !== "error" &&
-          !(
-            current.status === "accepting" &&
-            current.decisionToken === queued.decisionToken
-          ))
-      ) {
-        if (queuedAgentEdits.get(key) === queued) {
-          queuedAgentEdits.delete(key);
-        }
-        continue;
-      }
-      if (current.status === "pending" || current.status === "error") {
-        queued.conversation.updateEditProposal(
-          queued.runId,
-          queued.proposalId,
-          {
-            status: "accepting",
-            decisionToken: queued.decisionToken,
-            statusMessage: queued.automatic
-              ? "已进入自动保存队列…"
-              : "已批准，正在等待本作品的保存队列…"
-          }
-        );
-      }
-
-      if (queuedAgentEdits.get(key) !== queued) {
-        continue;
-      }
-      queuedAgentEdits.delete(key);
-      await applyAgentEdit(
-        queued.conversation,
-        {
-          runId: queued.runId,
-          proposalId: queued.proposalId,
-          decision: "accept"
-        },
-        queued.automatic,
-        {
-          decisionToken: queued.decisionToken,
-          expectedProposedRevision: queued.expectedProposedRevision
-        }
-      );
-    }
-  }
-
-  function scheduleQueuedAgentEdits(
-    matches: (queued: QueuedAgentEdit) => boolean
-  ): void {
-    const workspaceIds = new Set(
-      [...queuedAgentEdits.values()]
-        .filter(matches)
-        .map((queued) => queued.workspaceId)
-    );
-    for (const workspaceId of workspaceIds) {
-      const task = agentEditCommitQueue
-        .enqueue(workspaceId, () =>
-          drainQueuedAgentEditsForWorkspace(workspaceId)
-        )
-        .catch((error: unknown) => {
-          uiMessage.error(
-            error instanceof Error ? error.message : "批准智能体修改失败。"
-          );
-        });
-      activeAgentEditCommitTasks.add(task);
-      void task.then(
-        () => {
-          activeAgentEditCommitTasks.delete(task);
-        },
-        () => {
-          activeAgentEditCommitTasks.delete(task);
-        }
-      );
-    }
-  }
-
-  function hasQueuedAgentEdits(): boolean {
-    return queuedAgentEdits.size > 0 || activeAgentEditCommitTasks.size > 0;
-  }
-
-  function invokeWhileActive(operation: () => Promise<void>): Promise<void> {
-    if (coordinatorDisposed) return Promise.resolve();
-    const invocation = operation();
-    activeCoordinatorInvocations.add(invocation);
-    void invocation.then(
-      () => {
-        activeCoordinatorInvocations.delete(invocation);
-      },
-      () => {
-        activeCoordinatorInvocations.delete(invocation);
-      }
-    );
-    return invocation;
-  }
-
-  async function drain(): Promise<void> {
-    while (
-      activeCoordinatorInvocations.size > 0 ||
-      activeAgentEditCommitTasks.size > 0
-    ) {
-      await Promise.allSettled([
-        ...activeCoordinatorInvocations,
-        ...activeAgentEditCommitTasks
-      ]);
-    }
-  }
-
-  function dispose(): Promise<void> {
-    if (coordinatorDisposePromise) return coordinatorDisposePromise;
-    coordinatorDisposed = true;
-    coordinatorDisposePromise = drain().finally(() => {
-      // Unscheduled proposals remain durable in their conversations and can be
-      // recovered by the next coordinator. This map is only an in-memory lane.
-      queuedAgentEdits.clear();
-    });
-    return coordinatorDisposePromise;
-  }
-
   return {
     resumeRecoveredAutomaticAgentEdits: (
       ...args: Parameters<typeof resumeRecoveredAutomaticAgentEdits>
     ) => {
-      if (!coordinatorDisposed) resumeRecoveredAutomaticAgentEdits(...args);
+      if (!proposalQueue.isDisposed()) {
+        resumeRecoveredAutomaticAgentEdits(...args);
+      }
     },
     hasQueuedAgentEdits,
     reviewAgentEdit: (...args: Parameters<typeof reviewAgentEdit>) =>
       invokeWhileActive(() => reviewAgentEdit(...args)),
     reviewLongAgentEdit: (...args: Parameters<typeof reviewLongAgentEdit>) =>
       invokeWhileActive(() => reviewLongAgentEdit(...args)),
+    discardAgentEdit: (
+      ...args: Parameters<typeof acceptedEditDiscard.discardAgentEdit>
+    ) => invokeWhileActive(() => acceptedEditDiscard.discardAgentEdit(...args)),
+    discardLongAgentEdit: (
+      ...args: Parameters<typeof acceptedEditDiscard.discardLongAgentEdit>
+    ) =>
+      invokeWhileActive(() =>
+        acceptedEditDiscard.discardLongAgentEdit(...args)
+      ),
     scheduleQueuedAgentEdits: (
       ...args: Parameters<typeof scheduleQueuedAgentEdits>
     ) => {
-      if (!coordinatorDisposed) scheduleQueuedAgentEdits(...args);
+      if (!proposalQueue.isDisposed()) scheduleQueuedAgentEdits(...args);
     },
     stageAgentEditProposal: (
       ...args: Parameters<typeof stageAgentEditProposal>
     ) => {
-      if (!coordinatorDisposed) stageAgentEditProposal(...args);
+      if (!proposalQueue.isDisposed()) stageAgentEditProposal(...args);
     },
     stageLibraryEditProposal: (
       ...args: Parameters<typeof stageLibraryEditProposal>
     ) => {
-      if (!coordinatorDisposed) stageLibraryEditProposal(...args);
+      if (!proposalQueue.isDisposed()) stageLibraryEditProposal(...args);
     },
     stageLongCharacterEditProposal: (
       ...args: Parameters<typeof stageLongCharacterEditProposal>
     ) => {
-      if (!coordinatorDisposed) stageLongCharacterEditProposal(...args);
+      if (!proposalQueue.isDisposed()) {
+        stageLongCharacterEditProposal(...args);
+      }
     },
     stageLongDraftEditProposal: (
       ...args: Parameters<typeof stageLongDraftEditProposal>
     ) => {
-      if (!coordinatorDisposed) stageLongDraftEditProposal(...args);
+      if (!proposalQueue.isDisposed()) stageLongDraftEditProposal(...args);
     },
     stageLongPlotDesignEditProposal: (
       ...args: Parameters<typeof stageLongPlotDesignEditProposal>
     ) => {
-      if (!coordinatorDisposed) stageLongPlotDesignEditProposal(...args);
+      if (!proposalQueue.isDisposed()) {
+        stageLongPlotDesignEditProposal(...args);
+      }
     },
     stageLongWorldbuildingEditProposal: (
       ...args: Parameters<typeof stageLongWorldbuildingEditProposal>
     ) => {
-      if (!coordinatorDisposed) stageLongWorldbuildingEditProposal(...args);
+      if (!proposalQueue.isDisposed()) {
+        stageLongWorldbuildingEditProposal(...args);
+      }
     },
     drain,
     dispose

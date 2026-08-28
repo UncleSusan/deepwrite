@@ -75,6 +75,7 @@ describe("DeepWriteFreeModelCatalogStore", () => {
     expect((await store.getCatalog()).models[0]?.modelId).toBe(
       "vendor/writer-v1"
     );
+    expect((await store.getCatalog()).canDeprecateMissingModels).toBe(true);
     expect(requests).toBe(1);
 
     modelId = "vendor/writer-v2";
@@ -110,6 +111,24 @@ describe("DeepWriteFreeModelCatalogStore", () => {
 
     expect(refreshed.models[0]?.modelId).toBe("vendor/writer-v2");
     expect(requests).toBe(2);
+  });
+
+  it("accepts an enabled empty manifest as an authoritative catalog", async () => {
+    const root = await mkdtemp(join(tmpdir(), "deepwrite-free-models-empty-"));
+    temporaryRoots.push(root);
+    const emptyManifest = manifest();
+    emptyManifest.models = [];
+    emptyManifest.defaultModelId = "";
+    const store = new DeepWriteFreeModelCatalogStore(root, {
+      appVersion: "1.0.0",
+      fetcher: async () => new Response(JSON.stringify(emptyManifest))
+    });
+
+    await store.initialize();
+    const catalog = await store.getCatalog();
+    expect(catalog.enabled).toBe(true);
+    expect(catalog.models).toEqual([]);
+    expect(catalog.canDeprecateMissingModels).toBe(true);
   });
 
   it("reports a forced refresh failure while retaining the last valid catalog", async () => {
@@ -156,6 +175,7 @@ describe("DeepWriteFreeModelCatalogStore", () => {
     expect((await offline.getCatalog()).models[0]?.modelId).toBe(
       "vendor/cached"
     );
+    expect((await offline.getCatalog()).canDeprecateMissingModels).toBe(false);
   });
 
   it("uses the remote model configuration without extra provider or model-id limits", () => {
@@ -181,6 +201,28 @@ describe("DeepWriteFreeModelCatalogStore", () => {
       "deepwrite-free-writing": "remote-secret"
     });
     expect(catalog.models[0]).not.toHaveProperty("apiKey");
+  });
+
+  it("retains current model snapshots when globally paused or version-incompatible", () => {
+    const pausedManifest = manifest();
+    pausedManifest.status = { enabled: false, message: "maintenance" };
+    const paused = parseDeepWriteFreeModelManifest(pausedManifest, "1.0.0");
+    expect(paused).toMatchObject({
+      enabled: false,
+      message: "maintenance",
+      canDeprecateMissingModels: false
+    });
+    expect(paused.models).toHaveLength(1);
+    expect(paused.apiKeys).toEqual({});
+
+    const versionIncompatible = parseDeepWriteFreeModelManifest(
+      manifest(),
+      "0.9.0"
+    );
+    expect(versionIncompatible.enabled).toBe(false);
+    expect(versionIncompatible.message).toMatch(/版本过低/u);
+    expect(versionIncompatible.models).toHaveLength(1);
+    expect(versionIncompatible.canDeprecateMissingModels).toBe(false);
   });
 
   it("does not write remote keys into the manifest cache", async () => {

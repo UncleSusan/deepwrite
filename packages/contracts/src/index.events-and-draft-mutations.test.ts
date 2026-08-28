@@ -299,7 +299,9 @@ describe("DeepWrite desktop contracts: events-and-draft-mutations", () => {
           {
             title: "第二章",
             wordCountRequirement: "1200 字",
-            provisionalSectionId: "pending:section:1"
+            provisionalSectionId: "pending:section:1",
+            bodyContent: "第二章正文。",
+            characterStateContent: "人物在章末掌握了新线索。"
           },
           {
             title: "第三章",
@@ -318,7 +320,12 @@ describe("DeepWrite desktop contracts: events-and-draft-mutations", () => {
       mutationTarget: {
         kind: "expert-draft-section-creation",
         sections: [
-          { title: "第二章", provisionalSectionId: "pending:section:1" },
+          {
+            title: "第二章",
+            provisionalSectionId: "pending:section:1",
+            bodyContent: "第二章正文。",
+            characterStateContent: "人物在章末掌握了新线索。"
+          },
           { title: "第三章", provisionalSectionId: "pending:section:2" }
         ]
       }
@@ -333,6 +340,68 @@ describe("DeepWrite desktop contracts: events-and-draft-mutations", () => {
       WorkspaceEditorMutationPayloadSchema.safeParse({
         ...payload,
         stageId: "outline"
+      }).success
+    ).toBe(false);
+  });
+
+  it("validates create-with-content targets for characters and plot stages", () => {
+    const base = {
+      sessionId: "session_structure_creation",
+      runId: "run_structure_creation",
+      toolCallId: "tool_structure_creation",
+      workspaceId: "book-1",
+      baseRevision: "v1:100:1234abcd",
+      summary: "创建结构与正文。",
+      runtime
+    };
+    expect(
+      WorkspaceEditorMutationPayloadSchema.safeParse({
+        ...base,
+        stageId: "character_design",
+        text: "创建：林默",
+        mutationTarget: {
+          kind: "character-structure",
+          initialContent: "林默是守夜人。",
+          mutation: {
+            type: "createItem",
+            title: "林默",
+            provisionalItemId: "character_pending_1"
+          }
+        }
+      }).success
+    ).toBe(true);
+    expect(
+      WorkspaceEditorMutationPayloadSchema.safeParse({
+        ...base,
+        stageId: "plot_design",
+        text: "失踪名单记录了旧船员。",
+        mutationTarget: {
+          kind: "plot-structure",
+          mutation: {
+            type: "create",
+            title: "真相回收",
+            description: "回收线索并揭示真相。",
+            provisionalStageId: "pending:plot-stage:1",
+            content: "失踪名单记录了旧船员。"
+          }
+        }
+      }).success
+    ).toBe(true);
+    expect(
+      WorkspaceEditorMutationPayloadSchema.safeParse({
+        ...base,
+        stageId: "draft",
+        text: "失踪名单记录了旧船员。",
+        mutationTarget: {
+          kind: "plot-structure",
+          mutation: {
+            type: "create",
+            title: "真相回收",
+            description: "回收线索并揭示真相。",
+            provisionalStageId: "pending:plot-stage:1",
+            content: "失踪名单记录了旧船员。"
+          }
+        }
       }).success
     ).toBe(false);
   });

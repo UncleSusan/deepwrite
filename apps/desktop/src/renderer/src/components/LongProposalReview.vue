@@ -11,6 +11,14 @@ import { buildAgentTextDiff } from "../utils/agentTextDiff";
 import { longCharacterFiles } from "../utils/longCharacterFiles";
 import { longWorldbuildingFiles } from "../utils/longWorldbuildingFiles";
 import AppIcon from "./AppIcon.vue";
+import ApprovalDiscardButton from "./ApprovalDiscardButton.vue";
+import LongLedgerFinalizationCard from "./LongLedgerFinalizationCard.vue";
+import {
+  approvalDiscardStatusLabel,
+  approvalDiscardStatusMessage,
+  approvalDiscardVisualStatus,
+  shouldShowApprovalDiscardButton
+} from "./approvalDiscardPresentation";
 
 const props = withDefaults(
   defineProps<{
@@ -18,10 +26,12 @@ const props = withDefaults(
     workspaceIndex?: LongWorkspaceIndexSnapshot | null;
     embedded?: boolean;
     conversationCard?: boolean;
+    discardableEventIds?: readonly string[];
   }>(),
   {
     embedded: false,
-    conversationCard: false
+    conversationCard: false,
+    discardableEventIds: () => []
   }
 );
 
@@ -30,6 +40,7 @@ const emit = defineEmits<{
   reject: [eventId: string];
   retryPreview: [eventId: string];
   locate: [eventId: string];
+  discard: [eventId: string];
 }>();
 
 const pendingCount = computed(
@@ -222,6 +233,8 @@ function proposalTitle(item: LongWorkspaceProposalItem): string {
       return item.event.payload.files.length === 1
         ? contentFileTitle(item, item.event.payload.files[0]!)
         : `${item.event.payload.files.length} 个连续性文件`;
+    case "long.ledger_commit_proposal":
+      return "连续性账本归档";
   }
 }
 
@@ -240,10 +253,21 @@ function proposalAction(item: LongWorkspaceProposalItem): string {
     case "long.character_file_proposal":
     case "long.continuity_file_proposal":
       return "确认写入并保存";
+    case "long.ledger_commit_proposal":
+      return item.status === "error" ? "重试归档" : "立即归档";
   }
 }
 
 function proposalStatusText(item: LongWorkspaceProposalItem): string {
+  const discardLabel = approvalDiscardStatusLabel(item.discardState);
+  if (discardLabel) return discardLabel;
+  if (item.event.type === "long.ledger_commit_proposal") {
+    if (item.status === "accepted") return "已归档";
+    if (item.status === "waiting") return "等待前序文件";
+    if (item.status === "submitting") return "正在归档";
+    if (item.status === "error") return "归档失败";
+    return "等待归档";
+  }
   if (item.status === "accepted") return "已接受";
   if (item.status === "waiting") return "等待前序文件";
   if (item.status === "previewing") {
@@ -275,6 +299,8 @@ function contentProposalVisualStatus(
 }
 
 function contentProposalStatusLabel(item: LongWorkspaceProposalItem): string {
+  const discardLabel = approvalDiscardStatusLabel(item.discardState);
+  if (discardLabel) return discardLabel;
   if (item.status === "accepted") return "已接受";
   if (item.status === "error") {
     return item.errorPhase === "preview" ? "校验未通过" : "应用失败";
@@ -301,6 +327,8 @@ function contentProposalDiffStats(item: LongWorkspaceProposalItem): {
 }
 
 function contentProposalStatusMessage(item: LongWorkspaceProposalItem): string {
+  const discardMessage = approvalDiscardStatusMessage(item.discardState);
+  if (discardMessage) return discardMessage;
   if (item.status === "accepted") {
     return item.approvalMode === "auto-approve"
       ? "已自动批准并保存到本地 Markdown。"
@@ -370,13 +398,18 @@ function usesEditProposalSurface(item: LongWorkspaceProposalItem): boolean {
 
 function proposalVisualStatus(
   item: LongWorkspaceProposalItem
-): "pending" | "accepting" | "accepted" | "error" {
-  return contentProposalVisualStatus(item);
+): "pending" | "accepting" | "accepted" | "rejected" | "conflict" | "error" {
+  return (
+    approvalDiscardVisualStatus(item.discardState) ??
+    contentProposalVisualStatus(item)
+  );
 }
 
 function structureProposalStatusMessage(
   item: LongWorkspaceProposalItem
 ): string {
+  const discardMessage = approvalDiscardStatusMessage(item.discardState);
+  if (discardMessage) return discardMessage;
   if (item.status === "accepted") return "结构变更已应用并保存到本机。";
   if (item.status === "error") {
     if (item.errorPhase === "preview") {
@@ -396,6 +429,14 @@ function structureProposalStatusMessage(
   return item.approvalMode === "auto-approve"
     ? "已加入实时自动保存队列。"
     : "接受后将应用到当前书籍的结构并自动保存到本机。";
+}
+
+function showDiscardButton(item: LongWorkspaceProposalItem): boolean {
+  return shouldShowApprovalDiscardButton(
+    props.discardableEventIds.includes(item.event.id),
+    item.status === "accepted",
+    item.discardState
+  );
 }
 
 function structureProposalAcceptDisabled(
@@ -545,15 +586,29 @@ function entitySnapshotText(
         v-for="item in items"
         :key="item.event.id"
         :class="
-          usesEditProposalSurface(item)
-            ? ['edit-proposal-card', `is-${proposalVisualStatus(item)}`]
-            : 'long-proposal-card'
+          item.event.type === 'long.ledger_commit_proposal'
+            ? 'long-ledger-finalization-item'
+            : usesEditProposalSurface(item)
+              ? ['edit-proposal-card', `is-${proposalVisualStatus(item)}`]
+              : 'long-proposal-card'
         "
         :data-proposal-type="item.event.type"
-        :aria-busy="item.status === 'submitting'"
+        :aria-busy="
+          item.status === 'submitting' ||
+          item.discardState?.status === 'discarding'
+        "
       >
+        <LongLedgerFinalizationCard
+          v-if="item.event.type === 'long.ledger_commit_proposal'"
+          :item="item"
+          @approve="emit('approve', item.event.id)"
+          @reject="emit('reject', item.event.id)"
+        />
         <div
-          v-if="!usesEditProposalSurface(item)"
+          v-if="
+            item.event.type !== 'long.ledger_commit_proposal' &&
+            !usesEditProposalSurface(item)
+          "
           class="long-proposal-heading"
         >
           <span class="long-proposal-icon">
@@ -589,7 +644,12 @@ function entitySnapshotText(
           </div>
         </div>
 
-        <p v-if="!usesEditProposalSurface(item)">
+        <p
+          v-if="
+            item.event.type !== 'long.ledger_commit_proposal' &&
+            !usesEditProposalSurface(item)
+          "
+        >
           {{ item.event.payload.summary }}
         </p>
 
@@ -624,6 +684,11 @@ function entitySnapshotText(
                 >
                   跳转到目标文件
                 </button>
+                <ApprovalDiscardButton
+                  v-if="showDiscardButton(item)"
+                  :discarding="item.discardState?.status === 'discarding'"
+                  @discard="emit('discard', item.event.id)"
+                />
               </div>
               <p>{{ item.event.payload.summary }}</p>
             </div>
@@ -882,6 +947,7 @@ function entitySnapshotText(
 
         <footer
           v-if="
+            item.event.type !== 'long.ledger_commit_proposal' &&
             !usesEditProposalSurface(item) &&
             item.status !== 'accepted' &&
             (item.approvalMode !== 'auto-approve' || item.status === 'error')

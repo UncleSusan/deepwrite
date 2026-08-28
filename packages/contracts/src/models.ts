@@ -96,6 +96,30 @@ export const ModelManagedBySchema = z.enum([
 ]);
 export type ModelManagedBy = z.infer<typeof ModelManagedBySchema>;
 
+/** Fallback context window for custom models that are not in the runtime catalog. */
+export const DEFAULT_CUSTOM_MODEL_CONTEXT_WINDOW = 272_000;
+/** Fallback max output tokens for custom models that are not in the runtime catalog. */
+export const DEFAULT_CUSTOM_MODEL_MAX_TOKENS = 128_000;
+
+export const MODEL_CONTEXT_WINDOW_MIN = 1_024;
+export const MODEL_CONTEXT_WINDOW_MAX = 10_000_000;
+export const MODEL_MAX_TOKENS_MIN = 1;
+export const MODEL_MAX_TOKENS_MAX = 2_000_000;
+
+export const ModelContextWindowSchema = z
+  .number()
+  .int()
+  .min(MODEL_CONTEXT_WINDOW_MIN)
+  .max(MODEL_CONTEXT_WINDOW_MAX);
+export type ModelContextWindow = z.infer<typeof ModelContextWindowSchema>;
+
+export const ModelMaxTokensSchema = z
+  .number()
+  .int()
+  .min(MODEL_MAX_TOKENS_MIN)
+  .max(MODEL_MAX_TOKENS_MAX);
+export type ModelMaxTokens = z.infer<typeof ModelMaxTokensSchema>;
+
 const ModelIdentitySchema = z
   .object({
     id: z.string().trim().min(1).max(120),
@@ -114,6 +138,10 @@ const ModelIdentitySchema = z
     defaultThinkingLevel: ThinkingLevelSchema,
     thinkingLevelOptions: ThinkingLevelOptionsSchema,
     temperatureOptions: TemperatureOptionsSchema,
+    /** Optional custom context window in tokens. Must be set together with maxTokens. */
+    contextWindow: ModelContextWindowSchema.optional(),
+    /** Optional custom max output tokens. Must be set together with contextWindow. */
+    maxTokens: ModelMaxTokensSchema.optional(),
     managedBy: ModelManagedBySchema.optional(),
     /** Remote official-catalog availability: 0 = available, 1 = unavailable. */
     status: z.union([z.literal(0), z.literal(1)]).optional(),
@@ -147,6 +175,29 @@ const ModelIdentitySchema = z
         message: "Default thinking level must be one of the configured options."
       });
     }
+    if (
+      (value.contextWindow === undefined) !==
+      (value.maxTokens === undefined)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path:
+          value.contextWindow === undefined ? ["contextWindow"] : ["maxTokens"],
+        message:
+          "Context window and max output tokens must be configured together."
+      });
+    }
+    if (
+      value.contextWindow !== undefined &&
+      value.maxTokens !== undefined &&
+      value.maxTokens > value.contextWindow
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["maxTokens"],
+        message: "Max output tokens cannot exceed the context window."
+      });
+    }
   });
 
 export const ModelConfigSchema = ModelIdentitySchema.and(
@@ -169,6 +220,14 @@ export const ModelSettingsSchema = z
     models: z.array(ModelConfigSchema).max(100),
     defaultModelId: z.string().max(120),
     deepwriteFreeModels: z.array(ModelConfigSchema).max(50).optional(),
+    deepwriteFreeEnabledModelIds: z
+      .array(z.string().trim().min(1).max(120))
+      .max(50)
+      .optional(),
+    deepwriteFreeDeprecatedModels: z
+      .array(ModelConfigSchema)
+      .max(50)
+      .optional(),
     deepwriteFreeDefaultModelId: z.string().max(120).optional(),
     deepwriteFreeMessage: z.string().max(500).optional(),
     deepwriteOfficialModels: z.array(ModelConfigSchema).max(50).optional(),
@@ -267,6 +326,10 @@ export const ModelConnectionTestResultSchema = z.object({
   ok: z.boolean(),
   message: z.string().min(1),
   testedAt: z.string().datetime(),
+  /** Runtime-resolved context window used after this successful test. */
+  contextWindow: z.number().int().positive().max(MODEL_CONTEXT_WINDOW_MAX),
+  /** Runtime-resolved max output tokens used after this successful test. */
+  maxTokens: z.number().int().positive().max(MODEL_CONTEXT_WINDOW_MAX),
   /** Present when the provider returned token accounting for this test call. */
   usage: ModelConnectionTestUsageSchema.optional()
 });
@@ -285,6 +348,15 @@ export const ModelsRefreshFreeCommandEnvelopeSchema = EnvelopeBaseSchema.extend(
     payload: z.object({})
   }
 );
+
+export const ModelsSetFreeModelEnabledCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("models.setFreeModelEnabled"),
+    payload: z.object({
+      modelId: z.string().trim().min(1).max(120),
+      enabled: z.boolean()
+    })
+  });
 
 export const ModelsRefreshOfficialCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
@@ -331,6 +403,19 @@ export const ModelsTestCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   payload: z.object({ model: ModelConfigInputSchema })
 });
 
+export const ModelCapacityResultSchema = z.object({
+  modelId: z.string().min(1),
+  contextWindow: z.number().int().positive().max(MODEL_CONTEXT_WINDOW_MAX),
+  maxTokens: z.number().int().positive().max(MODEL_CONTEXT_WINDOW_MAX)
+});
+export type ModelCapacityResult = z.infer<typeof ModelCapacityResultSchema>;
+
+export const ModelsResolveCapacityCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("models.resolveCapacity"),
+    payload: z.object({ model: ModelConfigInputSchema })
+  });
+
 export const RemoteModelListInputSchema = z.object({
   id: z.string().trim().min(1).max(120).optional(),
   provider: z.string().trim().min(1).max(120),
@@ -361,3 +446,9 @@ export const AgentModelTestCommandEnvelopeSchema = EnvelopeBaseSchema.extend({
   type: z.literal("agent.model_test"),
   payload: z.object({ runtimeConfig: AgentProviderRuntimeConfigSchema })
 });
+
+export const AgentModelCapacityCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("agent.model_capacity"),
+    payload: z.object({ runtimeConfig: AgentProviderRuntimeConfigSchema })
+  });

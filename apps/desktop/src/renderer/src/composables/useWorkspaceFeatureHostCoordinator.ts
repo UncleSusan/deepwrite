@@ -132,12 +132,18 @@ export function useWorkspaceFeatureHostCoordinator(
           kind: "settings",
           initialCategory: options.view.settingsInitialCategory.value,
           permissionMode: settingsStore.generalSettings.permissionMode,
+          autoApproveCrossStageOperations:
+            settingsStore.generalSettings.autoApproveCrossStageOperations,
           autoSaveEnabled: settingsStore.editorAutoSaveEnabled,
           language: settingsStore.generalSettings.language,
           showInMenuBar: settingsStore.generalSettings.showInMenuBar,
           workspacePaneLayout:
             settingsStore.generalSettings.workspacePaneLayout,
+          defaultTextViewMode:
+            settingsStore.generalSettings.defaultTextViewMode,
           workspaceAgentSettings: settingsStore.workspaceAgentSettings,
+          creativePlotStages:
+            options.catalogSnapshot.value?.creativePlotStages ?? [],
           longAgentSettings: settingsStore.longAgentSettings,
           workspaceAgentLoading: settingsStore.workspaceAgentLoading,
           workspaceAgentSaving: settingsStore.workspaceAgentSaving,
@@ -155,6 +161,8 @@ export function useWorkspaceFeatureHostCoordinator(
           modelSettings: settingsStore.modelSettings,
           modelLoading: settingsStore.modelLoading,
           modelSaving: settingsStore.modelSaving,
+          freeModelsRefreshing: settingsStore.freeModelsRefreshing,
+          freeModelsSaving: settingsStore.freeModelsSaving,
           modelError: settingsStore.modelError,
           modelTestMessage: settingsStore.modelTestMessage,
           testingModelId: settingsStore.testingModelId,
@@ -191,7 +199,6 @@ export function useWorkspaceFeatureHostCoordinator(
           settings: settingsStore.modelSettings,
           loading: settingsStore.modelLoading,
           saving: settingsStore.modelSaving,
-          freeModelsRefreshing: settingsStore.freeModelsRefreshing,
           error: settingsStore.modelError,
           testMessage: settingsStore.modelTestMessage,
           testingModelId: settingsStore.testingModelId,

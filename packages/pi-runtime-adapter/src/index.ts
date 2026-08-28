@@ -1,12 +1,14 @@
 export {
   buildLongWorkspaceTools,
+  createLongWorkspaceToolSharedState,
   isLongAgentToolDetails
 } from "./long-agent-tools";
 export type {
   BuildLongWorkspaceToolsInput,
   LongAgentToolDetails,
   LongCommandExecutor,
-  LongQueryCommandEnvelope
+  LongQueryCommandEnvelope,
+  LongWorkspaceToolSharedState
 } from "./long-agent-tools";
 export type {
   AgentRunInput,
@@ -21,7 +23,10 @@ export {
   evaluationConversationHistory,
   buildAgentEvaluationSnapshot
 } from "./evaluation";
-export { buildProviderRuntime } from "./provider-runtime";
+export {
+  buildProviderRuntime,
+  resolveProviderModelCapacity
+} from "./provider-runtime";
 export {
   toToolStreamRuntimeEvent,
   toolCallArgumentsSnapshot,

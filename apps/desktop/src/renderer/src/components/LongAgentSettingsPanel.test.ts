@@ -1,9 +1,23 @@
 import { describe, expect, it } from "vitest";
 import longPanelSource from "./LongAgentSettingsPanel.vue?raw";
 import workspacePanelSource from "./ShortAgentSettingsPanel.vue?raw";
+import shortPanelSource from "./UnifiedShortAgentSettingsPanel.vue?raw";
+import scriptPanelSource from "./ScriptAgentSettingsPanel.vue?raw";
+import profileFormSource from "./WorkspaceAgentProfileForm.vue?raw";
 import settingsPageSource from "./SettingsPage.vue?raw";
 
 describe("long agent settings UI", () => {
+  it("renders one unified profile for short and script workspaces", () => {
+    expect(shortPanelSource).toContain("settings?.agents[0]");
+    expect(shortPanelSource).toContain('workspaceType: "short"');
+    expect(shortPanelSource).not.toContain("SCRIPT_WORKSPACE_AGENT_IDS");
+    expect(shortPanelSource).not.toContain("agent-nav");
+    expect(scriptPanelSource).toContain("settings?.agents[0]");
+    expect(scriptPanelSource).toContain('workspaceType: "script"');
+    expect(scriptPanelSource).not.toContain("SCRIPT_WORKSPACE_AGENT_IDS");
+    expect(scriptPanelSource).not.toContain("agent-nav");
+  });
+
   it("exposes a single unified long-form agent in the creation settings page", () => {
     expect(longPanelSource).toContain("LONG_AGENT_IDS");
     expect(longPanelSource).toContain('id: "worldbuilding"');
@@ -14,9 +28,7 @@ describe("long agent settings UI", () => {
     expect(longPanelSource).not.toContain('id: "setting"');
     expect(longPanelSource).not.toContain("expert_section_writer");
     expect(longPanelSource).toContain("长篇智能体已恢复内置值");
-    expect(workspacePanelSource).toContain(
-      "@click=\"activeWorkspaceType = 'long'\""
-    );
+    expect(workspacePanelSource).toContain('@click="activeType = type"');
     expect(workspacePanelSource).not.toContain("长篇 <small>尚未接入</small>");
     expect(settingsPageSource).toContain(
       "@save-long=\"emit('saveLongAgents', $event)\""
@@ -47,10 +59,13 @@ describe("long agent settings UI", () => {
   });
 
   it("removes stage read controls from short, script and long settings", () => {
-    expect(workspacePanelSource).not.toContain("<legend>创作空间</legend>");
-    expect(workspacePanelSource).not.toContain("REQUIRED_WORKSPACE_STAGES");
-    expect(workspacePanelSource).not.toContain("readAccess.workspace");
-    expect(workspacePanelSource).toContain("创作空间各阶段始终可按需读取");
+    expect(profileFormSource).not.toContain("<legend>创作空间</legend>");
+    expect(profileFormSource).not.toContain("REQUIRED_WORKSPACE_STAGES");
+    expect(profileFormSource).not.toContain("readAccess.workspace");
+    expect(shortPanelSource).toContain("STAGE_POLICY");
+    expect(shortPanelSource).toContain("人物：人物素材");
+    expect(scriptPanelSource).toContain("STAGE_POLICY");
+    expect(scriptPanelSource).toContain("人物：人物素材");
     expect(longPanelSource).not.toContain("<legend>长篇工作区</legend>");
     expect(longPanelSource).not.toContain(
       "handleCheckboxChange('workspaceRoots'"
@@ -73,7 +88,7 @@ describe("long agent settings UI", () => {
     expect(workspacePanelSource).toContain("longLoading: boolean");
     expect(workspacePanelSource).toContain("longSaving: boolean");
     expect(workspacePanelSource).toContain("longErrorMessage: string | null");
-    expect(workspacePanelSource).toContain(
+    expect(shortPanelSource).toContain(
       'import { uiMessage } from "../ui-feedback"'
     );
     expect(workspacePanelSource).not.toContain("toast-stack");

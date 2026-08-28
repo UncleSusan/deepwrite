@@ -1,10 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { expectSourceToContain } from "../../../test-utils/sourceText";
-import source from "./ModelSettingsFeature.vue?raw";
+import featureSource from "./ModelSettingsFeature.vue?raw";
+import editorSource from "./ModelEditorPanel.vue?raw";
+import advancedConfigSource from "./ModelAdvancedConfigDialog.vue?raw";
+import draftSource from "../composables/useModelSettingsDraft.ts?raw";
+import editorLogicSource from "../composables/useModelEditor.ts?raw";
+import remoteListingSource from "../composables/useRemoteModelListing.ts?raw";
+import modelDraftSource from "./modelSettingsDraft.ts?raw";
 import {
   applyProviderPresetDefaults,
   MODEL_PROVIDER_OPTIONS
 } from "./modelProviderPresets";
+
+const source = [
+  featureSource,
+  editorSource,
+  advancedConfigSource,
+  draftSource,
+  editorLogicSource,
+  remoteListingSource,
+  modelDraftSource
+].join("\n");
 
 function providerPresetTarget(): Parameters<
   typeof applyProviderPresetDefaults
@@ -22,18 +38,23 @@ function providerLabel(provider: string): string | undefined {
 }
 
 describe("ModelSettingsFeature DeepWrite free models", () => {
-  it("offers the managed provider and a remote model selector without a key field", () => {
-    expect(providerLabel("deepwrite-free")).toBe("DeepWrite 免费模型");
-    expect(source).toContain('accessible-label="选择 DeepWrite 免费模型"');
-    expect(source).toContain("emit('refreshFreeModels')");
-    expect(source).toContain('"刷新免费模型"');
-    expect(source).toContain('v-if="!isDeepWriteFreeEditor" class="is-wide"');
-    expect(source).toContain("运行环境提供密钥，无需在此填写");
+  it("does not expose the managed free provider through the add-model editor", () => {
+    expect(providerLabel("deepwrite-free")).toBeUndefined();
+    expect(source).not.toContain('accessible-label="选择 DeepWrite 免费模型"');
+    expect(source).not.toContain("applyDeepWriteFreeModel");
+    expect(source).not.toContain('emit("refreshFreeModels")');
   });
 
-  it("keeps the managed source marker when saving a selected preset", () => {
-    expect(source).toContain("managedBy: model.managedBy");
-    expect(source).toContain("applyDeepWriteFreeModel");
+  it("renders managed free models as read-only cards with default and test actions", () => {
+    expect(featureSource).toContain("DeepWrite 免费模型");
+    expect(featureSource).toContain('v-if="!row.model.managedBy"');
+    expect(featureSource).toContain("setDefaultModel(row.model.id)");
+    expect(featureSource).toContain("testDraftModel(row.model)");
+  });
+
+  it("delegates model result feedback to the shared coordinator", () => {
+    expect(draftSource).not.toContain("props.modelTestMessage");
+    expect(draftSource).not.toContain("props.modelError");
   });
 
   it("renders the editor immediately after the model being edited", () => {
@@ -53,7 +74,7 @@ describe("ModelSettingsFeature DeepWrite free models", () => {
     expect(source).toContain(
       '?.scrollIntoView({ block: "nearest", behavior: "auto" })'
     );
-    expect(source.match(/scrollModelEditorIntoView\(\);/g)).toHaveLength(2);
+    expect(draftSource.match(/actions\.editorOpened\(\);/g)).toHaveLength(2);
   });
 });
 
@@ -67,9 +88,10 @@ describe("ModelSettingsFeature provider presets", () => {
   });
 
   it("places the tool schema beside and after the API address", () => {
-    expect(source).toMatch(
-      /<label v-if="!isDeepWriteFreeEditor">\s*<span>API 地址<\/span>[\s\S]*?<\/label>\s*<label v-if="!isDeepWriteFreeEditor">\s*<span>工具结构<\/span>/
-    );
+    const apiUrlIndex = editorSource.indexOf("<span>API 地址</span>");
+    const toolSchemaIndex = editorSource.indexOf("<span>工具结构</span>");
+    expect(apiUrlIndex).toBeGreaterThan(-1);
+    expect(toolSchemaIndex).toBeGreaterThan(apiUrlIndex);
   });
 
   it("offers Kimi Coding with its Anthropic-compatible API endpoint", () => {
@@ -134,7 +156,7 @@ describe("ModelSettingsFeature provider presets", () => {
 describe("ModelSettingsFeature official models", () => {
   it("keeps official models selectable but hides edit and delete actions", () => {
     expect(source).toContain("DeepWrite 官方模型");
-    expect(source).toContain("row.model.managedBy !== 'deepwrite-official'");
+    expect(source).toContain('v-if="!row.model.managedBy"');
     expect(source).toContain("requestModelId: model.requestModelId");
     expect(source).toContain(
       "supportsDeveloperRole: model.supportsDeveloperRole"
@@ -168,7 +190,7 @@ describe("ModelSettingsFeature remote model ids", () => {
   });
 
   it("shows a dialog when the api url or key is missing", () => {
-    expect(source).toContain("function missingRemoteModelCredentials");
+    expect(source).toContain("function missingCredentials");
     expect(source).toContain("请先填写 API 地址和 API Key，再拉取可用模型。");
     expect(source).toContain("请先填写 API 地址，再拉取可用模型。");
     expect(source).toContain("请先填写 API Key，再拉取可用模型。");
@@ -182,7 +204,7 @@ describe("ModelSettingsFeature remote model ids", () => {
   });
 
   it("reuses a saved key and allows ollama without a key", () => {
-    const start = source.indexOf("function missingRemoteModelCredentials");
+    const start = source.indexOf("function missingCredentials");
     const end = source.indexOf("function commandErrorMessage", start);
     const body = source.slice(start, end);
     expect(body).toContain("!editor.hasApiKey");
@@ -208,7 +230,7 @@ describe("ModelSettingsFeature model draft lifecycle", () => {
 
   it("filters managed models and free-provider options in custom scope", () => {
     expect(source).toContain('props.modelScope === "all" || !model.managedBy');
-    expect(source).toContain('option.value !== "deepwrite-free"');
+    expect(providerLabel("deepwrite-free")).toBeUndefined();
     expectSourceToContain(
       source,
       'modelScope === "custom" ? "尚未配置自定义模型"'
@@ -217,8 +239,45 @@ describe("ModelSettingsFeature model draft lifecycle", () => {
 
   it("merges custom drafts with hidden managed models before saving", () => {
     expect(source).toContain("mergeCustomModelSettings(");
-    expect(source).toContain(
-      "(props.modelSettings?.models ?? []).map(toModelInput)"
+    expect(source).toContain("(props.modelSettings?.models ?? []).map((model)");
+    expect(source).toContain("toModelInput(cloneDraftModel(model))");
+  });
+});
+
+describe("ModelSettingsFeature advanced capacity", () => {
+  it("places advanced configuration before delete on custom models only", () => {
+    const advancedIndex = featureSource.indexOf("高级配置");
+    const deleteIndex = featureSource.indexOf("removeModel(row.model.id)");
+    expect(advancedIndex).toBeGreaterThan(-1);
+    expect(deleteIndex).toBeGreaterThan(advancedIndex);
+    expect(featureSource).toContain('@click="openAdvancedConfig(row.model)"');
+    expect(featureSource).toContain("<ModelAdvancedConfigDialog");
+    expect(source).toContain('v-if="!row.model.managedBy"');
+  });
+
+  it("opens a dialog for context window and max output tokens", () => {
+    expect(advancedConfigSource).toContain("上下文长度");
+    expect(advancedConfigSource).toContain("最高输出长度");
+    expect(advancedConfigSource).toContain(
+      "window.deepwrite.models.resolveCapacity"
     );
+    expect(advancedConfigSource).toContain("hasCustomCapacity(model)");
+    expect(advancedConfigSource).toContain("contextWindow: undefined");
+    expect(advancedConfigSource).toContain("maxTokens: undefined");
+    expect(advancedConfigSource).toContain("最高输出长度不能超过上下文长度。");
+  });
+
+  it("applies successful test defaults then persists edited capacity immediately", () => {
+    expect(draftSource).toContain("settingsStore.lastModelTestCapacity");
+    expect(draftSource).toContain("tested.modelId === cloned.id");
+    expect(draftSource).toContain("applyCapacityDefaults(capacity)");
+    expect(draftSource).toContain(
+      "model.managedBy || model.id !== capacity.modelId"
+    );
+    expect(draftSource).toContain("contextWindow: capacity.contextWindow");
+    expect(draftSource).toContain("maxTokens: capacity.maxTokens");
+    expect(draftSource).toContain("submitModelSettings();");
+    expect(modelDraftSource).toContain("contextWindow: model.contextWindow");
+    expect(modelDraftSource).toContain("maxTokens: model.maxTokens");
   });
 });

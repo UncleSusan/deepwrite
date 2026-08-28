@@ -568,7 +568,7 @@ describe("catalog workspace projection", () => {
       label: "正文",
       catalogNodeType: "category",
       selectableBranch: true,
-      shortAgentId: "expert_draft_coordinator"
+      shortAgentId: "short"
     });
     expect(draftNode?.id).not.toBe(draftDocuments[0]?.id);
     expect(draftNode?.children?.map((node) => node.label)).toEqual([
@@ -578,7 +578,7 @@ describe("catalog workspace projection", () => {
     expect(draftNode?.children?.[1]).toMatchObject({
       targetDocumentId: expect.any(String),
       characterStateDocumentId: expect.any(String),
-      shortAgentId: "expert_draft_coordinator",
+      shortAgentId: "short",
       expertSectionId: "section-1"
     });
     expect(draftNode?.children?.[1]?.targetDocumentId).not.toBe(
@@ -652,7 +652,7 @@ describe("catalog workspace projection", () => {
       {
         label: "第一集",
         workspaceType: "script",
-        shortAgentId: "expert_draft_coordinator"
+        shortAgentId: "script"
       }
     ]);
     const body = projection.workspaceDocuments.find(
@@ -663,7 +663,7 @@ describe("catalog workspace projection", () => {
     expect(body).toMatchObject({
       workspaceType: "script",
       eyebrow: "剧本 · 剧集正文",
-      shortAgentId: "expert_draft_coordinator"
+      shortAgentId: "script"
     });
   });
 
@@ -701,7 +701,7 @@ describe("catalog workspace projection", () => {
       label: "人物",
       selectableBranch: true,
       characterDirectory: true,
-      shortAgentId: "character_design"
+      shortAgentId: "short"
     });
     expect(characterNode?.children?.map(({ label }) => label)).toEqual([
       "概览",
@@ -784,7 +784,7 @@ describe("catalog workspace projection", () => {
         expect.objectContaining({
           targetDocumentId: expect.any(String),
           characterStateDocumentId: expect.any(String),
-          shortAgentId: "expert_draft_coordinator",
+          shortAgentId: "short",
           expertSectionId: expect.any(String)
         })
       ])
@@ -817,12 +817,12 @@ describe("catalog workspace projection", () => {
 
     expect(draftNode).toMatchObject({
       selectableBranch: true,
-      shortAgentId: "expert_draft_coordinator"
+      shortAgentId: "short"
     });
     expect(draftNode.children).toMatchObject([
       {
         label: "导语",
-        shortAgentId: "expert_draft_coordinator",
+        shortAgentId: "short",
         expertSectionId: "intro"
       }
     ]);

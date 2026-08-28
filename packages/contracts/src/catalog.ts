@@ -12,6 +12,10 @@ import {
   parseExpertDraftMarkdown,
   type ExpertDraft
 } from "./expert-draft";
+import {
+  CatalogReadWritingContextCommandEnvelopeSchema,
+  CatalogWriteWritingContextCommandEnvelopeSchema
+} from "./writing-context";
 
 const CatalogIdSchema = z.string().trim().min(1).max(512);
 const CatalogTitleSchema = z.string().trim().min(1).max(256);
@@ -240,11 +244,16 @@ export function createDefaultCreativePlotStages(): CreativePlotStage[] {
 export function createDefaultBookPlotStages(options?: {
   /** Existing books migrate with every stage enabled. */
   allEnabled?: boolean;
+  /** New books may override the built-in enabled-stage defaults. */
+  enabledStageIds?: ReadonlySet<string> | readonly string[];
 }): BookPlotStage[] {
   const allEnabled = options?.allEnabled === true;
+  const enabledStageIds = new Set(
+    options?.enabledStageIds ?? DEFAULT_NEW_BOOK_ENABLED_PLOT_STAGE_IDS
+  );
   return DEFAULT_CREATIVE_PLOT_STAGES.map((stage) => ({
     ...stage,
-    enabled: allEnabled || DEFAULT_NEW_BOOK_ENABLED_PLOT_STAGE_IDS.has(stage.id)
+    enabled: allEnabled || enabledStageIds.has(stage.id)
   }));
 }
 
@@ -1886,6 +1895,11 @@ export type CatalogReadDocumentResult = z.infer<
 export const CreateShortBookInputSchema = z.object({
   title: CatalogTitleSchema,
   genre: ShortBookGenreSchema,
+  defaultPlotStageIds: z
+    .array(CreativePlotStageIdSchema)
+    .min(1)
+    .max(CREATIVE_PLOT_STAGE_MAX_COUNT)
+    .optional(),
   linkedMaterialIdsByKind: LinkedMaterialIdsByKindInputSchema.optional(),
   linkedSkillIdsByKind: LinkedSkillIdsByKindInputSchema.optional()
 });
@@ -2792,6 +2806,7 @@ export const CatalogChooseExternalSkillsCommandEnvelopeSchema =
 export const CatalogCommandEnvelopeSchema = z.discriminatedUnion("type", [
   CatalogIndexCommandEnvelopeSchema,
   CatalogReadDocumentCommandEnvelopeSchema,
+  CatalogReadWritingContextCommandEnvelopeSchema,
   CatalogSnapshotCommandEnvelopeSchema,
   CatalogLoadDraftRecoveryCommandEnvelopeSchema,
   CatalogSaveDraftRecoveryCommandEnvelopeSchema,
@@ -2826,7 +2841,8 @@ export const CatalogCommandEnvelopeSchema = z.discriminatedUnion("type", [
   CatalogDeleteProjectCommandEnvelopeSchema,
   CatalogDuplicateProjectCommandEnvelopeSchema,
   CatalogInstallMarketplaceSkillContentCommandEnvelopeSchema,
-  CatalogChooseExternalSkillsCommandEnvelopeSchema
+  CatalogChooseExternalSkillsCommandEnvelopeSchema,
+  CatalogWriteWritingContextCommandEnvelopeSchema
 ]);
 export type CatalogCommandEnvelope = z.infer<
   typeof CatalogCommandEnvelopeSchema

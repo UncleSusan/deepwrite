@@ -85,6 +85,11 @@ describe("catalog contracts", () => {
     expect(
       newBookStages.find((stage) => stage.id === "worldbuilding")?.enabled
     ).toBe(false);
+    expect(
+      createDefaultBookPlotStages({ enabledStageIds: ["intro_design"] })
+        .filter((stage) => stage.enabled)
+        .map(({ id }) => id)
+    ).toEqual(["intro_design"]);
     expect(BookPlotStagesSchema.parse(newBookStages)).toEqual(newBookStages);
     expect(
       BookPlotStagesSchema.safeParse(

@@ -26,7 +26,12 @@ describe("long workspace proposal approval: quarantine-deduplication-and-finaliz
     expect(await test.controller.handleEvent(replay)).toBe(false);
 
     expect(test.commitChapter).toHaveBeenCalledTimes(1);
-    expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
+    expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+      {
+        event: { type: "long.ledger_commit_proposal" },
+        status: "accepted"
+      }
+    ]);
   });
 
   it("quarantines a removed book and rejects late proposal events", async () => {
@@ -118,7 +123,7 @@ describe("long workspace proposal approval: quarantine-deduplication-and-finaliz
     expect(test.notifications.error).not.toHaveBeenCalled();
   });
 
-  it("waits for file approval before running hidden continuity finalization", async () => {
+  it("waits for file approval while showing continuity finalization status", async () => {
     const test = harness();
     test.previewOperations.mockImplementation(async ({ batch }) => ({
       bookId: proposalBase.bookId,
@@ -137,7 +142,12 @@ describe("long workspace proposal approval: quarantine-deduplication-and-finaliz
     await test.controller.handleEvent(ledgerEvent());
 
     expect(test.commitChapter).not.toHaveBeenCalled();
-    expect(test.controller.itemsForBook("longbook_test")).toHaveLength(1);
+    expect(test.controller.itemsForBook("longbook_test")).toHaveLength(2);
+    expect(
+      test.controller
+        .itemsForBook("longbook_test")
+        .find(({ event }) => event.type === "long.ledger_commit_proposal")
+    ).toMatchObject({ status: "waiting" });
 
     await test.controller.approve("longbook_test", "event_continuity_file");
 
@@ -148,6 +158,7 @@ describe("long workspace proposal approval: quarantine-deduplication-and-finaliz
       expect.objectContaining({ type: "long.ledger_commit_proposal" })
     );
     expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+      { status: "accepted" },
       { status: "accepted" }
     ]);
   });
@@ -158,7 +169,9 @@ describe("long workspace proposal approval: quarantine-deduplication-and-finaliz
     await test.controller.handleEvent(ledgerEvent());
 
     expect(test.commitChapter).toHaveBeenCalledTimes(1);
-    expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
+    expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+      { status: "accepted" }
+    ]);
     expect(test.notifications.success).toHaveBeenCalledWith(
       "本章连续性文件已完成归档。"
     );
@@ -169,5 +182,30 @@ describe("long workspace proposal approval: quarantine-deduplication-and-finaliz
 
     await test.controller.handleEvent(ledgerEvent());
     expect(test.commitChapter).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not offer an endless retry when a v4 audit mismatch escapes repair", async () => {
+    const test = harness();
+    test.commitChapter.mockRejectedValueOnce(
+      new Error(
+        "catalog.command_failed: v4 连续性账本的文件清单与章节索引不一致：commit_old。"
+      )
+    );
+
+    await test.controller.handleEvent(ledgerEvent());
+
+    expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+      {
+        event: { type: "long.ledger_commit_proposal" },
+        status: "error",
+        error: expect.stringContaining("commit_old"),
+        errorRetryable: false
+      }
+    ]);
+    expect(test.commitChapter).toHaveBeenCalledTimes(1);
+
+    expect(test.controller.reject("longbook_test", "event_ledger")).toBe(true);
+    expect(test.commitChapter).toHaveBeenCalledTimes(1);
+    expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
   });
 });

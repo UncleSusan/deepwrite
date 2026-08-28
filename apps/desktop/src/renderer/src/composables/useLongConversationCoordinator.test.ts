@@ -17,6 +17,7 @@ import type {
   LongWorkspaceRendererApi,
   LongWorkspaceSelection
 } from "../types/longWorkspace";
+import type { ChatMessage } from "../types/conversation";
 import type { LibraryAttachmentBuildResult } from "../utils/libraryAttachments";
 
 const BOOK_ID = "long-book-one";
@@ -116,6 +117,16 @@ function controllerFixture() {
   const sessionId = ref("session-one");
   const draft = ref("继续设计剧情");
   const isBusy = ref(false);
+  const canRewriteHistory = ref(true);
+  const messages = ref<ChatMessage[]>([
+    {
+      id: "user-long-history",
+      role: "user",
+      content: "长篇历史问题",
+      createdAt: "2026-08-25T08:00:00.000Z",
+      status: "completed"
+    }
+  ]);
   const conversationError = ref<string | null>(null);
   const selectedModelId = ref("model-one");
   const thinkingLevel = ref<"off" | "low" | "medium" | "high">("medium");
@@ -128,6 +139,14 @@ function controllerFixture() {
       draft.value = "";
     }
   );
+  const resendLongMessage = vi.fn(async (request: { messageId: string }) => {
+    const index = messages.value.findIndex(
+      (message) => message.id === request.messageId
+    );
+    if (index < 0) return false;
+    messages.value.splice(index);
+    return true;
+  });
   const newConversation = vi.fn(() => {
     sessionId.value = "session-new";
     draft.value = "";
@@ -160,13 +179,16 @@ function controllerFixture() {
   const controller = {
     sessionId,
     draft,
+    messages,
     isBusy,
+    canRewriteHistory,
     conversationError,
     selectedModelId,
     thinkingLevel,
     temperature,
     approvalMode,
     sendLongMessage,
+    resendLongMessage,
     newConversation,
     selectConversation,
     useSuggestion: vi.fn((value: string) => {
@@ -181,8 +203,11 @@ function controllerFixture() {
   return {
     controller,
     draft,
+    canRewriteHistory,
     isBusy,
     newConversation,
+    messages,
+    resendLongMessage,
     selectApprovalMode,
     selectConversation,
     selectModel,
@@ -519,6 +544,50 @@ describe("useLongConversationCoordinator", () => {
     gate.resolve(true);
     await first;
     expect(test.conversation.sendLongMessage).toHaveBeenCalledOnce();
+  });
+
+  it("saves and refreshes the long workspace before resending edited history", async () => {
+    const test = createHarness();
+    test.conversation.draft.value = "保留长篇主输入草稿";
+
+    const result = await test.coordinator.resendLongMessage({
+      messageId: "user-long-history",
+      content: "修改后的长篇问题"
+    });
+
+    expect(result).toBe(true);
+    expect(test.ensureAgentSettingsLoaded).toHaveBeenCalledOnce();
+    expect(test.saveActiveEditorChanges).toHaveBeenCalledOnce();
+    expect(test.refreshActiveWorkspace).toHaveBeenCalledWith(BOOK_ID);
+    expect(test.ensureDocumentsLoaded).toHaveBeenCalledOnce();
+    expect(test.conversation.resendLongMessage).toHaveBeenCalledWith(
+      {
+        messageId: "user-long-history",
+        content: "修改后的长篇问题"
+      },
+      expect.objectContaining({
+        bookId: BOOK_ID,
+        projectRevision: 3
+      }),
+      { attachedSkills: [], attachedMaterials: [] }
+    );
+    expect(test.conversation.sendLongMessage).not.toHaveBeenCalled();
+    expect(test.conversation.draft.value).toBe("保留长篇主输入草稿");
+  });
+
+  it("keeps long history when preflight fails", async () => {
+    const saveFailure = createHarness();
+    saveFailure.saveActiveEditorChanges.mockResolvedValue(false);
+    await expect(
+      saveFailure.coordinator.resendLongMessage({
+        messageId: "user-long-history",
+        content: "保存失败时不要截断"
+      })
+    ).resolves.toBe(false);
+    expect(
+      saveFailure.conversation.messages.value.map((message) => message.id)
+    ).toContain("user-long-history");
+    expect(saveFailure.conversation.resendLongMessage).not.toHaveBeenCalled();
   });
 
   it("protects conversation and model commands during preflight", async () => {

@@ -300,7 +300,7 @@ describe("long-form renderer vertical slice: editor-and-layout", () => {
     expect(workspaceDialogLayerSource).toContain("<CreateBookDialog");
     expect(appSource).toContain('@submit-create-book="createCreativeBook"');
     expect(appSource).toContain("async function createCreativeBook(");
-    expect(appSource).toContain("await shortBookLifecycle.createBook(input)");
+    expect(appSource).toContain("withShortBookDefaultPlotStages(");
     expect(workspaceTypeSource).toContain(
       'workspaceType?: "short" | "script" | "long";'
     );

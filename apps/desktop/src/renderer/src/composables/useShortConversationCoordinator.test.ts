@@ -10,6 +10,7 @@ import {
   useShortConversationCoordinator,
   type ShortConversationCoordinatorOptions
 } from "./useShortConversationCoordinator";
+import type { ChatMessage } from "../types/conversation";
 import type { WorkspaceDocument } from "../types/workspace";
 
 function deferred<Value>() {
@@ -34,7 +35,7 @@ function workspaceDocument(
     workspaceId: "book-one",
     workspaceTitle: "作品",
     stageId: "draft",
-    shortAgentId: "expert_draft_coordinator",
+    shortAgentId: "short",
     ...patch
   };
 }
@@ -43,8 +44,26 @@ function controllerFixture() {
   const sessionId = ref("session-one");
   const draft = ref("请继续写");
   const isBusy = ref(false);
+  const canRewriteHistory = ref(true);
+  const messages = ref<ChatMessage[]>([
+    {
+      id: "user-history-one",
+      role: "user",
+      content: "历史问题",
+      createdAt: "2026-08-25T08:00:00.000Z",
+      status: "completed"
+    }
+  ]);
   const conversationError = ref<string | null>(null);
   const sendMessage = vi.fn(async () => undefined);
+  const resendMessage = vi.fn(async (request: { messageId: string }) => {
+    const index = messages.value.findIndex(
+      (message) => message.id === request.messageId
+    );
+    if (index < 0) return false;
+    messages.value.splice(index);
+    return true;
+  });
   const newConversation = vi.fn(() => {
     sessionId.value = "session-new";
     draft.value = "";
@@ -58,9 +77,12 @@ function controllerFixture() {
   const controller = {
     sessionId,
     draft,
+    messages,
     isBusy,
+    canRewriteHistory,
     conversationError,
     sendMessage,
+    resendMessage,
     newConversation,
     selectConversation,
     stopGeneration,
@@ -75,9 +97,12 @@ function controllerFixture() {
   return {
     controller,
     conversationError,
+    canRewriteHistory,
     draft,
     isBusy,
     newConversation,
+    messages,
+    resendMessage,
     selectConversation,
     sendMessage,
     sessionId,
@@ -199,6 +224,64 @@ describe("useShortConversationCoordinator", () => {
     gate.resolve(true);
     await first;
     expect(test.conversation.sendMessage).toHaveBeenCalledOnce();
+  });
+
+  it("reuses the current workspace preflight when resending an edited history question", async () => {
+    const test = createHarness();
+    test.conversation.draft.value = "保留主输入草稿";
+
+    expect(test.coordinator.conversationContext.value.canRewriteHistory).toBe(
+      true
+    );
+    const result = await test.coordinator.resendMessage({
+      messageId: "user-history-one",
+      content: "修改后的历史问题"
+    });
+
+    expect(result).toBe(true);
+    expect(test.ensureDocumentsLoaded).toHaveBeenCalledOnce();
+    expect(test.hydratedCatalogSnapshot).toHaveBeenCalledOnce();
+    expect(test.conversation.resendMessage).toHaveBeenCalledWith(
+      {
+        messageId: "user-history-one",
+        content: "修改后的历史问题"
+      },
+      test.activeDocument.value,
+      [test.activeDocument.value],
+      {}
+    );
+    expect(test.conversation.sendMessage).not.toHaveBeenCalled();
+    expect(test.conversation.draft.value).toBe("保留主输入草稿");
+    expect(test.schedule).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the editor branch when rewrite preflight fails or saves are queued", async () => {
+    const preflightFailure = createHarness();
+    preflightFailure.ensureDocumentsLoaded.mockResolvedValue(false);
+
+    await expect(
+      preflightFailure.coordinator.resendMessage({
+        messageId: "user-history-one",
+        content: "预检失败"
+      })
+    ).resolves.toBe(false);
+    expect(preflightFailure.conversation.resendMessage).not.toHaveBeenCalled();
+    expect(
+      preflightFailure.conversation.messages.value.map((message) => message.id)
+    ).toContain("user-history-one");
+
+    const queuedSave = createHarness();
+    vi.mocked(queuedSave.options.edits.hasQueued).mockReturnValue(true);
+    await expect(
+      queuedSave.coordinator.resendMessage({
+        messageId: "user-history-one",
+        content: "保存队列结束后再发送"
+      })
+    ).resolves.toBe(false);
+    expect(queuedSave.ensureDocumentsLoaded).not.toHaveBeenCalled();
+    expect(queuedSave.notifications.info).toHaveBeenCalledWith(
+      "请先等待当前回复、审批和修改保存全部完成。"
+    );
   });
 
   it("cancels the captured target when the resource changes during preflight", async () => {

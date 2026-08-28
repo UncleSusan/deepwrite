@@ -33,6 +33,7 @@ export type * from "./renderer-state";
 export type * from "./session";
 export type * from "./skill-markdown";
 export type * from "./script-workspace";
+export type * from "./script-agent-settings";
 export type * from "./short-manuscript-export";
 export type * from "./subagent-authoring";
 export type * from "./system";
@@ -40,15 +41,32 @@ export type * from "./utility";
 export type * from "./update";
 export type * from "./workspace";
 export type * from "./workspace-directory";
+export type * from "./writing-context";
 
 export { CHAT_ASSISTANT_PROJECT_PROMPT_MAX_LENGTH } from "./chat-assistant-base";
 export {
+  APPEARANCE_CUSTOM_FONT_DISPLAY_NAME_MAX_LENGTH,
+  APPEARANCE_CUSTOM_FONT_MAX_COUNT,
+  APPEARANCE_CUSTOM_FONT_MAX_FILE_BYTES,
+  APPEARANCE_CUSTOM_FONT_MAX_FILES_PER_INSTALL,
+  APPEARANCE_CUSTOM_FONT_MAX_TOTAL_BYTES,
   APPEARANCE_FONT_SIZE_LIMITS,
+  AppearanceCustomFontFormatSchema,
+  AppearanceCustomFontIdSchema,
+  AppearanceCustomFontSchema,
   AppearanceEditorFontFamilySchema,
+  AppearanceEditorFontSelectionSchema,
+  AppearanceFontCatalogSnapshotSchema,
+  AppearanceFontInstallResultSchema,
+  AppearanceFontRemoveResultSchema,
   AppearanceSettingsSchema,
   AppearanceUiFontFamilySchema,
+  AppearanceUiFontSelectionSchema,
+  appearanceCustomFontCssFamily,
+  appearanceCustomFontSourceUrl,
   createDefaultAppearanceSettings,
   createDefaultAppearanceTheme,
+  isAppearanceCustomFontId,
   listAppearanceEditorFontFamilyOptions,
   listAppearanceUiFontFamilyOptions,
   resolveAppearanceEditorFontStack,
@@ -57,6 +75,7 @@ export {
 export {
   DEFAULT_AGENT_TEAM_SETTINGS,
   DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS,
+  SCRIPT_AGENT_SUBAGENT_MAX_COUNT,
   SHORT_AGENT_SUBAGENT_DESCRIPTION_MAX_LENGTH,
   SHORT_AGENT_SUBAGENT_MAX_COUNT,
   SHORT_AGENT_SUBAGENT_NAME_MAX_LENGTH,
@@ -198,16 +217,27 @@ export {
 } from "./long-workspace";
 export {
   BUILT_IN_REASONING_LEVELS,
+  DEFAULT_CUSTOM_MODEL_CONTEXT_WINDOW,
+  DEFAULT_CUSTOM_MODEL_MAX_TOKENS,
+  MODEL_CONTEXT_WINDOW_MAX,
+  MODEL_CONTEXT_WINDOW_MIN,
+  MODEL_MAX_TOKENS_MAX,
+  MODEL_MAX_TOKENS_MIN,
   isDeepSeekWebSearchCompatible
 } from "./models";
 export {
   DEFAULT_SCRIPT_AGENT_WELCOME_SHORTCUTS,
   DEFAULT_SCRIPT_WORKSPACE_AGENT_PROFILES,
   DEFAULT_SCRIPT_WORKSPACE_AGENT_SETTINGS,
+  ScriptWorkspaceAgentSettingsInputSchema,
+  resolveScriptWorkspaceStageReadAccess
+} from "./script-agent-settings";
+export {
   SCRIPT_WORKSPACE_AGENT_IDS,
   SCRIPT_WORKSPACE_TEXT_STAGE_IDS,
   ScriptWorkspaceSnapshotSchema,
-  resolveScriptWorkspaceAgentIdForStage
+  resolveScriptWorkspaceAgentIdForStage,
+  resolveScriptWorkspaceConversationLaneIdForStage
 } from "./script-workspace";
 export {
   ATTACHED_CONTEXT_MAX_CONTENT_LENGTH,
@@ -237,12 +267,23 @@ export {
   DEFAULT_SHORT_AGENT_WELCOME_SHORTCUTS,
   DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES,
   DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS,
+  DEFAULT_SHORT_STAGE_READ_ACCESS,
+  SHORT_DEFAULT_PLOT_STAGE_IDS,
   SHORT_WORKSPACE_AGENT_IDS,
+  SHORT_WORKSPACE_CONVERSATION_LANE_IDS,
   SHORT_WORKSPACE_STAGE_IDS,
   SHORT_WORKSPACE_TEXT_STAGE_IDS,
+  ShortWorkspaceAgentSettingsInputSchema,
   ShortWorkspaceSnapshotSchema,
   createExpertDraftDirectoryRevision,
   createShortWorkspaceContentRevision,
   isProvisionalExpertDraftSectionId,
-  resolveShortWorkspaceAgentIdForStage
+  resolveShortWorkspaceAgentIdForStage,
+  resolveShortWorkspaceConversationLaneIdForStage,
+  resolveShortWorkspacePhaseId,
+  resolveShortWorkspaceStageReadAccess
 } from "./workspace";
+export {
+  WRITING_CONTEXT_MAX_CHARACTERS,
+  writingContextCharacterCount
+} from "./writing-context";

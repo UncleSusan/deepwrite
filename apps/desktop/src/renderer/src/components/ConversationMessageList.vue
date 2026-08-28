@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import type { LongWorkspaceIndexSnapshot } from "@deepwrite/contracts";
 import type { LongWorkspaceProposalItem } from "../composables/useLongWorkspaceProposals";
 import type { AgentWelcomeContent } from "../data/agentWelcome";
-import type { ChatMessage } from "../types/conversation";
+import type {
+  ChatMessage,
+  ConversationMessageRewriteRequest
+} from "../types/conversation";
 import AppIcon from "./AppIcon.vue";
 import ConversationMessageItem from "./ConversationMessageItem.vue";
 
@@ -13,7 +16,12 @@ const props = withDefaults(
     responding: boolean;
     runtimeAvailable: boolean;
     clock: number;
+    conversationSessionId?: string;
     allowLiveEditReview?: boolean;
+    canRewriteHistory?: boolean;
+    submitEditedMessage?:
+      | ((request: ConversationMessageRewriteRequest) => Promise<boolean>)
+      | undefined;
     longProposalItems?: readonly LongWorkspaceProposalItem[];
     longWorkspaceIndex?: LongWorkspaceIndexSnapshot | null;
     welcomeContent?: AgentWelcomeContent;
@@ -24,6 +32,7 @@ const props = withDefaults(
   }>(),
   {
     allowLiveEditReview: false,
+    canRewriteHistory: false,
     longProposalItems: () => [],
     longWorkspaceIndex: null,
     handleConversationWheel: () => undefined,
@@ -43,16 +52,81 @@ const emit = defineEmits<{
     }
   ];
   locateEditProposal: [payload: { runId: string; proposalId: string }];
+  discardEditProposal: [payload: { runId: string; proposalId: string }];
   approveLongProposal: [eventId: string];
   rejectLongProposal: [eventId: string];
   retryLongProposalPreview: [eventId: string];
   locateLongProposal: [eventId: string];
+  discardLongProposal: [eventId: string];
 }>();
 
 const hasStreamingAssistant = computed(() =>
   props.messages.some(
     (message) => message.role === "assistant" && message.status === "streaming"
   )
+);
+const editingMessageId = ref<string | null>(null);
+const editingMessageFingerprint = ref<string | null>(null);
+
+function messageFingerprint(message: ChatMessage): string {
+  return [
+    message.id,
+    message.createdAt,
+    message.content,
+    message.attachments?.map((attachment) => attachment.id).join(",") ?? ""
+  ].join("\u0000");
+}
+
+function clearEditingMessage(): void {
+  editingMessageId.value = null;
+  editingMessageFingerprint.value = null;
+}
+
+function messageIsEditable(message: ChatMessage): boolean {
+  return Boolean(
+    props.canRewriteHistory &&
+    props.submitEditedMessage &&
+    message.role === "user" &&
+    message.status !== "streaming" &&
+    !message.attachments?.length
+  );
+}
+
+function requestEdit(messageId: string): void {
+  const message = props.messages.find(
+    (candidate) => candidate.id === messageId
+  );
+  if (!message || !messageIsEditable(message)) return;
+  editingMessageId.value = messageId;
+  editingMessageFingerprint.value = messageFingerprint(message);
+}
+
+function cancelEdit(messageId: string): void {
+  if (editingMessageId.value === messageId) clearEditingMessage();
+}
+
+watch(
+  () => [
+    props.conversationSessionId,
+    props.responding,
+    props.messages.map(messageFingerprint).join("\u0001")
+  ],
+  () => {
+    const message = props.messages.find(
+      (candidate) => candidate.id === editingMessageId.value
+    );
+    if (
+      !message ||
+      props.responding ||
+      messageFingerprint(message) !== editingMessageFingerprint.value ||
+      message.role !== "user" ||
+      message.status === "streaming" ||
+      message.attachments?.length
+    ) {
+      clearEditingMessage();
+    }
+  },
+  { flush: "sync" }
 );
 </script>
 
@@ -89,15 +163,22 @@ const hasStreamingAssistant = computed(() =>
         :key="message.id"
         :message="message"
         :clock="clock"
+        :editable="messageIsEditable(message)"
+        :editing="editingMessageId === message.id"
+        :submit-edited-message="submitEditedMessage"
         :allow-live-edit-review="allowLiveEditReview"
         :long-proposal-items="longProposalItems"
         :long-workspace-index="longWorkspaceIndex"
         @review-edit="emit('reviewEdit', $event)"
         @locate-edit-proposal="emit('locateEditProposal', $event)"
+        @discard-edit-proposal="emit('discardEditProposal', $event)"
         @approve-long-proposal="emit('approveLongProposal', $event)"
         @reject-long-proposal="emit('rejectLongProposal', $event)"
         @retry-long-proposal-preview="emit('retryLongProposalPreview', $event)"
         @locate-long-proposal="emit('locateLongProposal', $event)"
+        @discard-long-proposal="emit('discardLongProposal', $event)"
+        @request-edit="requestEdit"
+        @cancel-edit="cancelEdit"
       />
 
       <article

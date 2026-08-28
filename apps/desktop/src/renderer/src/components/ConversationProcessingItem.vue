@@ -42,10 +42,12 @@ const emit = defineEmits<{
     }
   ];
   locateEditProposal: [payload: { runId: string; proposalId: string }];
+  discardEditProposal: [payload: { runId: string; proposalId: string }];
   approveLongProposal: [eventId: string];
   rejectLongProposal: [eventId: string];
   retryLongProposalPreview: [eventId: string];
   locateLongProposal: [eventId: string];
+  discardLongProposal: [eventId: string];
 }>();
 
 function writeToolFallback(): string {
@@ -63,7 +65,11 @@ function writeToolFallback(): string {
       <AppIcon name="chevron" :size="13" />
     </summary>
     <div class="processing-live-body processing-thinking">
-      <StreamedContent :content="item.content" :streaming="streaming" />
+      <StreamedContent
+        :content="item.content"
+        format="plain"
+        :streaming="streaming"
+      />
     </div>
   </details>
 
@@ -71,7 +77,11 @@ function writeToolFallback(): string {
     v-else-if="item.type === 'response'"
     class="processing-step processing-response"
   >
-    <StreamedContent :content="item.content" :streaming="streaming" />
+    <StreamedContent
+      :content="item.content"
+      format="markdown"
+      :streaming="streaming"
+    />
   </div>
 
   <details
@@ -140,8 +150,10 @@ function writeToolFallback(): string {
     :proposal="item.proposal"
     :message-status="messageStatus"
     :allow-live-edit-review="allowLiveEditReview"
+    :discardable="item.canDiscard"
     @review="emit('reviewEdit', $event)"
     @locate="emit('locateEditProposal', $event)"
+    @discard="emit('discardEditProposal', $event)"
   />
 
   <LongProposalReview
@@ -151,10 +163,12 @@ function writeToolFallback(): string {
     conversation-card
     :items="[item.item]"
     :workspace-index="longWorkspaceIndex"
+    :discardable-event-ids="item.canDiscard ? [item.item.event.id] : []"
     @approve="emit('approveLongProposal', $event)"
     @reject="emit('rejectLongProposal', $event)"
     @retry-preview="emit('retryLongProposalPreview', $event)"
     @locate="emit('locateLongProposal', $event)"
+    @discard="emit('discardLongProposal', $event)"
   />
 
   <details

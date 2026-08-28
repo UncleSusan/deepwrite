@@ -2,11 +2,17 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "typebox";
 import type { ShortWorkspaceToolDetails } from "./shared";
 
-export function literalUnion<T extends string>(values: readonly T[]) {
+export function literalUnion<T extends string>(
+  values: readonly T[],
+  options?: { description?: string }
+) {
   if (values.length === 1) {
-    return Type.Literal(values[0]!);
+    return Type.Literal(values[0]!, options);
   }
-  return Type.Union(values.map((value) => Type.Literal(value)));
+  return Type.Union(
+    values.map((value) => Type.Literal(value)),
+    options
+  );
 }
 
 function primitiveTypeOf(value: unknown): string | undefined {

@@ -233,6 +233,7 @@ export interface DuplicateProjectWritePlan {
   domain: FolderCatalogProjectDomain;
   parentDirectory: string;
   resource: FolderCatalogResource;
+  writingContext?: string;
 }
 
 export type SaveFolderDocumentInput = SaveDocumentInput;

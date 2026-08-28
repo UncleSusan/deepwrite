@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SHORT_AGENT_READ_ACCESS,
-  DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT,
+  DEFAULT_SHORT_SYSTEM_PROMPT,
+  DEFAULT_SHORT_STAGE_READ_ACCESS,
   DEFAULT_SHORT_WORKSPACE_AGENT_SYSTEM_PROMPTS,
   DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES,
   DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS,
@@ -18,7 +19,9 @@ import {
   createExpertDraftDirectoryRevision,
   createEnvelope,
   createDefaultCreativePlotStages,
-  resolveShortWorkspaceAgentIdForStage
+  resolveShortWorkspaceAgentIdForStage,
+  resolveShortWorkspaceConversationLaneIdForStage,
+  resolveShortWorkspaceStageReadAccess
 } from "./index";
 
 function expertDraftFile(documentId: string, title: string, content: string) {
@@ -87,7 +90,7 @@ function workspaceSnapshot() {
 }
 
 describe("short workspace contracts", () => {
-  it("maps the default dynamic stages to four workspace agents", () => {
+  it("maps every work stage to one runtime agent and keeps legacy conversation lanes", () => {
     expect(SHORT_WORKSPACE_STAGE_IDS).toEqual([
       "character_design",
       "worldbuilding",
@@ -105,23 +108,25 @@ describe("short workspace contracts", () => {
           resolveShortWorkspaceAgentIdForStage(stageId)
         ])
       )
-    ).toEqual({
-      character_design: "character_design",
-      worldbuilding: "plot_design",
-      plot_design: "plot_design",
-      intro_design: "plot_design",
-      plot_refine: "plot_design",
-      narrative_perspective: "plot_design",
-      outline: "plot_design",
-      draft: "expert_draft_coordinator"
-    });
+    ).toEqual(
+      Object.fromEntries(SHORT_WORKSPACE_STAGE_IDS.map((id) => [id, "short"]))
+    );
+    expect(
+      resolveShortWorkspaceConversationLaneIdForStage("character_design")
+    ).toBe("character_design");
+    expect(resolveShortWorkspaceConversationLaneIdForStage("outline")).toBe(
+      "plot_design"
+    );
+    expect(resolveShortWorkspaceConversationLaneIdForStage("draft")).toBe(
+      "expert_draft_coordinator"
+    );
   });
 
-  it("exposes three complete default agent profiles", () => {
+  it("exposes one complete default agent profile", () => {
     expect(
       DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.map((profile) => profile.id)
     ).toEqual(SHORT_WORKSPACE_AGENT_IDS);
-    expect(DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES).toHaveLength(3);
+    expect(DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES).toHaveLength(1);
     for (const profile of DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES) {
       expect(profile.label).not.toBe("");
       expect(profile.description).not.toBe("");
@@ -137,58 +142,66 @@ describe("short workspace contracts", () => {
         DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS
       )
     ).not.toThrow();
-  });
-
-  it("keeps the three current short builtin prompts stable", () => {
-    const digest = (value: string): string => {
-      let hash = 2_166_136_261;
-      for (const byte of new TextEncoder().encode(value)) {
-        hash ^= byte;
-        hash = Math.imul(hash, 16_777_619) >>> 0;
-      }
-      return hash.toString(16).padStart(8, "0");
-    };
-
+    expect(DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS.defaultPlotStageIds).toEqual([
+      "plot_design",
+      "intro_design",
+      "plot_refine"
+    ]);
     expect(
-      Object.fromEntries(
-        Object.entries(DEFAULT_SHORT_WORKSPACE_AGENT_SYSTEM_PROMPTS).map(
-          ([agentId, prompt]) => [agentId, digest(prompt)]
-        )
-      )
-    ).toEqual({
-      character_design: "798a9694",
-      plot_design: "fcd5f710",
-      expert_draft_coordinator: expect.any(String)
-    });
-    expect(DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT).toContain(
-      "短篇唯一的正文写作智能体"
-    );
+      ShortWorkspaceAgentSettingsInputSchema.safeParse({
+        ...DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS,
+        defaultPlotStageIds: []
+      }).success
+    ).toBe(false);
   });
 
-  it("biases draft agents to read list-mode character items before writing", () => {
-    expect(DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT).toContain(
-      "list_characters"
+  it("uses one prompt aligned with the unified tools", () => {
+    expect(DEFAULT_SHORT_WORKSPACE_AGENT_SYSTEM_PROMPTS).toEqual({
+      short: DEFAULT_SHORT_SYSTEM_PROMPT
+    });
+    expect(DEFAULT_SHORT_SYSTEM_PROMPT).toContain("read");
+    expect(DEFAULT_SHORT_SYSTEM_PROMPT).toContain("create、edit、write");
+    expect(DEFAULT_SHORT_SYSTEM_PROMPT).toContain("当前阶段");
+    expect(DEFAULT_SHORT_SYSTEM_PROMPT).toContain(
+      "文本样式下禁止 create character"
     );
-    expect(DEFAULT_SHORT_EXPERT_DRAFT_COORDINATOR_SYSTEM_PROMPT).toContain(
-      "指定 item_id 读取对应人物卡"
+    expect(DEFAULT_SHORT_SYSTEM_PROMPT).toContain("所有人物写在同一份文本里");
+    expect(DEFAULT_SHORT_SYSTEM_PROMPT).toContain(
+      "只有条目样式才用 kind=character 为单个人物创建独立条目"
     );
+    expect(DEFAULT_SHORT_SYSTEM_PROMPT).toContain(
+      "读取、写入或修改小节正文/人物状态时必须同时给出 document=body 或 character_state，不得省略"
+    );
+    expect(DEFAULT_SHORT_SYSTEM_PROMPT).toContain(
+      "读取单个小节必须给出 kind=draft_section、稳定小节 id 和 document=body 或 character_state"
+    );
+    expect(DEFAULT_SHORT_SYSTEM_PROMPT).toContain("不传 document 时默认 body");
   });
 
   it("keeps only material and skill read ranges", () => {
     expect(DEFAULT_SHORT_AGENT_READ_ACCESS).toEqual({
-      character_design: {
+      short: {
+        material: ["character", "gimmick", "plot", "draft", "other"],
+        skill: ["general", "plot", "style", "other"]
+      }
+    });
+    expect(DEFAULT_SHORT_STAGE_READ_ACCESS).toEqual({
+      character: {
         material: ["character"],
         skill: ["general", "plot", "other"]
       },
-      plot_design: {
+      plot: {
         material: ["gimmick", "character", "plot"],
         skill: ["general", "plot", "other"]
       },
-      expert_draft_coordinator: {
+      draft: {
         material: ["character", "gimmick", "plot", "draft", "other"],
         skill: ["style", "general", "other"]
       }
     });
+    expect(resolveShortWorkspaceStageReadAccess("outline")).toEqual(
+      DEFAULT_SHORT_STAGE_READ_ACCESS.plot
+    );
 
     const legacy = structuredClone(DEFAULT_SHORT_WORKSPACE_AGENT_SETTINGS);
     Object.assign(legacy.agents[0]!.readAccess, {
@@ -223,25 +236,25 @@ describe("short workspace contracts", () => {
   it("validates active agents and draft section targets", () => {
     const base = workspaceSnapshot();
 
-    expect(() =>
+    expect(
       ShortWorkspaceSnapshotSchema.parse({
         ...base,
         activeStageId: "plot_refine",
         activeAgentId: "plot_design"
-      })
-    ).not.toThrow();
-    expect(() =>
+      }).activeAgentId
+    ).toBe("short");
+    expect(
       ShortWorkspaceSnapshotSchema.parse({
         ...base,
         activeStageId: "plot_refine",
         activeAgentId: "character_design"
-      })
-    ).toThrow();
+      }).activeAgentId
+    ).toBe("short");
     expect(() =>
       ShortWorkspaceSnapshotSchema.parse({
         ...base,
         activeStageId: "plot_refine",
-        activeAgentId: "plot_design",
+        activeAgentId: "short",
         activeSectionId: "section-1"
       })
     ).toThrow();
@@ -297,13 +310,13 @@ describe("short workspace contracts", () => {
         activeSectionId: "section-404"
       })
     ).toThrow();
-    expect(() =>
+    expect(
       ShortWorkspaceSnapshotSchema.parse({
         ...base,
         activeStageId: "draft",
         activeAgentId: "character_design"
-      })
-    ).toThrow();
+      }).activeAgentId
+    ).toBe("short");
 
     expect(() =>
       ShortWorkspaceSnapshotSchema.parse({
@@ -340,7 +353,7 @@ describe("short workspace contracts", () => {
 
     expect(
       ShortWorkspaceAgentSettingsInputSchema.parse(input).agents
-    ).toHaveLength(3);
+    ).toHaveLength(1);
     expect(
       WorkspaceAgentsListCommandEnvelopeSchema.parse(
         createEnvelope(
@@ -370,9 +383,7 @@ describe("short workspace contracts", () => {
     expect(() =>
       ShortWorkspaceAgentSettingsInputSchema.parse({
         ...input,
-        agents: input.agents.map((agent, index) =>
-          index === 1 ? { ...agent, id: "character_design" as const } : agent
-        )
+        agents: [{ ...input.agents[0], id: "character_design" as const }]
       })
     ).toThrow();
   });

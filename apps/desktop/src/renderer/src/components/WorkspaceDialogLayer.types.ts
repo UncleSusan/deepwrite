@@ -90,6 +90,9 @@ export interface PlotStructureDialogModule {
   kind: "plot-structure";
   book: Book | null;
   pending: boolean;
+  writingContext: string | null;
+  writingContextLoading: boolean;
+  writingContextPending: boolean;
 }
 
 export interface CharacterItemDialogModule {
@@ -386,6 +389,7 @@ export interface WorkspaceDialogLayerEmits {
     mutation: CharacterStructureMutation,
     completion: DialogMutationCompletion
   ];
+  saveWritingContext: [content: string, completion: DialogMutationCompletion];
   closeCharacterItem: [];
   submitCharacterItem: [title: string];
   closeExportShort: [];

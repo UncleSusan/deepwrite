@@ -114,7 +114,6 @@ const hasLongBookAction = computed(
 const isExpertDraftParent = computed(
   () =>
     props.resourceDomain === "creation" &&
-    props.node.shortAgentId === "expert_draft_coordinator" &&
     props.node.stageCategoryId === "draft" &&
     !props.node.expertSectionId
 );

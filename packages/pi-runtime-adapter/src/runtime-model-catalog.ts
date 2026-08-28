@@ -66,6 +66,34 @@ const DEEPWRITE_RUNTIME_MODELS = [
     maxTokens: 384_000
   } satisfies Model<"openai-completions">,
   {
+    id: "deepseek-v4-flash-vision-exp",
+    name: "DeepSeek V4 Flash Vision Exp",
+    api: "openai-completions",
+    provider: "deepseek",
+    baseUrl: "https://api.deepseek.com",
+    compat: {
+      supportsStore: false,
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: true,
+      maxTokensField: "max_tokens",
+      requiresReasoningContentOnAssistantMessages: true,
+      thinkingFormat: "deepseek",
+      supportsStrictMode: true
+    },
+    reasoning: true,
+    thinkingLevelMap: {
+      minimal: null,
+      low: "high",
+      medium: "high",
+      high: "high",
+      xhigh: "max"
+    },
+    input: ["text", "image"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 1_000_000,
+    maxTokens: 384_000
+  } satisfies Model<"openai-completions">,
+  {
     id: "deepseek-v4-flash-0731",
     name: "DeepSeek V4 Flash 0731",
     api: "openai-completions",

@@ -36,9 +36,14 @@ import {
   type AgentTurnRetryPolicyOptions
 } from "./agent-turn-retry";
 import { piStrictToolSampling } from "./pi-tool-schema";
+import {
+  resolveSubagentTimeoutMs,
+  subagentTimeoutMessage
+} from "./subagent-timeout";
+
+export { DEFAULT_SUBAGENT_TIMEOUT_MS } from "./subagent-timeout";
 
 const SUBAGENT_SUMMARY_MAX_LENGTH = 20_000;
-export const DEFAULT_SUBAGENT_TIMEOUT_MS = 10 * 60_000;
 
 export interface AgentToolExecutionHooks {
   beforeToolCall?: (
@@ -616,12 +621,7 @@ export function buildSpawnSubagentTool(
       let summary = "";
       let timedOut = false;
       let timeout: NodeJS.Timeout | undefined;
-      const timeoutMs =
-        input.timeoutMs !== undefined &&
-        Number.isFinite(input.timeoutMs) &&
-        input.timeoutMs > 0
-          ? input.timeoutMs
-          : DEFAULT_SUBAGENT_TIMEOUT_MS;
+      const timeoutMs = resolveSubagentTimeoutMs(input.timeoutMs);
       try {
         if (cancellationRequested) {
           status = "aborted";
@@ -705,7 +705,7 @@ export function buildSpawnSubagentTool(
         }
         if (timedOut) {
           status = "error";
-          errorMessage = `子智能体超过 ${Math.ceil(timeoutMs / 1_000)} 秒硬截止时间，运行已终止。`;
+          errorMessage = subagentTimeoutMessage(timeoutMs);
         } else if (
           status === "completed" &&
           (cancellationRequested || terminalAborted)
@@ -722,7 +722,7 @@ export function buildSpawnSubagentTool(
       } catch (error: unknown) {
         status = cancellationRequested || signal?.aborted ? "aborted" : "error";
         errorMessage = timedOut
-          ? `子智能体超过 ${Math.ceil(timeoutMs / 1_000)} 秒硬截止时间，运行已终止。`
+          ? subagentTimeoutMessage(timeoutMs)
           : error instanceof Error
             ? error.message
             : "子智能体运行失败。";

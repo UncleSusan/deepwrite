@@ -747,7 +747,7 @@ export function useShortWorkspaceStructureCoordinator(
     }
     const unitLabel = source.workspaceType === "script" ? "剧集" : "小节";
     if (
-      draftNode.shortAgentId !== "expert_draft_coordinator" ||
+      draftNode.stageCategoryId !== "draft" ||
       expertDraftMutationBlocked(source) ||
       source.readOnly ||
       state.mutationPending.value ||
@@ -817,7 +817,7 @@ export function useShortWorkspaceStructureCoordinator(
         return;
       }
       if (
-        draftNode.shortAgentId !== "expert_draft_coordinator" ||
+        draftNode.stageCategoryId !== "draft" ||
         expertDraftMutationBlocked(source) ||
         source.readOnly
       ) {

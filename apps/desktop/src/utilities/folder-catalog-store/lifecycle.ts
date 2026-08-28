@@ -100,6 +100,10 @@ import {
   removeEmptyOrPartialProject,
   secureProjectRoot
 } from "./paths-io";
+import {
+  readOrCreateWritingContext,
+  writeWritingContextFile
+} from "./writing-context";
 
 export const DEFAULT_SHORT_DOCUMENTS = [
   ["character_design", "人物设计"],
@@ -215,30 +219,36 @@ export async function createShortBook(
   const parent =
     (wrapped ? rawInput.parentDirectory : parentDirectory)?.trim() ||
     store.defaultProjectParents.book;
-  return await createBookProject(store, parent, (now) =>
-    ShortBookSchema.parse({
-      id: createCatalogId("book"),
-      title: input.title,
-      bookType: "short",
-      genre: input.genre,
-      status: "editing",
-      linkedMaterialIdsByKind: linkedMaterialIdsFromInput(
-        input.linkedMaterialIdsByKind
-      ),
-      linkedSkillIdsByKind: linkedSkillIdsFromInput(input.linkedSkillIdsByKind),
-      characterStructure: createDefaultBookCharacterStructure(),
-      plotStages: createDefaultBookPlotStages(),
-      documents: DEFAULT_SHORT_DOCUMENTS.map(([id, title]) => ({
-        id,
-        title,
-        content: "",
+  return await createBookProject(
+    store,
+    parent,
+    (now) =>
+      ShortBookSchema.parse({
+        id: createCatalogId("book"),
+        title: input.title,
+        bookType: "short",
+        genre: input.genre,
+        status: "editing",
+        linkedMaterialIdsByKind: linkedMaterialIdsFromInput(
+          input.linkedMaterialIdsByKind
+        ),
+        linkedSkillIdsByKind: linkedSkillIdsFromInput(
+          input.linkedSkillIdsByKind
+        ),
+        characterStructure: createDefaultBookCharacterStructure(),
+        plotStages: createDefaultBookPlotStages(),
+        documents: DEFAULT_SHORT_DOCUMENTS.map(([id, title]) => ({
+          id,
+          title,
+          content: "",
+          createdAt: now,
+          updatedAt: now
+        })),
+        draft: createCatalogDraftDirectory(now),
         createdAt: now,
         updatedAt: now
-      })),
-      draft: createCatalogDraftDirectory(now),
-      createdAt: now,
-      updatedAt: now
-    })
+      }),
+    input.defaultPlotStageIds
   );
 }
 
@@ -284,14 +294,16 @@ export async function createScriptBook(
 export async function createBookProject<Resource extends Book>(
   store: FolderCatalogStoreContext,
   parentDirectory: string,
-  createBook: (now: string) => Resource
+  createBook: (now: string) => Resource,
+  defaultPlotStageIds?: readonly string[]
 ): Promise<OpenFolderCatalogProjectResult<Resource>> {
   return await mutate(store, async () => {
     const now = store.now();
     const registry = await ensureRegistry(store);
     const book = applyGlobalPlotStagesToNewBook(
       createBook(now),
-      registry.creativePlotStages
+      registry.creativePlotStages,
+      defaultPlotStageIds
     );
     const snapshot = await aggregateSnapshot(store, registry);
     assertBookLibraryReferences(book, snapshot);
@@ -981,10 +993,15 @@ export async function duplicateProject(
         snapshot.books.map((book) => book.title)
       );
       primaryResource = duplicateBookResource(source, title, now);
+      const sourceWritingContext = await readOrCreateWritingContext(
+        registration.projectDirectory,
+        source.bookType
+      );
       plans.push({
         domain: "book",
         parentDirectory: dirname(registration.projectDirectory),
-        resource: primaryResource
+        resource: primaryResource,
+        writingContext: sourceWritingContext.content
       });
     } else if (input.domain === "material" || input.domain === "skill") {
       const registryDomain = libraryProjectDomain(input.domain);
@@ -1131,6 +1148,9 @@ export async function duplicateProject(
           plan.parentDirectory,
           plan.resource
         );
+        if (plan.writingContext !== undefined) {
+          await writeWritingContextFile(projectDirectory, plan.writingContext);
+        }
         createdProjectDirectories.push(projectDirectory);
         registrations.push({
           id: plan.resource.id,

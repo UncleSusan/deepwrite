@@ -36,10 +36,12 @@ const emit = defineEmits<{
     }
   ];
   locateEditProposal: [payload: { runId: string; proposalId: string }];
+  discardEditProposal: [payload: { runId: string; proposalId: string }];
   approveLongProposal: [eventId: string];
   rejectLongProposal: [eventId: string];
   retryLongProposalPreview: [eventId: string];
   locateLongProposal: [eventId: string];
+  discardLongProposal: [eventId: string];
 }>();
 </script>
 
@@ -67,10 +69,12 @@ const emit = defineEmits<{
       :long-workspace-index="longWorkspaceIndex"
       @review-edit="emit('reviewEdit', $event)"
       @locate-edit-proposal="emit('locateEditProposal', $event)"
+      @discard-edit-proposal="emit('discardEditProposal', $event)"
       @approve-long-proposal="emit('approveLongProposal', $event)"
       @reject-long-proposal="emit('rejectLongProposal', $event)"
       @retry-long-proposal-preview="emit('retryLongProposalPreview', $event)"
       @locate-long-proposal="emit('locateLongProposal', $event)"
+      @discard-long-proposal="emit('discardLongProposal', $event)"
     />
   </div>
 
@@ -93,10 +97,12 @@ const emit = defineEmits<{
         :long-workspace-index="longWorkspaceIndex"
         @review-edit="emit('reviewEdit', $event)"
         @locate-edit-proposal="emit('locateEditProposal', $event)"
+        @discard-edit-proposal="emit('discardEditProposal', $event)"
         @approve-long-proposal="emit('approveLongProposal', $event)"
         @reject-long-proposal="emit('rejectLongProposal', $event)"
         @retry-long-proposal-preview="emit('retryLongProposalPreview', $event)"
         @locate-long-proposal="emit('locateLongProposal', $event)"
+        @discard-long-proposal="emit('discardLongProposal', $event)"
       />
       <SubagentRunList
         v-if="message.subagentRuns?.length"

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import source from "./WorkspaceShell.vue?raw";
 import dialogLayerSource from "./components/WorkspaceDialogLayer.vue?raw";
-import coordinatorSource from "./composables/useSettingsFeatureCoordinator.ts?raw";
+import modelCoordinatorSource from "./composables/useModelSettingsCoordinator.ts?raw";
 import dialogCoordinatorSource from "./composables/useWorkspaceDialogModuleCoordinator.ts?raw";
 import featureHostSource from "./composables/useWorkspaceFeatureHostCoordinator.ts?raw";
 import featureModulesSource from "./components/WorkspaceFeatureModules.vue?raw";
@@ -14,7 +14,7 @@ describe("App remote alerts", () => {
       /startDesktopSideEffects:[\s\S]*?loadAppAlerts\(\)/u
     );
     expect(source).toContain("useSettingsFeatureCoordinator({");
-    expect(coordinatorSource).toContain("await api.get()");
+    expect(modelCoordinatorSource).toContain("await api.get()");
     expect(settingsSource).toContain(
       "官方模型已经上线！直连厂商！软件整体用量越多，折扣会越大！"
     );
@@ -39,9 +39,11 @@ describe("App remote alerts", () => {
   });
 
   it("shows unseen desktop content and acknowledges it when dismissed", () => {
-    expect(coordinatorSource).toContain("snapshot.shouldShowDesktop");
-    expect(coordinatorSource).toContain("snapshot.desktopRevision");
-    expect(coordinatorSource).toContain("api.acknowledgeDesktop(revision)");
+    expect(modelCoordinatorSource).toContain("snapshot.shouldShowDesktop");
+    expect(modelCoordinatorSource).toContain("snapshot.desktopRevision");
+    expect(modelCoordinatorSource).toContain(
+      "api.acknowledgeDesktop(revision)"
+    );
     expect(dialogCoordinatorSource).toContain('kind: "startup-alert"');
     expect(dialogLayerSource).toContain("<StartupAlertDialog");
     expect(dialogLayerSource).toContain("@close=\"emit('closeStartupAlert')\"");

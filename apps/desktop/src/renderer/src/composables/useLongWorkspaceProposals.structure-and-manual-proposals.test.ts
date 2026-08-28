@@ -79,7 +79,12 @@ describe("long workspace proposal approval: structure-and-manual-proposals", () 
     expect(ledger.commitChapter).toHaveBeenCalledTimes(1);
     expect(ledger.onApplied).toHaveBeenCalledTimes(1);
     expect(ledger.notifications.error).not.toHaveBeenCalled();
-    expect(ledger.controller.itemsForBook("longbook_test")).toEqual([]);
+    expect(ledger.controller.itemsForBook("longbook_test")).toMatchObject([
+      {
+        event: { type: "long.ledger_commit_proposal" },
+        status: "accepted"
+      }
+    ]);
   });
 
   it("serializes realtime durable writes for the same long book", async () => {
@@ -262,7 +267,7 @@ describe("long workspace proposal approval: structure-and-manual-proposals", () 
     expect(test.previewOperations).not.toHaveBeenCalled();
   });
 
-  it("keeps internal continuity finalization out of the review queue", async () => {
+  it("shows accepted continuity finalization in the review queue", async () => {
     const ignored = harness(false);
     expect(await ignored.controller.handleEvent(ledgerEvent())).toBe(false);
     expect(ignored.controller.itemsForBook("longbook_test")).toEqual([]);
@@ -272,6 +277,11 @@ describe("long workspace proposal approval: structure-and-manual-proposals", () 
 
     expect(test.commitChapter).toHaveBeenCalledTimes(1);
     expect(test.onRejected).not.toHaveBeenCalled();
-    expect(test.controller.itemsForBook("longbook_test")).toEqual([]);
+    expect(test.controller.itemsForBook("longbook_test")).toMatchObject([
+      {
+        event: { type: "long.ledger_commit_proposal" },
+        status: "accepted"
+      }
+    ]);
   });
 });

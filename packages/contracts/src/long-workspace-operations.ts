@@ -57,6 +57,7 @@ import {
   nextOrder,
   normalizeStoryPlotOrders
 } from "./long-workspace-operations/order-utils";
+import { chapterMutationViolation } from "./long-workspace-operations/chapter-mutation-guard";
 
 const OperationTimestampSchema = z.string().datetime();
 const OperationTextSchema = z.string().max(200_000);
@@ -1139,6 +1140,15 @@ function assertChapterIsMutable(
   void workspace;
   void chapterCardId;
   void action;
+}
+
+function assertChapterContinuityIsMutable(
+  workspace: LongWorkspaceIndexSnapshot,
+  chapterCardId: string,
+  action: string
+): void {
+  const violation = chapterMutationViolation(workspace, chapterCardId, action);
+  if (violation) operationError(violation.code, violation.message);
 }
 
 function assertPlacementIsMutable(
@@ -2767,7 +2777,7 @@ function applyLongWorkspaceOperation(
       break;
     }
     case "chapterContinuity.worldReveals.create": {
-      assertChapterIsMutable(
+      assertChapterContinuityIsMutable(
         workspace,
         operation.chapterCardId,
         "create world-reveals continuity for"
@@ -2799,7 +2809,7 @@ function applyLongWorkspaceOperation(
       break;
     }
     case "chapterContinuity.worldReveals.delete": {
-      assertChapterIsMutable(
+      assertChapterContinuityIsMutable(
         workspace,
         operation.chapterCardId,
         "delete world-reveals continuity from"
@@ -2830,7 +2840,7 @@ function applyLongWorkspaceOperation(
       break;
     }
     case "chapterContinuity.character.create": {
-      assertChapterIsMutable(
+      assertChapterContinuityIsMutable(
         workspace,
         operation.chapterCardId,
         "create character continuity for"
@@ -2874,7 +2884,7 @@ function applyLongWorkspaceOperation(
       break;
     }
     case "chapterContinuity.character.delete": {
-      assertChapterIsMutable(
+      assertChapterContinuityIsMutable(
         workspace,
         operation.chapterCardId,
         "delete character continuity from"

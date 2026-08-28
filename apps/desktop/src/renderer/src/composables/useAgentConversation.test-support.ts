@@ -96,7 +96,7 @@ function createShortWorkspaceDocuments(): WorkspaceDocument[] {
         workspaceTitle: "雨夜来信",
         workspaceCategories: ["都市", "悬疑"],
         stageId: "draft" as const,
-        shortAgentId: "expert_draft_coordinator" as const,
+        shortAgentId: "short" as const,
         expertSectionId: sectionId,
         expertSectionOrder: index,
         expertWordCountRequirement: index === 0 ? "300 字" : "1200 字",
@@ -159,7 +159,7 @@ function createScriptWorkspaceDocuments(): WorkspaceDocument[] {
     workspaceTitle: "雨夜剧本",
     workspaceCategories: ["悬疑"],
     stageId: "draft" as const,
-    shortAgentId: "expert_draft_coordinator" as const,
+    shortAgentId: "script" as const,
     expertSectionId: "episode-1",
     expertSectionOrder: 0,
     expertWordCountRequirement: "1200 字",
@@ -209,7 +209,7 @@ function createDraftCoordinatorDocument(
     title: "正文",
     path: ["雨夜来信", "正文"],
     content: "",
-    shortAgentId: "expert_draft_coordinator"
+    shortAgentId: "short"
   };
 }
 
@@ -225,6 +225,11 @@ function createDeferredApi(): {
     resolve(payload: SessionPromptAcceptedPayload): void;
     reject(error: Error): void;
   }> = [];
+  const queuedPromptResults = new Map<
+    number,
+    | { status: "accepted"; payload: SessionPromptAcceptedPayload }
+    | { status: "rejected"; error: Error }
+  >();
   const prompts: SessionPromptCommandPayload[] = [];
   const aborts: SessionAbortCommandPayload[] = [];
   const api: DeepWriteApi = {
@@ -342,6 +347,19 @@ function createDeferredApi(): {
       }),
       readDocument: vi.fn(async () => {
         throw new Error("Catalog is not used by conversation tests.");
+      }),
+      readWritingContext: vi.fn(async ({ bookId }) => ({
+        bookId,
+        workspaceType: bookId.startsWith("script_")
+          ? ("script" as const)
+          : ("short" as const),
+        content: "# 测试作品上下文",
+        truncated: false
+      })),
+      writeWritingContext: vi.fn(async () => {
+        throw new Error(
+          "Writing context save is not used by conversation tests."
+        );
       }),
       snapshot: vi.fn(async () => {
         throw new Error("Catalog is not used by conversation tests.");
@@ -480,9 +498,15 @@ function createDeferredApi(): {
     },
     session: {
       prompt(payload) {
+        const index = prompts.length;
         prompts.push(payload);
         return new Promise<SessionPromptAcceptedPayload>((resolve, reject) => {
-          pending.push({ resolve, reject });
+          pending[index] = { resolve, reject };
+          const queued = queuedPromptResults.get(index);
+          if (!queued) return;
+          queuedPromptResults.delete(index);
+          if (queued.status === "accepted") resolve(queued.payload);
+          else reject(queued.error);
         });
       },
       async abort(payload) {
@@ -506,6 +530,9 @@ function createDeferredApi(): {
         return { models: [], defaultModelId: "" };
       },
       async refreshFree() {
+        return { models: [], defaultModelId: "" };
+      },
+      async setFreeModelEnabled() {
         return { models: [], defaultModelId: "" };
       },
       async refreshOfficial() {
@@ -553,7 +580,16 @@ function createDeferredApi(): {
           modelId: model.id,
           ok: true,
           message: "连接成功",
-          testedAt: new Date().toISOString()
+          testedAt: new Date().toISOString(),
+          contextWindow: 272_000,
+          maxTokens: 128_000
+        };
+      },
+      async resolveCapacity(model) {
+        return {
+          modelId: model.id,
+          contextWindow: 272_000,
+          maxTokens: 128_000
         };
       },
       async listRemote() {
@@ -642,6 +678,12 @@ function createDeferredApi(): {
       },
       async save() {
         return this.list();
+      },
+      async download() {
+        return { status: "canceled" as const };
+      },
+      async install() {
+        return { status: "canceled" as const };
       }
     },
     libraryAgents: {
@@ -689,6 +731,19 @@ function createDeferredApi(): {
       },
       async save(settings) {
         return { persisted: true, settings };
+      },
+      fonts: {
+        async list() {
+          return { fonts: [] };
+        },
+        async install() {
+          return { status: "canceled" as const };
+        },
+        async remove() {
+          throw new Error(
+            "Appearance fonts are not used by conversation tests."
+          );
+        }
       }
     },
     generalSettings: {
@@ -697,10 +752,12 @@ function createDeferredApi(): {
           persisted: false,
           settings: {
             permissionMode: "request-approval" as const,
+            autoApproveCrossStageOperations: false,
             autoSave: false,
             language: "auto" as const,
             showInMenuBar: true,
-            workspacePaneLayout: "agent-editor" as const
+            workspacePaneLayout: "agent-editor" as const,
+            defaultTextViewMode: "edit" as const
           }
         };
       },
@@ -729,10 +786,14 @@ function createDeferredApi(): {
     prompts,
     aborts,
     resolveAccepted(index, payload) {
-      pending[index]?.resolve(payload);
+      const request = pending[index];
+      if (request) request.resolve(payload);
+      else queuedPromptResults.set(index, { status: "accepted", payload });
     },
     rejectPrompt(index, error) {
-      pending[index]?.reject(error);
+      const request = pending[index];
+      if (request) request.reject(error);
+      else queuedPromptResults.set(index, { status: "rejected", error });
     },
     promptCount: () => prompts.length
   };

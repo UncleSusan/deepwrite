@@ -10,6 +10,7 @@ import {
   type ShortWorkspaceStageId,
   type WorkspaceRuntimeContext
 } from "@deepwrite/contracts";
+import type { AgentUserInputRequester } from "../runtime-types";
 
 export type ShortWorkspaceToolDetails =
   | { kind: "none" }
@@ -57,6 +58,8 @@ export type ShortWorkspaceToolDetails =
           };
       baseRevision: string;
       summary: string;
+      /** Optional body written immediately after a same-proposal create. */
+      initialContent?: string;
     }
   | {
       kind: "workspace-expert-draft-file-mutation";
@@ -77,8 +80,32 @@ export type ShortWorkspaceToolDetails =
         title: string;
         wordCountRequirement: string;
         provisionalSectionId: string;
+        bodyContent?: string;
+        characterStateContent?: string;
       }>;
       afterSectionId?: string;
+      baseRevision: string;
+      summary: string;
+    }
+  | {
+      kind: "workspace-plot-structure-mutation";
+      workspaceId: string;
+      stageId: ShortWorkspaceStageId;
+      mutation:
+        | {
+            type: "create";
+            title: string;
+            description: string;
+            provisionalStageId: string;
+            content: string;
+          }
+        | {
+            type: "update";
+            stageId: ShortWorkspaceStageId;
+            previousTitle: string;
+            title: string;
+            description: string;
+          };
       baseRevision: string;
       summary: string;
     }
@@ -114,8 +141,10 @@ export interface BuildShortWorkspaceToolsInput {
   workspace: ShortWorkspaceSnapshot;
   profile: ShortWorkspaceAgentProfile;
   writeApprovalMode?: AgentWriteApprovalMode;
+  autoApproveCrossStageOperations?: boolean;
   attachedSkills?: WorkspaceRuntimeContext["attachedSkills"];
   attachedMaterials?: WorkspaceRuntimeContext["attachedMaterials"];
+  requestUserInput?: AgentUserInputRequester;
   /**
    * Mutable content shared by every agent participating in the same parent run.
    * Read evidence deliberately stays outside this object and is recreated by
@@ -128,8 +157,10 @@ export interface BuildScriptWorkspaceToolsInput {
   workspace: ScriptWorkspaceSnapshot;
   profile: ScriptWorkspaceAgentProfile;
   writeApprovalMode?: AgentWriteApprovalMode;
+  autoApproveCrossStageOperations?: boolean;
   attachedSkills?: WorkspaceRuntimeContext["attachedSkills"];
   attachedMaterials?: WorkspaceRuntimeContext["attachedMaterials"];
+  requestUserInput?: AgentUserInputRequester;
   /** Shared across the parent and its children during one script run. */
   sharedState?: ScriptWorkspaceToolSharedState;
 }
@@ -162,8 +193,10 @@ export interface BuildWritingWorkspaceToolsInput {
   workspace: WritingWorkspaceSnapshot;
   profile: WritingWorkspaceAgentProfile;
   writeApprovalMode?: AgentWriteApprovalMode;
+  autoApproveCrossStageOperations?: boolean;
   attachedSkills?: WorkspaceRuntimeContext["attachedSkills"];
   attachedMaterials?: WorkspaceRuntimeContext["attachedMaterials"];
+  requestUserInput?: AgentUserInputRequester;
   sharedState?: ShortWorkspaceToolSharedState;
 }
 
@@ -180,11 +213,23 @@ export interface ShortWorkspaceToolSharedState {
       order: number;
       content: string;
       revision: string;
+      truncated?: boolean;
       provisional?: boolean;
     }
   >;
   characterItemOrder: string[];
   pendingCharacterSeq: number;
+  plotStages: Map<
+    ShortWorkspaceStageId,
+    {
+      id: ShortWorkspaceStageId;
+      title: string;
+      description: string;
+      provisional?: boolean;
+    }
+  >;
+  plotStageOrder: ShortWorkspaceStageId[];
+  pendingPlotStageSeq: number;
   expertSections: ExpertSectionMap;
   /** Stable directory order including provisional sections created in this run. */
   expertSectionOrder: string[];
@@ -204,33 +249,11 @@ export type DraftFileKind = "body" | "characterState";
 
 export const DRAFT_FILE_PARAMETER_VALUES = ["body", "character_state"] as const;
 
-export function toDraftFileKind(value: unknown): DraftFileKind {
-  return String(value ?? "body") === "character_state"
-    ? "characterState"
-    : "body";
-}
-
-export function draftFileLabel(field: DraftFileKind): string {
-  return field === "body" ? "正文" : "人物状态";
-}
-
 export function textResult(
   text: string,
   details: ShortWorkspaceToolDetails = { kind: "none" }
 ): AgentToolResult<ShortWorkspaceToolDetails> {
   return { content: [{ type: "text", text }], details };
-}
-
-export function stageLabel(
-  input: BuildWritingWorkspaceToolsInput,
-  stageId: ShortWorkspaceStageId
-): string {
-  if (stageId === "character_design") return "人物";
-  if (stageId === "draft") return "正文";
-  return (
-    input.workspace.plotStages.find(({ id }) => id === stageId)?.title ??
-    stageId
-  );
 }
 
 export function workspaceKindLabel(
@@ -239,63 +262,17 @@ export function workspaceKindLabel(
   return input.workspaceType === "script" ? "剧本" : "短篇";
 }
 
-export function workspaceTitleLabel(
-  input: BuildWritingWorkspaceToolsInput
-): string {
-  return input.workspaceType === "script" ? "剧名" : "书名";
-}
-
 export function draftUnitLabel(input: BuildWritingWorkspaceToolsInput): string {
   return input.workspaceType === "script" ? "剧集" : "章节";
-}
-
-export function draftUnitCounter(
-  input: BuildWritingWorkspaceToolsInput
-): string {
-  return input.workspaceType === "script" ? "集" : "章";
-}
-
-export function draftContentUnitLabel(
-  input: BuildWritingWorkspaceToolsInput
-): string {
-  return input.workspaceType === "script" ? "剧集" : "正文章节";
-}
-
-export function storylineStageIds(
-  input: BuildWritingWorkspaceToolsInput
-): ShortWorkspaceStageId[] {
-  const available = new Set<ShortWorkspaceStageId>(
-    input.workspace.stages.map((stage) => stage.stageId)
-  );
-  return input.workspace.plotStages
-    .map(({ id }) => id)
-    .filter((stageId) => available.has(stageId));
-}
-
-export function readableStageIds(
-  input: BuildWritingWorkspaceToolsInput
-): ShortWorkspaceStageId[] {
-  const targets = input.workspace.stages.map(({ stageId }) => stageId);
-  if (!targets.includes("draft")) targets.push("draft");
-  return targets;
 }
 
 export function scriptBodyToolConstraint(
   input: BuildWritingWorkspaceToolsInput
 ): string {
   return input.workspaceType === "script"
-    ? `\n当 file=body 时，剧本正文必须遵守以下不可编辑格式约束：\n${SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS.trim()}\n` +
-        "写入 body 的 text 或 replacements[].new_text 不得包含 Markdown 表格、分析标题或格式讲解。"
+    ? `\n当 document=body 时，剧本正文必须遵守以下不可编辑格式约束：\n${SCRIPT_SCREENPLAY_FORMAT_REQUIREMENTS.trim()}\n` +
+        "写入 body 的 content 或 replacements[].new_text 不得包含 Markdown 表格、分析标题或格式讲解。"
     : "";
-}
-
-export function lineColumnAt(
-  text: string,
-  index: number
-): { line: number; column: number } {
-  const prefix = text.slice(0, index);
-  const lines = prefix.split("\n");
-  return { line: lines.length, column: (lines.at(-1)?.length ?? 0) + 1 };
 }
 
 export function replaceText(
@@ -323,17 +300,6 @@ export function replaceText(
     count += 1;
   }
   return { next, count };
-}
-
-export function writableStageIds(
-  input: BuildWritingWorkspaceToolsInput
-): ShortWorkspaceStageId[] {
-  const { profile } = input;
-  if (profile.id === "character_design") return ["character_design"];
-  if (profile.id === "plot_design") {
-    return storylineStageIds(input);
-  }
-  return ["draft"];
 }
 
 export function orderedExpertSections(

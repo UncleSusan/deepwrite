@@ -26,6 +26,7 @@ import { buildDeleteTool } from "./tool-delete";
 import { buildLedgerCommitTool } from "./ledger-tools";
 import { buildAskUserQuestionTool } from "./tool-ask-user-question";
 import type { AgentUserInputRequester } from "../runtime-types";
+import type { LongWorkspaceToolSharedState } from "./proposal-overlay";
 
 export type LongQueryCommandEnvelope = Extract<
   LongWorkspaceCommandEnvelope,
@@ -99,11 +100,13 @@ export interface BuildLongWorkspaceToolsInput {
   sessionId: string;
   runId: string;
   writeApprovalMode?: AgentWriteApprovalMode;
+  autoApproveCrossStageOperations?: boolean;
   attachedSkills?: WorkspaceRuntimeContext["attachedSkills"];
   attachedMaterials?: WorkspaceRuntimeContext["attachedMaterials"];
   executor?: LongCommandExecutor;
   requestUserInput?: AgentUserInputRequester;
   includeAskUserQuestion?: boolean;
+  sharedState?: LongWorkspaceToolSharedState;
 }
 
 /**
@@ -134,6 +137,8 @@ export function buildLongWorkspaceTools(
 }
 
 export { isLongAgentToolDetails } from "./tool-details";
+export { createLongWorkspaceToolSharedState } from "./proposal-overlay";
+export type { LongWorkspaceToolSharedState } from "./proposal-overlay";
 export type {
   LongReadDocumentResult,
   LongSearchResult

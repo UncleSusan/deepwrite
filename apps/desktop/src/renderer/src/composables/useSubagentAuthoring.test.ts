@@ -13,8 +13,8 @@ const runtime = {
 };
 
 const context: SubagentAuthoringRuntimeContext = {
-  parentAgentId: "plot_design",
-  parentAgentLabel: "剧情设计师",
+  parentAgentId: "script",
+  parentAgentLabel: "剧本智能体",
   outputMode: "handoff",
   skills: [
     {

@@ -1,5 +1,6 @@
 @import "./styles/agent-activity.css";
 @import "./styles/conversation-turn-navigator.css";
+@import "./styles/context-window-indicator.css";
 
 :root {
   color: var(--text-primary, #202226);
@@ -2206,6 +2207,13 @@ html[data-platform="darwin"] .conversation-header {
   color: var(--text-tertiary, #8b8f94);
 }
 
+.subagent-run-assigned-task > p {
+  max-height: 220px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 1220px) {
   .subagent-run-card > summary {
     grid-template-columns: auto minmax(0, 1fr) auto;
@@ -2394,6 +2402,14 @@ html[data-platform="darwin"] .conversation-header {
 .approval-target-button:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent, #5b82b8) 65%, transparent);
   outline-offset: 2px;
+}
+
+.approval-discard-button:disabled {
+  border-color: var(--theme-line-soft, #e6e6e4);
+  background: transparent;
+  color: var(--text-tertiary, #8b8f94);
+  cursor: wait;
+  opacity: 0.68;
 }
 
 .edit-proposal-stats {
@@ -3717,8 +3733,7 @@ html[data-platform="darwin"] .editor-header {
   background: var(--theme-line);
 }
 
-.toolbar-spacer,
-.footer-spacer {
+.toolbar-spacer {
   flex: 1;
 }
 
@@ -4026,6 +4041,8 @@ html[data-theme="dark"] .document-editor:focus-visible {
 .editor-footer {
   display: flex;
   align-items: center;
+  min-width: 0;
+  overflow: hidden;
   gap: 10px;
   padding: 0 13px;
   border-top: 1px solid var(--line-soft);
@@ -4034,15 +4051,33 @@ html[data-theme="dark"] .document-editor:focus-visible {
   font-size: 0.678571rem;
 }
 
-.editor-footer > span {
+.editor-footer-meta {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  gap: 10px;
+}
+
+.editor-footer-meta > span {
   white-space: nowrap;
+}
+
+.editor-footer-meta > span:first-child {
+  flex: 0 0 auto;
 }
 
 .editor-footer .library-entry-limit-hint,
 .editor-footer .editor-save-status {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.editor-footer .library-entry-limit-hint {
+  flex-shrink: 2;
 }
 
 .editor-footer .limit-warning {
@@ -4051,6 +4086,7 @@ html[data-theme="dark"] .document-editor:focus-visible {
 
 .save-button {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 5px;
   height: 26px;
@@ -5196,11 +5232,12 @@ html[data-theme="dark"] .document-editor:focus-visible {
 }
 
 .model-config-card {
-  grid-template-columns: 34px minmax(0, 1fr) minmax(235px, auto);
+  grid-template-columns: 34px minmax(0, 1fr) minmax(320px, auto);
 }
 
 .model-card-actions {
   display: flex !important;
+  flex-wrap: wrap;
   grid-auto-flow: column;
   align-items: center;
   justify-content: end;
@@ -5383,6 +5420,10 @@ html[data-theme="dark"] .document-editor:focus-visible {
 
 .model-fetch-hint-dialog .dialog-actions {
   padding: 16px 18px 18px;
+}
+
+.model-advanced-config-dialog {
+  width: min(460px, calc(100vw - 48px));
 }
 
 .model-managed-note {
@@ -5726,6 +5767,7 @@ html[data-theme]
     .model-config-card,
     .model-editor,
     .model-fetch-hint-dialog,
+    .model-advanced-config-dialog,
     .model-thinking-options label,
     .book-resource-name-field input,
     .book-binding-option,

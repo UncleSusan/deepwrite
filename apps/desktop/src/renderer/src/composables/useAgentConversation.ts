@@ -40,12 +40,26 @@ import type {
   AgentTextDiffLine,
   AgentToolTrace,
   ChatMessage,
-  ConversationHistoryItem
+  ConversationHistoryItem,
+  ConversationMessageRewriteRequest
 } from "../types/conversation";
 import type { WorkspaceDocument } from "../types/workspace";
 import { normalizeChatAssistantRequestContext } from "./agent-conversation/chat-assistant-request";
 import { buildConversationHistory } from "./agent-conversation/history";
+import {
+  conversationMessageRewriteIsCurrent,
+  prepareConversationMessageRewrite
+} from "./agent-conversation/history-rewrite";
+import {
+  finalizeUnfinishedMessageTools,
+  preserveLiveEditProposals
+} from "./agent-conversation/attempt-state";
 import { createAgentUserInputController } from "./agent-conversation/user-input";
+import { loadWritingContextForPrompt } from "./agent-conversation/writing-context";
+import {
+  parseStoredDiscardSnapshot,
+  parseStoredDiscardState
+} from "../utils/acceptedEditDiscardPersistence";
 
 export interface ConversationStorage {
   getItem(key: string): string | null;
@@ -55,6 +69,7 @@ export interface ConversationStorage {
 
 export interface UseAgentConversationOptions {
   api: () => DeepWriteApi | undefined;
+  autoApproveCrossStageOperations?: () => boolean;
   initialMessages?: ChatMessage[];
   idleTimeoutMs?: number;
   initialPersistenceSnapshot?: unknown;
@@ -73,6 +88,7 @@ export interface UseAgentConversationOptions {
   /** @deprecated Persistence is now coordinated through structured snapshots. */
   storage?: ConversationStorage;
   onPersistenceError?: () => void;
+  onContextWarning?: (message: string) => void;
 }
 
 export interface AgentRunSettings {
@@ -160,6 +176,7 @@ export interface AgentConversationController {
   hasPendingEditReview: Readonly<Ref<boolean>>;
   canSend: Readonly<Ref<boolean>>;
   canSendAttachments: Readonly<Ref<boolean>>;
+  canRewriteHistory: Readonly<Ref<boolean>>;
   canStop: Readonly<Ref<boolean>>;
   acceptsRunEvent(sessionId: string, runId: string): boolean;
   approvalModeForRun(
@@ -189,6 +206,12 @@ export interface AgentConversationController {
     attachments?: WorkspaceContextAttachments,
     promptAttachments?: UserPromptAttachment[]
   ): Promise<void>;
+  resendMessage(
+    request: ConversationMessageRewriteRequest,
+    activeDocument: WorkspaceDocument,
+    workspaceDocuments?: WorkspaceDocument[],
+    attachments?: WorkspaceContextAttachments
+  ): Promise<boolean>;
   sendAssistantMessage(context?: ChatAssistantRequestContext): Promise<void>;
   sendLongMessage(
     context: LongWorkspaceRuntimeContext,
@@ -198,6 +221,14 @@ export interface AgentConversationController {
     >,
     promptAttachments?: UserPromptAttachment[]
   ): Promise<void>;
+  resendLongMessage(
+    request: ConversationMessageRewriteRequest,
+    context: LongWorkspaceRuntimeContext,
+    attachments?: Pick<
+      WorkspaceRuntimeContext,
+      "attachedSkills" | "attachedMaterials"
+    >
+  ): Promise<boolean>;
   stopGeneration(): Promise<boolean>;
   cancelPendingGeneration(): boolean;
   newConversation(): void;
@@ -272,10 +303,14 @@ function parseStoredLibraryTarget(
 ): AgentEditProposal["libraryTarget"] | undefined {
   if (
     !isRecord(value) ||
-    (value.operation !== "create" && value.operation !== "edit") ||
+    (value.operation !== "create" &&
+      value.operation !== "edit" &&
+      value.operation !== "edit-overview") ||
     (value.domain !== "material" && value.domain !== "skill") ||
     typeof value.libraryId !== "string" ||
-    typeof value.stageId !== "string" ||
+    (value.operation === "edit-overview"
+      ? value.stageId !== undefined
+      : typeof value.stageId !== "string") ||
     (value.baseProjectRevision !== undefined &&
       !nonnegativeInteger(value.baseProjectRevision)) ||
     (value.entryId !== undefined && typeof value.entryId !== "string") ||
@@ -287,7 +322,9 @@ function parseStoredLibraryTarget(
     operation: value.operation,
     domain: value.domain,
     libraryId: value.libraryId,
-    stageId: value.stageId,
+    ...(value.operation === "edit-overview"
+      ? {}
+      : { stageId: value.stageId as string }),
     ...(value.baseProjectRevision === undefined
       ? {}
       : { baseProjectRevision: value.baseProjectRevision }),
@@ -445,12 +482,18 @@ function parseStoredDraftSectionCreationTarget(
     wordCountRequirement: string;
     provisionalSectionId: string;
     realSectionId?: string;
+    bodyContent?: string;
+    characterStateContent?: string;
   }> = [];
   for (const [index, section] of value.sections.entries()) {
     if (
       !isRecord(section) ||
       typeof section.title !== "string" ||
       typeof section.wordCountRequirement !== "string" ||
+      (section.bodyContent !== undefined &&
+        typeof section.bodyContent !== "string") ||
+      (section.characterStateContent !== undefined &&
+        typeof section.characterStateContent !== "string") ||
       (section.realSectionId !== undefined &&
         typeof section.realSectionId !== "string")
     ) {
@@ -466,6 +509,12 @@ function parseStoredDraftSectionCreationTarget(
           : `pending:section:legacy-${index + 1}`,
       ...(typeof section.realSectionId === "string"
         ? { realSectionId: section.realSectionId }
+        : {}),
+      ...(typeof section.bodyContent === "string"
+        ? { bodyContent: section.bodyContent }
+        : {}),
+      ...(typeof section.characterStateContent === "string"
+        ? { characterStateContent: section.characterStateContent }
         : {})
     });
   }
@@ -565,17 +614,77 @@ function parseStoredCharacterStructureTarget(
   const mutation = CharacterStructureMutationSchema.safeParse(value.mutation);
   if (!mutation.success) return undefined;
   if (
-    value.baseProjectRevision !== undefined &&
-    !nonnegativeInteger(value.baseProjectRevision)
+    (value.initialContent !== undefined &&
+      typeof value.initialContent !== "string") ||
+    (value.baseProjectRevision !== undefined &&
+      !nonnegativeInteger(value.baseProjectRevision))
   ) {
     return undefined;
   }
   return {
     mutation: mutation.data,
+    ...(typeof value.initialContent === "string"
+      ? { initialContent: value.initialContent }
+      : {}),
     ...(value.baseProjectRevision === undefined
       ? {}
       : { baseProjectRevision: value.baseProjectRevision })
   };
+}
+
+function parseStoredPlotStructureTarget(
+  value: unknown
+): AgentEditProposal["plotStructureTarget"] | undefined {
+  if (!isRecord(value) || !isRecord(value.mutation)) return undefined;
+  const mutation = value.mutation;
+  const baseProjectRevision = value.baseProjectRevision;
+  if (
+    baseProjectRevision !== undefined &&
+    !nonnegativeInteger(baseProjectRevision)
+  ) {
+    return undefined;
+  }
+  if (
+    mutation.type === "create" &&
+    typeof mutation.title === "string" &&
+    typeof mutation.description === "string" &&
+    typeof mutation.provisionalStageId === "string" &&
+    typeof mutation.content === "string"
+  ) {
+    return {
+      mutation: {
+        type: "create",
+        title: mutation.title,
+        description: mutation.description,
+        provisionalStageId: mutation.provisionalStageId,
+        content: mutation.content
+      },
+      ...(typeof baseProjectRevision === "number"
+        ? { baseProjectRevision }
+        : {})
+    };
+  }
+  if (
+    mutation.type === "update" &&
+    typeof mutation.stageId === "string" &&
+    typeof mutation.previousTitle === "string" &&
+    typeof mutation.title === "string" &&
+    typeof mutation.description === "string"
+  ) {
+    return {
+      mutation: {
+        type: "update",
+        stageId: mutation.stageId,
+        previousTitle: mutation.previousTitle,
+        title: mutation.title,
+        description: mutation.description
+      },
+      ...(typeof baseProjectRevision === "number"
+        ? { baseProjectRevision }
+        : {})
+    };
+  }
+  return undefined;
 }
 
 function parseStoredLongWorldbuildingTarget(
@@ -822,10 +931,24 @@ function parseStoredEditProposal(
   ) {
     return undefined;
   }
+  const plotStructureTarget = parseStoredPlotStructureTarget(
+    value.plotStructureTarget
+  );
+  if (value.plotStructureTarget !== undefined && !plotStructureTarget) {
+    return undefined;
+  }
   const hunks = value.hunks
     .map(parseStoredTextDiffHunk)
     .filter((hunk): hunk is AgentTextDiffHunk => hunk !== undefined);
   if (hunks.length !== value.hunks.length) return undefined;
+  const discardSnapshot = parseStoredDiscardSnapshot(value.discardSnapshot);
+  const discardState = parseStoredDiscardState(value.discardState);
+  if (
+    (value.discardSnapshot !== undefined && !discardSnapshot) ||
+    (value.discardState !== undefined && !discardState)
+  ) {
+    return undefined;
+  }
   return {
     id: value.id,
     ...(value.laneId === undefined ? {} : { laneId: value.laneId }),
@@ -869,6 +992,8 @@ function parseStoredEditProposal(
       : { statusMessage: value.statusMessage }),
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
+    ...(discardSnapshot ? { discardSnapshot } : {}),
+    ...(discardState ? { discardState } : {}),
     ...(libraryTarget ? { libraryTarget } : {}),
     ...(longWorldbuildingTarget ? { longWorldbuildingTarget } : {}),
     ...(longCharacterTarget ? { longCharacterTarget } : {}),
@@ -878,6 +1003,7 @@ function parseStoredEditProposal(
     ...(draftSectionRenameTarget ? { draftSectionRenameTarget } : {}),
     ...(draftSectionDeletionTarget ? { draftSectionDeletionTarget } : {}),
     ...(characterStructureTarget ? { characterStructureTarget } : {}),
+    ...(plotStructureTarget ? { plotStructureTarget } : {}),
     ...(value.provisionalExpertSection
       ? { provisionalExpertSection: true }
       : {}),
@@ -894,14 +1020,17 @@ function parseStoredRuntime(value: unknown): AgentRuntimeRef | undefined {
     !value.provider ||
     typeof value.model !== "string" ||
     !value.model ||
-    (value.mode !== "local-faux" && value.mode !== "provider")
+    (value.mode !== "local-faux" && value.mode !== "provider") ||
+    (value.configId !== undefined &&
+      (typeof value.configId !== "string" || !value.configId.trim()))
   ) {
     return undefined;
   }
   return {
     provider: value.provider,
     model: value.model,
-    mode: value.mode
+    mode: value.mode,
+    ...(typeof value.configId === "string" ? { configId: value.configId } : {})
   };
 }
 
@@ -1099,6 +1228,10 @@ function parseStoredMessage(value: unknown): ChatMessage | undefined {
     createdAt: value.createdAt,
     ...(status ? { status: status === "streaming" ? "stopped" : status } : {})
   };
+  const runtime = parseStoredRuntime(value.runtime);
+  const usage = parseStoredUsage(value.usage);
+  if (runtime) message.runtime = runtime;
+  if (usage) message.usage = usage;
 
   if (Array.isArray(value.attachments)) {
     message.attachments = value.attachments.flatMap((attachment) => {
@@ -1504,6 +1637,7 @@ export function useAgentConversation(
   const observedRunByAttempt = new Map<number, string>();
   const approvalModeByAttempt = new Map<number, AgentApprovalMode>();
   const approvalModeByRun = new Map<string, AgentApprovalMode>();
+  const sessionsRequiringHistoryReplacement = new Set<string>();
   let epoch = 0;
   let attemptSequence = 0;
   const pendingAttemptId = ref<number | null>(null);
@@ -1555,6 +1689,9 @@ export function useAgentConversation(
       draft.value.trim().length > 0
   );
   const canSendAttachments = computed(
+    () => Boolean(options.api()) && !isBusy.value && !hasPendingEditReview.value
+  );
+  const canRewriteHistory = computed(
     () => Boolean(options.api()) && !isBusy.value && !hasPendingEditReview.value
   );
   const canStop = computed(
@@ -1867,6 +2004,7 @@ export function useAgentConversation(
     message.errorMessage = messageText;
     const completedAt = new Date().toISOString();
     finalizeRunningSubagents(message, "error", completedAt, messageText);
+    finalizeUnfinishedMessageTools(message, completedAt, messageText);
     if (message.processingStartedAt) {
       message.processingCompletedAt = completedAt;
     }
@@ -1906,6 +2044,11 @@ export function useAgentConversation(
       "stopped",
       completedAt,
       "父智能体运行已停止，子任务同步停止。"
+    );
+    finalizeUnfinishedMessageTools(
+      message,
+      completedAt,
+      "智能体运行已停止，工具调用未返回完整终态。"
     );
     if (message.processingStartedAt) {
       message.processingCompletedAt = completedAt;
@@ -2104,6 +2247,7 @@ export function useAgentConversation(
           status: "streaming" as const,
           runtime: { ...eventRuntime }
         };
+    preserveLiveEditProposals(current, restored);
     restored.status = "streaming";
     restored.runtime = { ...eventRuntime };
     restored.retry = retry;
@@ -3434,6 +3578,11 @@ export function useAgentConversation(
         event.timestamp,
         "父智能体运行已完成，但子任务未返回完整终态。"
       );
+      finalizeUnfinishedMessageTools(
+        message,
+        event.timestamp,
+        "智能体运行已完成，但工具调用未返回完整终态。"
+      );
       message.status = "completed";
       message.activityOnly = false;
       if (message.processingStartedAt) {
@@ -3470,19 +3619,29 @@ export function useAgentConversation(
     promptAttachments: UserPromptAttachment[] = [],
     contextOverride?: WorkspaceRuntimeContext,
     mode: "workspace" | "chat-assistant" = "workspace",
-    chatAssistant?: ChatAssistantRequestContext
+    chatAssistant?: ChatAssistantRequestContext,
+    rewriteRequest?: ConversationMessageRewriteRequest
   ): Promise<void> {
     const api = options.api();
+    const preparedRewrite = rewriteRequest
+      ? prepareConversationMessageRewrite(messages.value, rewriteRequest)
+      : undefined;
+    if (rewriteRequest && !preparedRewrite) {
+      return;
+    }
     // Vue refs wrap objects in proxies, which Electron IPC cannot structured-clone.
     // Normalize at the API boundary so callers cannot accidentally leak proxies.
-    const requestAttachments = promptAttachments.map((attachment) => ({
-      ...attachment
-    }));
+    const requestAttachments = preparedRewrite
+      ? []
+      : promptAttachments.map((attachment) => ({
+          ...attachment
+        }));
     const requestChatAssistant =
       normalizeChatAssistantRequestContext(chatAssistant);
     const content =
-      draft.value.trim() ||
-      (requestAttachments.length ? "请阅读并分析我上传的附件。" : "");
+      preparedRewrite?.content ??
+      (draft.value.trim() ||
+        (requestAttachments.length ? "请阅读并分析我上传的附件。" : ""));
     if (!api) {
       conversationError.value =
         "浏览器预览没有桌面 Agent Runtime，请使用 pnpm dev 启动客户端。";
@@ -3492,10 +3651,20 @@ export function useAgentConversation(
       return;
     }
 
-    const conversationHistory = buildConversationHistory(messages.value);
+    if (preparedRewrite) {
+      resetTransientConversationState();
+    }
+    const conversationHistory = buildConversationHistory(
+      preparedRewrite
+        ? messages.value.slice(0, preparedRewrite.targetIndex)
+        : messages.value
+    );
 
     const sendEpoch = epoch;
     const sendSessionId = sessionId.value;
+    const replaceConversationHistory = Boolean(
+      preparedRewrite || sessionsRequiringHistoryReplacement.has(sendSessionId)
+    );
     const attemptId = ++attemptSequence;
     const originalLength = activeDocument?.content.length ?? 0;
     const snapshotContent =
@@ -3713,11 +3882,19 @@ export function useAgentConversation(
             wordCountRequirement: section.wordCountRequirement
           }))
         );
+        const agentsMd = await loadWritingContextForPrompt(
+          api.catalog,
+          activeDocument.workspaceId,
+          workspaceType,
+          options.onContextWarning
+        );
+        if (epoch !== sendEpoch || sessionId.value !== sendSessionId) return;
         const creativeWorkspace = {
           id: activeDocument.workspaceId,
           title: activeDocument.workspaceTitle,
           categories: [...(activeDocument.workspaceCategories ?? [])],
           activeStageId: activeDocument.stageId,
+          ...(agentsMd === undefined ? {} : { agentsMd }),
           plotStages,
           characterStructure,
           ...(activeDocument.shortAgentId
@@ -3744,7 +3921,13 @@ export function useAgentConversation(
       }
     }
 
-    messages.value.push({
+    if (
+      preparedRewrite &&
+      !conversationMessageRewriteIsCurrent(messages.value, preparedRewrite)
+    ) {
+      return;
+    }
+    const userMessage: ChatMessage = {
       id: id("user"),
       role: "user",
       content,
@@ -3764,8 +3947,17 @@ export function useAgentConversation(
           }
         : {}),
       status: "completed"
-    });
-    draft.value = "";
+    };
+    if (preparedRewrite) {
+      runPersistenceBatch(() => {
+        messages.value.splice(preparedRewrite.targetIndex);
+        messages.value.push(userMessage);
+      });
+      sessionsRequiringHistoryReplacement.add(sendSessionId);
+    } else {
+      messages.value.push(userMessage);
+      draft.value = "";
+    }
     conversationError.value = null;
     pendingAttemptId.value = attemptId;
     approvalModeByAttempt.set(attemptId, approvalMode.value);
@@ -3784,6 +3976,9 @@ export function useAgentConversation(
         sessionId: sendSessionId,
         message: content,
         ...(conversationHistory.length ? { conversationHistory } : {}),
+        ...(replaceConversationHistory
+          ? { conversationHistoryMode: "replace" as const }
+          : {}),
         ...(mode === "chat-assistant"
           ? {
               mode,
@@ -3797,7 +3992,11 @@ export function useAgentConversation(
           : {}),
         ...(mode === "chat-assistant"
           ? {}
-          : { writeApprovalMode: approvalModeByAttempt.get(attemptId) }),
+          : {
+              writeApprovalMode: approvalModeByAttempt.get(attemptId),
+              autoApproveCrossStageOperations:
+                options.autoApproveCrossStageOperations?.() === true
+            }),
         ...(selectedModelId.value ? { modelId: selectedModelId.value } : {}),
         ...(thinkingLevel.value === "off"
           ? {
@@ -3807,6 +4006,9 @@ export function useAgentConversation(
           : { thinkingLevel: thinkingLevel.value }),
         ...(contextSnapshot ? { workspaceContext: contextSnapshot } : {})
       });
+      if (replaceConversationHistory && accepted.sessionId === sendSessionId) {
+        sessionsRequiringHistoryReplacement.delete(sendSessionId);
+      }
       if (
         epoch !== sendEpoch ||
         sessionId.value !== sendSessionId ||
@@ -3904,6 +4106,29 @@ export function useAgentConversation(
     await sendMessage(null, [], {}, [], undefined, "chat-assistant", context);
   }
 
+  async function resendMessage(
+    request: ConversationMessageRewriteRequest,
+    activeDocument: WorkspaceDocument,
+    workspaceDocuments: WorkspaceDocument[] = [],
+    attachments: WorkspaceContextAttachments = {}
+  ): Promise<boolean> {
+    const sourceSessionId = sessionId.value;
+    await sendMessage(
+      activeDocument,
+      workspaceDocuments,
+      attachments,
+      [],
+      undefined,
+      "workspace",
+      undefined,
+      request
+    );
+    return (
+      sessionId.value === sourceSessionId &&
+      !messages.value.some((message) => message.id === request.messageId)
+    );
+  }
+
   async function sendLongMessage(
     context: LongWorkspaceRuntimeContext,
     attachments: Pick<
@@ -3927,6 +4152,40 @@ export function useAgentConversation(
       attachments,
       promptAttachments,
       { longWorkspace }
+    );
+  }
+
+  async function resendLongMessage(
+    request: ConversationMessageRewriteRequest,
+    context: LongWorkspaceRuntimeContext,
+    attachments: Pick<
+      WorkspaceRuntimeContext,
+      "attachedSkills" | "attachedMaterials"
+    > = {}
+  ): Promise<boolean> {
+    const longWorkspace = LongWorkspaceRuntimeContextSchema.parse(context);
+    const sourceSessionId = sessionId.value;
+    await sendMessage(
+      {
+        id: longWorkspace.bookId,
+        domain: "creation",
+        title: longWorkspace.title,
+        eyebrow: "长篇创作",
+        path: [longWorkspace.title],
+        content: "",
+        readOnly: true
+      },
+      [],
+      attachments,
+      [],
+      { longWorkspace },
+      "workspace",
+      undefined,
+      request
+    );
+    return (
+      sessionId.value === sourceSessionId &&
+      !messages.value.some((message) => message.id === request.messageId)
     );
   }
 
@@ -4005,6 +4264,11 @@ export function useAgentConversation(
         "stopped",
         completedAt,
         "会话已切换或关闭，子任务同步停止。"
+      );
+      finalizeUnfinishedMessageTools(
+        message,
+        completedAt,
+        "会话已切换或关闭，工具调用未返回完整终态。"
       );
       for (const run of message.subagentRuns ?? []) {
         if (run.retry) delete run.retry;
@@ -4191,6 +4455,7 @@ export function useAgentConversation(
     hasPendingEditReview,
     canSend,
     canSendAttachments,
+    canRewriteHistory,
     canStop,
     acceptsRunEvent,
     approvalModeForRun,
@@ -4202,8 +4467,10 @@ export function useAgentConversation(
     handleEvent,
     submitUserInput: userInput.submit,
     sendMessage,
+    resendMessage,
     sendAssistantMessage,
     sendLongMessage,
+    resendLongMessage,
     stopGeneration,
     cancelPendingGeneration,
     newConversation,
@@ -4241,6 +4508,7 @@ export function useAgentConversation(
       activeRunId.value = null;
       approvalModeByAttempt.clear();
       approvalModeByRun.clear();
+      sessionsRequiringHistoryReplacement.clear();
       turnCheckpointByRun.clear();
       subagentTurnCheckpointByRun.clear();
       seenTurnIds.clear();

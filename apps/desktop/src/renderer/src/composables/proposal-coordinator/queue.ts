@@ -1,193 +1,45 @@
-import { createShortWorkspaceContentRevision } from "@deepwrite/contracts";
 import type { AgentEditProposal } from "../../types/conversation";
 import {
   beginAgentEditProposalCommit,
   createAgentEditProposalRevisionLane,
   stageAgentEditProposalRevision
 } from "../../utils/agentEditProposalRevisionLane";
-import {
-  expectedMutationDurableRevision,
-  latestAgentEditProposalInLane
-} from "../../utils/agentEditReview";
-import type { DraftSectionCreationRevisionCursor } from "../../utils/draftSectionCreationRevision";
 import { createKeyedSerialTaskQueue } from "../../utils/keyedSerialTaskQueue";
 import type { AgentConversationController } from "../useAgentConversation";
-import type { ProposalLaneContext, QueuedAgentEdit } from "./types";
+import type { QueuedAgentEdit } from "./types";
 
-export function createProposalQueue(ctx: ProposalLaneContext) {
-  const { uiMessage, catalogBook } = ctx;
+interface ProposalQueueOptions {
+  apply(queued: QueuedAgentEdit): Promise<void>;
+  priority(
+    conversation: AgentConversationController,
+    runId: string,
+    proposalId: string
+  ): number;
+  reportUnexpectedError(error: unknown): void;
+}
 
-  const applyAgentEdit: ProposalLaneContext["applyAgentEdit"] = (...args) =>
-    ctx.applyAgentEdit(...args);
+function queueKey(sessionId: string, runId: string, proposalId: string) {
+  return `${sessionId}\u0000${runId}\u0000${proposalId}`;
+}
 
+function unexpectedQueueErrorMessage(error: unknown): string {
+  const detail = error instanceof Error ? error.message : "未知错误";
+  return `审批保存队列执行异常：${detail}。本项已暂停，可重试；后续独立任务将继续。`;
+}
+
+export function createProposalQueue(options: ProposalQueueOptions) {
   const queuedAgentEdits = new Map<string, QueuedAgentEdit>();
+  const deferredAgentEditKeys = new Set<string>();
   const agentEditCommitQueue = createKeyedSerialTaskQueue<string>();
-  const activeCoordinatorInvocations = new Set<Promise<void>>();
+  const activeInvocations = new Set<Promise<void>>();
   const activeAgentEditCommitTasks = new Set<Promise<void>>();
-  const acceptedDraftSectionCreationRevisions = new Map<
-    string,
-    DraftSectionCreationRevisionCursor
-  >();
-  let coordinatorDisposed = false;
-  let coordinatorDisposePromise: Promise<void> | undefined;
-  let agentEditDecisionSequence = 0;
+  let disposed = false;
+  let disposePromise: Promise<void> | undefined;
+  let decisionSequence = 0;
 
-  ctx.queuedAgentEdits = queuedAgentEdits;
-  ctx.agentEditCommitQueue = agentEditCommitQueue;
-  ctx.activeCoordinatorInvocations = activeCoordinatorInvocations;
-  ctx.activeAgentEditCommitTasks = activeAgentEditCommitTasks;
-  ctx.acceptedDraftSectionCreationRevisions =
-    acceptedDraftSectionCreationRevisions;
-
-  function isDisposed(): boolean {
-    return coordinatorDisposed;
-  }
-
-  function autoApproveEditPriority(
-    conversation: AgentConversationController,
-    runId: string,
-    proposalId: string
-  ): number {
-    const proposal = conversation.getEditProposal(runId, proposalId);
-    if (!proposal) return 2;
-    if (proposal.draftSectionCreationTarget) return 0;
-    if (proposal.characterStructureTarget?.mutation.type === "createItem")
-      return 0;
-    if (proposal.longWorldbuildingTarget?.file.operation === "create") return 0;
-    if (
-      proposal.longCharacterTarget?.files.every(
-        ({ operation }) => operation === "create"
-      )
-    )
-      return 0;
-    if (proposal.longWorldbuildingTarget?.file.beforeRevision !== null) {
-      return proposal.predecessorProposalId ? 1 : 2;
-    }
-    if (
-      proposal.longCharacterTarget &&
-      proposal.longCharacterTarget.files.some(
-        ({ beforeRevision }) => beforeRevision !== null
-      )
-    ) {
-      return proposal.predecessorProposalId ? 1 : 2;
-    }
-    if (proposal.longPlotDesignTarget) {
-      return 2;
-    }
-    if (proposal.longDraftTarget) {
-      return proposal.predecessorProposalId ? 1 : 2;
-    }
-    if (proposal.provisionalExpertSection) return 1;
-    if (proposal.provisionalCharacterItemId) return 1;
-    return 2;
-  }
-
-  function agentEditQueueKey(
-    sessionId: string,
-    runId: string,
-    proposalId: string
-  ): string {
-    return `${sessionId}\u0000${runId}\u0000${proposalId}`;
-  }
-
-  function nextAgentEditDecisionToken(proposal: AgentEditProposal): string {
-    agentEditDecisionSequence += 1;
-    return `${proposal.runId}:${proposal.id}:${proposal.generation ?? 1}:${agentEditDecisionSequence}`;
-  }
-
-  function latestProposalForLane(
-    conversation: AgentConversationController,
-    runId: string,
-    laneId: string
-  ): AgentEditProposal | undefined {
-    return latestAgentEditProposalInLane(
-      conversation.listEditProposals(runId),
-      laneId
-    );
-  }
-
-  function expectedLaneDurableRevision(
-    conversation: AgentConversationController,
-    runId: string,
-    existing: AgentEditProposal | undefined,
-    currentText: string
-  ): string {
-    let cursor = existing;
-    const seen = new Set<string>();
-    while (
-      cursor?.predecessorProposalId &&
-      cursor.status !== "accepted" &&
-      !seen.has(cursor.id)
-    ) {
-      seen.add(cursor.id);
-      const predecessor = conversation.getEditProposal(
-        runId,
-        cursor.predecessorProposalId
-      );
-      if (!predecessor || predecessor.status === "accepted") break;
-      cursor = predecessor;
-    }
-    return expectedMutationDurableRevision(cursor, currentText);
-  }
-
-  function laneDurableRevisionMatches(
-    conversation: AgentConversationController,
-    runId: string,
-    existing: AgentEditProposal | undefined,
-    currentText: string,
-    currentRevision: string
-  ): boolean {
-    if (!existing) {
-      return (
-        currentRevision === createShortWorkspaceContentRevision(currentText)
-      );
-    }
-    const compatible = new Set<string>();
-    let cursor: AgentEditProposal | undefined = existing;
-    const seen = new Set<string>();
-    while (cursor && !seen.has(cursor.id)) {
-      seen.add(cursor.id);
-      compatible.add(cursor.baseRevision);
-      if (cursor.status === "accepting" || cursor.status === "accepted") {
-        compatible.add(cursor.proposedRevision);
-      }
-      cursor = cursor.predecessorProposalId
-        ? conversation.getEditProposal(runId, cursor.predecessorProposalId)
-        : undefined;
-    }
-    compatible.add(
-      expectedLaneDurableRevision(conversation, runId, existing, currentText)
-    );
-    return compatible.has(currentRevision);
-  }
-
-  function blockedAgentEditLaneMessage(
-    proposal: AgentEditProposal | undefined
-  ): string | undefined {
-    if (proposal?.status === "rejected") {
-      return "此前版本已被拒绝；为避免把被拒内容随后续全文重新带回，本次变更已阻断。";
-    }
-    if (proposal?.status === "conflict") {
-      return "此前版本存在冲突，本次后续变更已阻断，未覆盖当前文稿。";
-    }
-    return undefined;
-  }
-
-  function isShortOrScriptAgentEdit(proposal: AgentEditProposal): boolean {
-    if (proposal.libraryTarget) return false;
-    const book = catalogBook(proposal.workspaceId);
-    return book?.bookType === "short" || book?.bookType === "script";
-  }
-
-  function canReviewAgentEditDuringRun(proposal: AgentEditProposal): boolean {
-    return (
-      Boolean(proposal.libraryTarget) ||
-      Boolean(proposal.longWorldbuildingTarget) ||
-      Boolean(proposal.longCharacterTarget) ||
-      Boolean(proposal.longPlotDesignTarget) ||
-      Boolean(proposal.longDraftTarget) ||
-      isShortOrScriptAgentEdit(proposal)
-    );
+  function deleteQueuedEdit(key: string): void {
+    queuedAgentEdits.delete(key);
+    deferredAgentEditKeys.delete(key);
   }
 
   function removeQueuedAgentEdit(
@@ -201,33 +53,38 @@ export function createProposalQueue(ctx: ProposalLaneContext) {
         queued.runId === runId &&
         queued.proposalId === proposalId
       ) {
-        queuedAgentEdits.delete(key);
+        deleteQueuedEdit(key);
       }
     }
   }
 
-  function blockLaterAgentEditGenerations(
-    conversation: AgentConversationController,
-    rejected: AgentEditProposal
+  function scheduleQueuedAgentEdits(
+    matches: (queued: QueuedAgentEdit) => boolean
   ): void {
-    const laneId = rejected.laneId ?? rejected.id;
-    const generation = rejected.generation ?? 1;
-    for (const candidate of conversation.listEditProposals(rejected.runId)) {
-      if (
-        candidate.id === rejected.id ||
-        (candidate.laneId ?? candidate.id) !== laneId ||
-        (candidate.generation ?? 1) <= generation ||
-        (candidate.status !== "pending" && candidate.status !== "error")
-      ) {
-        continue;
-      }
-      removeQueuedAgentEdit(conversation, candidate.runId, candidate.id);
-      conversation.updateEditProposal(candidate.runId, candidate.id, {
-        status: "conflict",
-        proposedText: undefined,
-        statusMessage:
-          "此前正文版本已被拒绝；该版本继承了被拒内容，因此未写入本地文件。"
-      });
+    if (disposed) return;
+    const matchingEntries = [...queuedAgentEdits.entries()].filter(
+      ([, queued]) => matches(queued)
+    );
+    const workspaceIds = new Set<string>();
+    for (const [key, queued] of matchingEntries) {
+      deferredAgentEditKeys.delete(key);
+      workspaceIds.add(queued.workspaceId);
+    }
+    for (const workspaceId of workspaceIds) {
+      const task = agentEditCommitQueue
+        .enqueue(workspaceId, () => drainWorkspace(workspaceId))
+        .catch((error: unknown) => {
+          options.reportUnexpectedError(error);
+        });
+      activeAgentEditCommitTasks.add(task);
+      void task.then(
+        () => {
+          activeAgentEditCommitTasks.delete(task);
+        },
+        () => {
+          activeAgentEditCommitTasks.delete(task);
+        }
+      );
     }
   }
 
@@ -239,6 +96,7 @@ export function createProposalQueue(ctx: ProposalLaneContext) {
     automatic: boolean,
     scheduleImmediately: boolean
   ): void {
+    if (disposed) return;
     const proposal = conversation.getEditProposal(runId, proposalId);
     if (
       !proposal ||
@@ -247,19 +105,17 @@ export function createProposalQueue(ctx: ProposalLaneContext) {
       return;
     }
 
-    const key = agentEditQueueKey(sessionId, runId, proposalId);
-    const existingQueued = queuedAgentEdits.get(key);
-    if (
-      existingQueued?.expectedProposedRevision === proposal.proposedRevision
-    ) {
+    const key = queueKey(sessionId, runId, proposalId);
+    const existing = queuedAgentEdits.get(key);
+    if (existing?.expectedProposedRevision === proposal.proposedRevision) {
       if (scheduleImmediately) {
-        scheduleQueuedAgentEdits(
-          (queued) => queued === queuedAgentEdits.get(key)
-        );
+        scheduleQueuedAgentEdits((queued) => queued === existing);
       }
       return;
     }
-    const decisionToken = nextAgentEditDecisionToken(proposal);
+
+    decisionSequence += 1;
+    const decisionToken = `${proposal.runId}:${proposal.id}:${proposal.generation ?? 1}:${decisionSequence}`;
     const staged = stageAgentEditProposalRevision(
       createAgentEditProposalRevisionLane<AgentEditProposal>({
         targetKey: proposal.laneId ?? proposal.id,
@@ -277,26 +133,21 @@ export function createProposalQueue(ctx: ProposalLaneContext) {
         proposal
       }
     );
-    if (staged.status !== "staged") {
-      return;
-    }
+    if (staged.status !== "staged") return;
     const started = beginAgentEditProposalCommit(staged.lane, {
       generation: proposal.generation ?? 1,
       token: decisionToken
     });
-    if (started.status !== "started") {
-      return;
-    }
+    if (started.status !== "started") return;
+
     if (scheduleImmediately && !automatic) {
       conversation.updateEditProposal(runId, proposalId, {
         status: "accepting",
         decisionToken,
-        statusMessage: automatic
-          ? "已进入实时自动保存队列…"
-          : "已批准，正在等待本作品的保存队列…"
+        statusMessage: "已批准，正在等待本作品的保存队列…"
       });
     }
-    queuedAgentEdits.set(key, {
+    const queued: QueuedAgentEdit = {
       conversation,
       sessionId,
       runId,
@@ -306,31 +157,62 @@ export function createProposalQueue(ctx: ProposalLaneContext) {
       expectedProposedRevision: proposal.proposedRevision,
       decisionToken,
       snapshot: started.snapshot
-    });
+    };
+    queuedAgentEdits.set(key, queued);
+    deferredAgentEditKeys.delete(key);
     if (scheduleImmediately) {
-      scheduleQueuedAgentEdits(
-        (queued) => queued === queuedAgentEdits.get(key)
-      );
+      scheduleQueuedAgentEdits((candidate) => candidate === queued);
     }
   }
 
-  async function drainQueuedAgentEditsForWorkspace(
-    workspaceId: string
-  ): Promise<void> {
+  function isValidReservation(
+    queued: QueuedAgentEdit,
+    current: AgentEditProposal | undefined
+  ): current is AgentEditProposal {
+    return Boolean(
+      current &&
+      queued.snapshot.token === queued.decisionToken &&
+      queued.snapshot.proposal.id === queued.proposalId &&
+      queued.snapshot.proposedRevision === queued.expectedProposedRevision &&
+      current.proposedRevision === queued.expectedProposedRevision &&
+      (current.status === "pending" ||
+        current.status === "error" ||
+        (current.status === "accepting" &&
+          current.decisionToken === queued.decisionToken))
+    );
+  }
+
+  function deferUnfinishedEdit(
+    key: string,
+    queued: QueuedAgentEdit,
+    current: AgentEditProposal
+  ): boolean {
+    if (current.proposedRevision !== queued.expectedProposedRevision) {
+      return false;
+    }
+    if (current.status === "accepting") {
+      queued.conversation.updateEditProposal(queued.runId, queued.proposalId, {
+        status: "pending",
+        statusMessage:
+          "本次审批正在等待关联任务；内容已保留，依赖完成后将自动继续。"
+      });
+    } else if (current.status !== "pending") {
+      return false;
+    }
+    deferredAgentEditKeys.add(key);
+    return true;
+  }
+
+  async function drainWorkspace(workspaceId: string): Promise<void> {
     const entries = [...queuedAgentEdits.entries()]
-      .filter(([, queued]) => queued.workspaceId === workspaceId)
+      .filter(
+        ([key, queued]) =>
+          queued.workspaceId === workspaceId && !deferredAgentEditKeys.has(key)
+      )
       .sort(([, left], [, right]) => {
         const priority =
-          autoApproveEditPriority(
-            left.conversation,
-            left.runId,
-            left.proposalId
-          ) -
-          autoApproveEditPriority(
-            right.conversation,
-            right.runId,
-            right.proposalId
-          );
+          options.priority(left.conversation, left.runId, left.proposalId) -
+          options.priority(right.conversation, right.runId, right.proposalId);
         if (priority !== 0) return priority;
         const leftProposal = left.conversation.getEditProposal(
           left.runId,
@@ -346,31 +228,16 @@ export function createProposalQueue(ctx: ProposalLaneContext) {
             Date.parse(rightProposal?.createdAt ?? "")
         );
       });
+    let terminalStateChanged = false;
 
     for (const [key, queued] of entries) {
-      if (queuedAgentEdits.get(key) !== queued) {
-        continue;
-      }
+      if (queuedAgentEdits.get(key) !== queued) continue;
       const current = queued.conversation.getEditProposal(
         queued.runId,
         queued.proposalId
       );
-      if (
-        !current ||
-        queued.snapshot.token !== queued.decisionToken ||
-        queued.snapshot.proposal.id !== queued.proposalId ||
-        queued.snapshot.proposedRevision !== queued.expectedProposedRevision ||
-        current.proposedRevision !== queued.expectedProposedRevision ||
-        (current.status !== "pending" &&
-          current.status !== "error" &&
-          !(
-            current.status === "accepting" &&
-            current.decisionToken === queued.decisionToken
-          ))
-      ) {
-        if (queuedAgentEdits.get(key) === queued) {
-          queuedAgentEdits.delete(key);
-        }
+      if (!isValidReservation(queued, current)) {
+        deleteQueuedEdit(key);
         continue;
       }
       if (current.status === "pending" || current.status === "error") {
@@ -386,114 +253,101 @@ export function createProposalQueue(ctx: ProposalLaneContext) {
           }
         );
       }
+      if (queuedAgentEdits.get(key) !== queued) continue;
 
-      if (queuedAgentEdits.get(key) !== queued) {
-        continue;
-      }
-      queuedAgentEdits.delete(key);
-      await applyAgentEdit(
-        queued.conversation,
-        {
-          runId: queued.runId,
-          proposalId: queued.proposalId,
-          decision: "accept"
-        },
-        queued.automatic,
-        {
-          decisionToken: queued.decisionToken,
-          expectedProposedRevision: queued.expectedProposedRevision
-        }
-      );
-    }
-  }
-
-  function scheduleQueuedAgentEdits(
-    matches: (queued: QueuedAgentEdit) => boolean
-  ): void {
-    const workspaceIds = new Set(
-      [...queuedAgentEdits.values()]
-        .filter(matches)
-        .map((queued) => queued.workspaceId)
-    );
-    for (const workspaceId of workspaceIds) {
-      const task = agentEditCommitQueue
-        .enqueue(workspaceId, () =>
-          drainQueuedAgentEditsForWorkspace(workspaceId)
-        )
-        .catch((error: unknown) => {
-          uiMessage.error(
-            error instanceof Error ? error.message : "批准智能体修改失败。"
+      try {
+        await options.apply(queued);
+      } catch (error: unknown) {
+        const failed = queued.conversation.getEditProposal(
+          queued.runId,
+          queued.proposalId
+        );
+        if (
+          failed?.proposedRevision === queued.expectedProposedRevision &&
+          (failed.status === "accepting" || failed.status === "pending")
+        ) {
+          queued.conversation.updateEditProposal(
+            queued.runId,
+            queued.proposalId,
+            {
+              status: "error",
+              statusMessage: unexpectedQueueErrorMessage(error)
+            }
           );
-        });
-      activeAgentEditCommitTasks.add(task);
-      void task.then(
-        () => {
-          activeAgentEditCommitTasks.delete(task);
-        },
-        () => {
-          activeAgentEditCommitTasks.delete(task);
         }
+        options.reportUnexpectedError(error);
+      }
+
+      if (queuedAgentEdits.get(key) !== queued) continue;
+      const after = queued.conversation.getEditProposal(
+        queued.runId,
+        queued.proposalId
       );
+      if (after && deferUnfinishedEdit(key, queued, after)) continue;
+      deleteQueuedEdit(key);
+      terminalStateChanged = true;
+    }
+
+    if (
+      terminalStateChanged &&
+      [...queuedAgentEdits.entries()].some(
+        ([key, queued]) =>
+          queued.workspaceId === workspaceId && deferredAgentEditKeys.has(key)
+      )
+    ) {
+      scheduleQueuedAgentEdits((queued) => queued.workspaceId === workspaceId);
     }
   }
 
   function hasQueuedAgentEdits(): boolean {
-    return queuedAgentEdits.size > 0 || activeAgentEditCommitTasks.size > 0;
+    const hasRunnableEdit = [...queuedAgentEdits.keys()].some(
+      (key) => !deferredAgentEditKeys.has(key)
+    );
+    return hasRunnableEdit || activeAgentEditCommitTasks.size > 0;
   }
 
   function invokeWhileActive(operation: () => Promise<void>): Promise<void> {
-    if (coordinatorDisposed) return Promise.resolve();
+    if (disposed) return Promise.resolve();
     const invocation = operation();
-    activeCoordinatorInvocations.add(invocation);
+    activeInvocations.add(invocation);
     void invocation.then(
       () => {
-        activeCoordinatorInvocations.delete(invocation);
+        activeInvocations.delete(invocation);
       },
       () => {
-        activeCoordinatorInvocations.delete(invocation);
+        activeInvocations.delete(invocation);
       }
     );
     return invocation;
   }
 
   async function drain(): Promise<void> {
-    while (
-      activeCoordinatorInvocations.size > 0 ||
-      activeAgentEditCommitTasks.size > 0
-    ) {
+    while (activeInvocations.size > 0 || activeAgentEditCommitTasks.size > 0) {
       await Promise.allSettled([
-        ...activeCoordinatorInvocations,
+        ...activeInvocations,
         ...activeAgentEditCommitTasks
       ]);
     }
   }
 
   function dispose(): Promise<void> {
-    if (coordinatorDisposePromise) return coordinatorDisposePromise;
-    coordinatorDisposed = true;
-    coordinatorDisposePromise = drain().finally(() => {
-      // Unscheduled proposals remain durable in their conversations and can be
-      // recovered by the next coordinator. This map is only an in-memory lane.
+    if (disposePromise) return disposePromise;
+    disposed = true;
+    disposePromise = drain().finally(() => {
       queuedAgentEdits.clear();
+      deferredAgentEditKeys.clear();
     });
-    return coordinatorDisposePromise;
+    return disposePromise;
   }
 
   return {
-    autoApproveEditPriority,
-    latestProposalForLane,
-    expectedLaneDurableRevision,
-    laneDurableRevisionMatches,
-    blockedAgentEditLaneMessage,
-    canReviewAgentEditDuringRun,
     removeQueuedAgentEdit,
-    blockLaterAgentEditGenerations,
     queueAgentEdit,
     scheduleQueuedAgentEdits,
     hasQueuedAgentEdits,
     invokeWhileActive,
     drain,
     dispose,
-    isDisposed
+    isDisposed: () => disposed
   };
 }

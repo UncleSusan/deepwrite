@@ -14,7 +14,6 @@ interface ModelProviderOption {
 }
 
 export const MODEL_PROVIDER_OPTIONS = [
-  { value: "deepwrite-free", label: "DeepWrite 免费模型" },
   {
     value: "deepseek",
     label: "DeepSeek",

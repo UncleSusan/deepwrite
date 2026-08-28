@@ -32,16 +32,24 @@ import type {
   AgentConversationPersistenceSnapshot,
   ConversationStorage
 } from "./types";
+import {
+  parseStoredDiscardSnapshot,
+  parseStoredDiscardState
+} from "../../utils/acceptedEditDiscardPersistence";
 
 function parseStoredLibraryTarget(
   value: unknown
 ): AgentEditProposal["libraryTarget"] | undefined {
   if (
     !isRecord(value) ||
-    (value.operation !== "create" && value.operation !== "edit") ||
+    (value.operation !== "create" &&
+      value.operation !== "edit" &&
+      value.operation !== "edit-overview") ||
     (value.domain !== "material" && value.domain !== "skill") ||
     typeof value.libraryId !== "string" ||
-    typeof value.stageId !== "string" ||
+    (value.operation === "edit-overview"
+      ? value.stageId !== undefined
+      : typeof value.stageId !== "string") ||
     (value.baseProjectRevision !== undefined &&
       !nonnegativeInteger(value.baseProjectRevision)) ||
     (value.entryId !== undefined && typeof value.entryId !== "string") ||
@@ -53,7 +61,9 @@ function parseStoredLibraryTarget(
     operation: value.operation,
     domain: value.domain,
     libraryId: value.libraryId,
-    stageId: value.stageId,
+    ...(value.operation === "edit-overview"
+      ? {}
+      : { stageId: value.stageId as string }),
     ...(value.baseProjectRevision === undefined
       ? {}
       : { baseProjectRevision: value.baseProjectRevision }),
@@ -128,12 +138,18 @@ function parseStoredDraftSectionCreationTarget(
     wordCountRequirement: string;
     provisionalSectionId: string;
     realSectionId?: string;
+    bodyContent?: string;
+    characterStateContent?: string;
   }> = [];
   for (const [index, section] of value.sections.entries()) {
     if (
       !isRecord(section) ||
       typeof section.title !== "string" ||
       typeof section.wordCountRequirement !== "string" ||
+      (section.bodyContent !== undefined &&
+        typeof section.bodyContent !== "string") ||
+      (section.characterStateContent !== undefined &&
+        typeof section.characterStateContent !== "string") ||
       (section.realSectionId !== undefined &&
         typeof section.realSectionId !== "string")
     ) {
@@ -149,6 +165,12 @@ function parseStoredDraftSectionCreationTarget(
           : `pending:section:legacy-${index + 1}`,
       ...(typeof section.realSectionId === "string"
         ? { realSectionId: section.realSectionId }
+        : {}),
+      ...(typeof section.bodyContent === "string"
+        ? { bodyContent: section.bodyContent }
+        : {}),
+      ...(typeof section.characterStateContent === "string"
+        ? { characterStateContent: section.characterStateContent }
         : {})
     });
   }
@@ -248,17 +270,77 @@ function parseStoredCharacterStructureTarget(
   const mutation = CharacterStructureMutationSchema.safeParse(value.mutation);
   if (!mutation.success) return undefined;
   if (
-    value.baseProjectRevision !== undefined &&
-    !nonnegativeInteger(value.baseProjectRevision)
+    (value.initialContent !== undefined &&
+      typeof value.initialContent !== "string") ||
+    (value.baseProjectRevision !== undefined &&
+      !nonnegativeInteger(value.baseProjectRevision))
   ) {
     return undefined;
   }
   return {
     mutation: mutation.data,
+    ...(typeof value.initialContent === "string"
+      ? { initialContent: value.initialContent }
+      : {}),
     ...(value.baseProjectRevision === undefined
       ? {}
       : { baseProjectRevision: value.baseProjectRevision })
   };
+}
+
+function parseStoredPlotStructureTarget(
+  value: unknown
+): AgentEditProposal["plotStructureTarget"] | undefined {
+  if (!isRecord(value) || !isRecord(value.mutation)) return undefined;
+  const mutation = value.mutation;
+  const baseProjectRevision = value.baseProjectRevision;
+  if (
+    baseProjectRevision !== undefined &&
+    !nonnegativeInteger(baseProjectRevision)
+  ) {
+    return undefined;
+  }
+  if (
+    mutation.type === "create" &&
+    typeof mutation.title === "string" &&
+    typeof mutation.description === "string" &&
+    typeof mutation.provisionalStageId === "string" &&
+    typeof mutation.content === "string"
+  ) {
+    return {
+      mutation: {
+        type: "create",
+        title: mutation.title,
+        description: mutation.description,
+        provisionalStageId: mutation.provisionalStageId,
+        content: mutation.content
+      },
+      ...(typeof baseProjectRevision === "number"
+        ? { baseProjectRevision }
+        : {})
+    };
+  }
+  if (
+    mutation.type === "update" &&
+    typeof mutation.stageId === "string" &&
+    typeof mutation.previousTitle === "string" &&
+    typeof mutation.title === "string" &&
+    typeof mutation.description === "string"
+  ) {
+    return {
+      mutation: {
+        type: "update",
+        stageId: mutation.stageId,
+        previousTitle: mutation.previousTitle,
+        title: mutation.title,
+        description: mutation.description
+      },
+      ...(typeof baseProjectRevision === "number"
+        ? { baseProjectRevision }
+        : {})
+    };
+  }
+  return undefined;
 }
 
 function parseStoredLongWorldbuildingTarget(
@@ -505,10 +587,24 @@ function parseStoredEditProposal(
   ) {
     return undefined;
   }
+  const plotStructureTarget = parseStoredPlotStructureTarget(
+    value.plotStructureTarget
+  );
+  if (value.plotStructureTarget !== undefined && !plotStructureTarget) {
+    return undefined;
+  }
   const hunks = value.hunks
     .map(parseStoredTextDiffHunk)
     .filter((hunk): hunk is AgentTextDiffHunk => hunk !== undefined);
   if (hunks.length !== value.hunks.length) return undefined;
+  const discardSnapshot = parseStoredDiscardSnapshot(value.discardSnapshot);
+  const discardState = parseStoredDiscardState(value.discardState);
+  if (
+    (value.discardSnapshot !== undefined && !discardSnapshot) ||
+    (value.discardState !== undefined && !discardState)
+  ) {
+    return undefined;
+  }
   return {
     id: value.id,
     ...(value.laneId === undefined ? {} : { laneId: value.laneId }),
@@ -552,6 +648,8 @@ function parseStoredEditProposal(
       : { statusMessage: value.statusMessage }),
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
+    ...(discardSnapshot ? { discardSnapshot } : {}),
+    ...(discardState ? { discardState } : {}),
     ...(libraryTarget ? { libraryTarget } : {}),
     ...(longWorldbuildingTarget ? { longWorldbuildingTarget } : {}),
     ...(longCharacterTarget ? { longCharacterTarget } : {}),
@@ -561,6 +659,7 @@ function parseStoredEditProposal(
     ...(draftSectionRenameTarget ? { draftSectionRenameTarget } : {}),
     ...(draftSectionDeletionTarget ? { draftSectionDeletionTarget } : {}),
     ...(characterStructureTarget ? { characterStructureTarget } : {}),
+    ...(plotStructureTarget ? { plotStructureTarget } : {}),
     ...(value.provisionalExpertSection
       ? { provisionalExpertSection: true }
       : {}),
@@ -577,14 +676,17 @@ function parseStoredRuntime(value: unknown): AgentRuntimeRef | undefined {
     !value.provider ||
     typeof value.model !== "string" ||
     !value.model ||
-    (value.mode !== "local-faux" && value.mode !== "provider")
+    (value.mode !== "local-faux" && value.mode !== "provider") ||
+    (value.configId !== undefined &&
+      (typeof value.configId !== "string" || !value.configId.trim()))
   ) {
     return undefined;
   }
   return {
     provider: value.provider,
     model: value.model,
-    mode: value.mode
+    mode: value.mode,
+    ...(typeof value.configId === "string" ? { configId: value.configId } : {})
   };
 }
 
@@ -782,6 +884,10 @@ function parseStoredMessage(value: unknown): ChatMessage | undefined {
     createdAt: value.createdAt,
     ...(status ? { status: status === "streaming" ? "stopped" : status } : {})
   };
+  const runtime = parseStoredRuntime(value.runtime);
+  const usage = parseStoredUsage(value.usage);
+  if (runtime) message.runtime = runtime;
+  if (usage) message.usage = usage;
 
   if (Array.isArray(value.attachments)) {
     message.attachments = value.attachments.flatMap((attachment) => {

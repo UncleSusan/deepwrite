@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from "electron";
 import {
   BookSchema,
   AgentTeamCatalogSnapshotSchema,
+  AgentTeamPackageExportResultSchema,
+  AgentTeamPackageInstallResultSchema,
   AgentTeamProfileCreateInputSchema,
   AgentTeamProfileRenameInputSchema,
   AgentTeamProfileSaveInputSchema,
@@ -20,12 +22,10 @@ import {
   CatalogIndexSnapshotSchema,
   CatalogReadDocumentInputSchema,
   CatalogReadDocumentResultSchema,
+  ReadWritingContextInputSchema,
+  ReadWritingContextResultSchema,
   CatalogSnapshotSchema,
-  ChatAssistantProjectConfigSchema,
-  ChatAssistantProjectConfigListSchema,
-  ChatAssistantProjectRefSchema,
   CommandEnvelopeSchema,
-  CommandResultSchema,
   CreateLibraryEntryInputSchema,
   CreateDraftSectionInputSchema,
   CreateDraftSectionsInputSchema,
@@ -54,7 +54,6 @@ import {
   GeneralSettingsSchema,
   GeneralSettingsSnapshotSchema,
   ImportLegacyLibraryResultSchema,
-  IPC_COMMAND_CHANNEL,
   IPC_EVENT_CHANNEL,
   UPDATE_CHECK_CHANNEL,
   UPDATE_DOWNLOAD_CHANNEL,
@@ -91,18 +90,9 @@ import {
   LibraryAgentDomainSchema,
   LibraryAgentSettingsInputSchema,
   LibraryAgentSettingsSchema,
-  ModelConnectionTestResultSchema,
-  ModelConfigInputSchema,
-  OfficialModelBalanceSchema,
-  ModelSettingsInputSchema,
-  ModelSettingsSchema,
-  RemoteModelListInputSchema,
-  RemoteModelListResultSchema,
   RendererStateKeySchema,
   RendererStateLoadResultSchema,
   RendererStateMutationResultSchema,
-  ModelUsageDashboardSchema,
-  ModelUsageQueryInputSchema,
   CreateLongBookInputSchema,
   LongImportPortableResultSchema,
   LongApplyLegacySyncInputSchema,
@@ -147,12 +137,6 @@ import {
   RemoveLibraryEntryResultSchema,
   MoveLibraryEntryInputSchema,
   MoveLibraryEntryResultSchema,
-  SessionAbortAcceptedPayloadSchema,
-  SessionAbortCommandPayloadSchema,
-  SessionUserInputResponseAcceptedPayloadSchema,
-  SessionUserInputResponsePayloadSchema,
-  SessionPromptAcceptedPayloadSchema,
-  SessionPromptCommandPayloadSchema,
   SaveDocumentInputSchema,
   SaveLibraryEntryInputSchema,
   ScriptBookSchema,
@@ -164,8 +148,6 @@ import {
   UnregisterCatalogProjectInputSchema,
   UnregisterCatalogProjectResultSchema,
   WorkspaceDirectorySettingsSchema,
-  AppearanceSettingsSchema,
-  AppearanceSettingsSnapshotSchema,
   APP_ALERT_ACKNOWLEDGE_DESKTOP_CHANNEL,
   APP_ALERT_GET_CHANNEL,
   AppAlertDesktopRevisionSchema,
@@ -175,9 +157,12 @@ import {
   WorkspaceAgentSettingsInputSchema,
   WorkspaceAgentSettingsSchema,
   WorkspaceTypeSchema,
+  WriteWritingContextInputSchema,
+  WriteWritingContextResultSchema,
   createEnvelope,
-  type CommandEnvelope,
   type AgentTeamCatalogSnapshot,
+  type AgentTeamPackageExportResult,
+  type AgentTeamPackageInstallResult,
   type AgentTeamProfileCreateInput,
   type AgentTeamProfileRenameInput,
   type AgentTeamProfileSaveInput,
@@ -195,6 +180,8 @@ import {
   type CatalogIndexSnapshot,
   type CatalogReadDocumentInput,
   type CatalogReadDocumentResult,
+  type ReadWritingContextInput,
+  type ReadWritingContextResult,
   type CatalogSnapshot,
   type CreateLibraryEntryInput,
   type CreateDraftSectionInput,
@@ -223,9 +210,6 @@ import {
   type ExternalSkillSourceKind,
   type GeneralSettings,
   type GeneralSettingsSnapshot,
-  type ChatAssistantProjectConfig,
-  type ChatAssistantProjectRef,
-  type ModelConnectionTestResult,
   type ImportLegacyLibraryResult,
   type LearningImitationSettings,
   type LearningImitationSettingsInput,
@@ -280,25 +264,12 @@ import {
   type LibraryAgentDomain,
   type LibraryAgentSettings,
   type LibraryAgentSettingsInput,
-  type ModelConfigInput,
-  type ModelSettings,
-  type ModelSettingsInput,
-  type RemoteModelListInput,
-  type RemoteModelListResult,
-  type ModelUsageDashboard,
-  type ModelUsageQueryInput,
   type MutateCharacterStructureInput,
   type MutatePlotStructureInput,
   type RemoveLibraryEntryInput,
   type RemoveLibraryEntryResult,
   type MoveLibraryEntryInput,
   type MoveLibraryEntryResult,
-  type SessionAbortAcceptedPayload,
-  type SessionAbortCommandPayload,
-  type SessionUserInputResponseAcceptedPayload,
-  type SessionUserInputResponsePayload,
-  type SessionPromptAcceptedPayload,
-  type SessionPromptCommandPayload,
   type SaveDocumentInput,
   type SaveDocumentResult,
   type SaveLibraryEntryInput,
@@ -317,43 +288,39 @@ import {
   type UpdateBookInput,
   type UpdateLibraryGroupInput,
   type UpdateState,
+  type WriteWritingContextInput,
+  type WriteWritingContextResult,
   type WorkspaceDirectorySettings,
   type WorkspaceAgentSettings,
   type WorkspaceAgentSettingsInput,
   type WorkspaceType,
-  type AppearanceSettings,
-  type AppearanceSettingsSnapshot,
   type AppAlertSnapshot
 } from "@deepwrite/contracts";
 
-import { createId } from "@deepwrite/shared";
-
-function browserId(prefix: string): string {
-  return createId(prefix);
-}
-
-async function invokeCommand<TPayload>(
-  command: CommandEnvelope
-): Promise<TPayload> {
-  const expectedRequestId = command.id;
-  const result = CommandResultSchema.parse(
-    await ipcRenderer.invoke(IPC_COMMAND_CHANNEL, command)
-  );
-  if (result.requestId !== expectedRequestId) {
-    // Prefer the real rejection reason when main returned requestId "unknown"
-    // (or another mismatched id) for an invalid/untrusted command.
-    if (result.status === "rejected") {
-      throw new Error(`${result.error.code}: ${result.error.message}`);
-    }
-    throw new Error(
-      `IPC result requestId does not match command id. expected=${expectedRequestId} actual=${result.requestId}`
-    );
-  }
-  if (result.status === "rejected") {
-    throw new Error(`${result.error.code}: ${result.error.message}`);
-  }
-  return result.payload as TPayload;
-}
+import { browserId, invokeCommand } from "./invoke";
+import { appearance } from "./appearance-api";
+import {
+  abort,
+  clearOfficialModelToken,
+  getChatAssistantProjectConfig,
+  listChatAssistantProjectConfigs,
+  listModels,
+  listRemoteModels,
+  prompt,
+  queryModelUsage,
+  queryOfficialModelBalance,
+  refreshFreeModels,
+  refreshOfficialModels,
+  resetChatAssistantProjectConfig,
+  saveChatAssistantProjectConfig,
+  saveModels,
+  saveOfficialModelToken,
+  setFreeModelEnabled,
+  setOfficialModelEnabled,
+  submitUserInput,
+  testModel,
+  resolveModelCapacity
+} from "./session-models-api";
 
 async function getHealth(): Promise<SystemHealthPayload> {
   const id = browserId("cmd_health");
@@ -465,6 +432,38 @@ async function readCatalogDocument(
       createEnvelope("catalog.readDocument", input, {
         id,
         correlationId: id
+      })
+    )
+  );
+}
+
+async function readWritingContext(
+  rawInput: ReadWritingContextInput
+): Promise<ReadWritingContextResult> {
+  const input = ReadWritingContextInputSchema.parse(rawInput);
+  const id = browserId("cmd_catalog_read_writing_context");
+  return ReadWritingContextResultSchema.parse(
+    await invokeCommand<ReadWritingContextResult>(
+      createEnvelope("catalog.readWritingContext", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
+async function writeWritingContext(
+  rawInput: WriteWritingContextInput
+): Promise<WriteWritingContextResult> {
+  const input = WriteWritingContextInputSchema.parse(rawInput);
+  const id = browserId("cmd_catalog_write_writing_context");
+  return WriteWritingContextResultSchema.parse(
+    await invokeCommand<WriteWritingContextResult>(
+      createEnvelope("catalog.writeWritingContext", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
       })
     )
   );
@@ -1243,268 +1242,6 @@ async function duplicateProject(
   );
 }
 
-async function prompt(
-  rawPayload: SessionPromptCommandPayload
-): Promise<SessionPromptAcceptedPayload> {
-  const payload = SessionPromptCommandPayloadSchema.parse(rawPayload);
-  const id = browserId("cmd_prompt");
-  const resourceId = payload.workspaceContext?.activeResource?.id;
-  const accepted = SessionPromptAcceptedPayloadSchema.parse(
-    await invokeCommand<SessionPromptAcceptedPayload>(
-      createEnvelope("session.prompt", payload, {
-        id,
-        context: {
-          correlationId: id,
-          sessionId: payload.sessionId,
-          ...(resourceId ? { resourceId } : {})
-        }
-      })
-    )
-  );
-  if (accepted.sessionId !== payload.sessionId) {
-    throw new Error(
-      "Agent acceptance sessionId does not match the prompt request."
-    );
-  }
-  return accepted;
-}
-
-async function abort(
-  rawPayload: SessionAbortCommandPayload
-): Promise<SessionAbortAcceptedPayload> {
-  const payload = SessionAbortCommandPayloadSchema.parse(rawPayload);
-  const id = browserId("cmd_abort");
-  return SessionAbortAcceptedPayloadSchema.parse(
-    await invokeCommand<SessionAbortAcceptedPayload>(
-      createEnvelope("session.abort", payload, {
-        id,
-        context: {
-          correlationId: id,
-          sessionId: payload.sessionId,
-          runId: payload.runId
-        }
-      })
-    )
-  );
-}
-
-async function submitUserInput(
-  rawPayload: SessionUserInputResponsePayload
-): Promise<SessionUserInputResponseAcceptedPayload> {
-  const payload = SessionUserInputResponsePayloadSchema.parse(rawPayload);
-  const id = browserId("cmd_user_input");
-  return SessionUserInputResponseAcceptedPayloadSchema.parse(
-    await invokeCommand<SessionUserInputResponseAcceptedPayload>(
-      createEnvelope("session.user_input_response", payload, {
-        id,
-        context: {
-          correlationId: id,
-          sessionId: payload.sessionId,
-          runId: payload.runId
-        }
-      })
-    )
-  );
-}
-
-async function listModels(): Promise<ModelSettings> {
-  const id = browserId("cmd_models_list");
-  return ModelSettingsSchema.parse(
-    await invokeCommand<ModelSettings>(
-      createEnvelope("models.list", {}, { id, correlationId: id })
-    )
-  );
-}
-
-async function refreshFreeModels(): Promise<ModelSettings> {
-  const id = browserId("cmd_models_refresh_free");
-  return ModelSettingsSchema.parse(
-    await invokeCommand<ModelSettings>(
-      createEnvelope("models.refreshFree", {}, { id, correlationId: id })
-    )
-  );
-}
-
-async function refreshOfficialModels(): Promise<ModelSettings> {
-  const id = browserId("cmd_models_refresh_official");
-  return ModelSettingsSchema.parse(
-    await invokeCommand<ModelSettings>(
-      createEnvelope("models.refreshOfficial", {}, { id, correlationId: id })
-    )
-  );
-}
-
-async function queryOfficialModelBalance() {
-  const id = browserId("cmd_models_query_official_balance");
-  return OfficialModelBalanceSchema.parse(
-    await invokeCommand(
-      createEnvelope(
-        "models.queryOfficialBalance",
-        {},
-        { id, correlationId: id }
-      )
-    )
-  );
-}
-
-async function saveOfficialModelToken(
-  rawApiKey: string
-): Promise<ModelSettings> {
-  const apiKey = rawApiKey.trim();
-  if (!apiKey || apiKey.length > 16_000) {
-    throw new Error("请输入有效的官方令牌。");
-  }
-  const id = browserId("cmd_models_save_official_token");
-  return ModelSettingsSchema.parse(
-    await invokeCommand<ModelSettings>(
-      createEnvelope(
-        "models.saveOfficialToken",
-        { apiKey },
-        { id, correlationId: id }
-      )
-    )
-  );
-}
-
-async function clearOfficialModelToken(): Promise<ModelSettings> {
-  const id = browserId("cmd_models_clear_official_token");
-  return ModelSettingsSchema.parse(
-    await invokeCommand<ModelSettings>(
-      createEnvelope("models.clearOfficialToken", {}, { id, correlationId: id })
-    )
-  );
-}
-
-async function setOfficialModelEnabled(
-  modelId: string,
-  enabled: boolean
-): Promise<ModelSettings> {
-  const id = browserId("cmd_models_set_official_enabled");
-  return ModelSettingsSchema.parse(
-    await invokeCommand<ModelSettings>(
-      createEnvelope(
-        "models.setOfficialModelEnabled",
-        { modelId, enabled },
-        { id, correlationId: id }
-      )
-    )
-  );
-}
-
-async function saveModels(
-  rawSettings: ModelSettingsInput
-): Promise<ModelSettings> {
-  const settings = ModelSettingsInputSchema.parse(rawSettings);
-  const id = browserId("cmd_models_save");
-  return ModelSettingsSchema.parse(
-    await invokeCommand<ModelSettings>(
-      createEnvelope("models.save", settings, { id, correlationId: id })
-    )
-  );
-}
-
-async function testModel(
-  rawModel: ModelConfigInput
-): Promise<ModelConnectionTestResult> {
-  const model = ModelConfigInputSchema.parse(rawModel);
-  const id = browserId("cmd_models_test");
-  return ModelConnectionTestResultSchema.parse(
-    await invokeCommand<ModelConnectionTestResult>(
-      createEnvelope("models.test", { model }, { id, correlationId: id })
-    )
-  );
-}
-
-async function listRemoteModels(
-  rawInput: RemoteModelListInput
-): Promise<RemoteModelListResult> {
-  const input = RemoteModelListInputSchema.parse(rawInput);
-  const id = browserId("cmd_models_list_remote");
-  return RemoteModelListResultSchema.parse(
-    await invokeCommand<RemoteModelListResult>(
-      createEnvelope("models.listRemote", input, { id, correlationId: id })
-    )
-  );
-}
-
-async function queryModelUsage(
-  rawInput: ModelUsageQueryInput = {}
-): Promise<ModelUsageDashboard> {
-  const input = ModelUsageQueryInputSchema.parse(rawInput);
-  const id = browserId("cmd_model_usage_query");
-  return ModelUsageDashboardSchema.parse(
-    await invokeCommand<ModelUsageDashboard>(
-      createEnvelope("modelUsage.query", input, { id, correlationId: id })
-    )
-  );
-}
-
-async function getChatAssistantProjectConfig(
-  rawProject: ChatAssistantProjectRef
-): Promise<ChatAssistantProjectConfig> {
-  const project = ChatAssistantProjectRefSchema.parse(rawProject);
-  const id = browserId("cmd_chat_assistant_project_config_get");
-  return ChatAssistantProjectConfigSchema.parse(
-    await invokeCommand<ChatAssistantProjectConfig>(
-      createEnvelope("chatAssistantProjectConfig.get", project, {
-        id,
-        correlationId: id
-      })
-    )
-  );
-}
-
-async function listChatAssistantProjectConfigs(): Promise<
-  ChatAssistantProjectRef[]
-> {
-  const id = browserId("cmd_chat_assistant_project_config_list");
-  return ChatAssistantProjectConfigListSchema.parse(
-    await invokeCommand<ChatAssistantProjectRef[]>(
-      createEnvelope(
-        "chatAssistantProjectConfig.list",
-        {},
-        {
-          id,
-          correlationId: id
-        }
-      )
-    )
-  );
-}
-
-async function saveChatAssistantProjectConfig(
-  rawProject: ChatAssistantProjectRef,
-  rawSystemPrompt: string
-): Promise<ChatAssistantProjectConfig> {
-  const project = ChatAssistantProjectRefSchema.parse(rawProject);
-  const systemPrompt = String(rawSystemPrompt);
-  const id = browserId("cmd_chat_assistant_project_config_save");
-  return ChatAssistantProjectConfigSchema.parse(
-    await invokeCommand<ChatAssistantProjectConfig>(
-      createEnvelope(
-        "chatAssistantProjectConfig.save",
-        { project, systemPrompt },
-        { id, correlationId: id }
-      )
-    )
-  );
-}
-
-async function resetChatAssistantProjectConfig(
-  rawProject: ChatAssistantProjectRef
-): Promise<ChatAssistantProjectConfig> {
-  const project = ChatAssistantProjectRefSchema.parse(rawProject);
-  const id = browserId("cmd_chat_assistant_project_config_reset");
-  return ChatAssistantProjectConfigSchema.parse(
-    await invokeCommand<ChatAssistantProjectConfig>(
-      createEnvelope("chatAssistantProjectConfig.reset", project, {
-        id,
-        correlationId: id
-      })
-    )
-  );
-}
-
 async function listWorkspaceAgents(
   workspaceType: "short"
 ): Promise<ShortWorkspaceAgentSettings>;
@@ -1623,6 +1360,41 @@ const saveAgentTeams = (input: AgentTeamProfileSaveInput) =>
     "agentTeams.save",
     AgentTeamProfileSaveInputSchema.parse(input)
   );
+
+async function downloadAgentTeam(
+  rawInput: AgentTeamProfileTargetInput
+): Promise<AgentTeamPackageExportResult> {
+  const payload = AgentTeamProfileTargetInputSchema.parse(rawInput);
+  const id = browserId("cmd_agent_teams_export_package");
+  return AgentTeamPackageExportResultSchema.parse(
+    await invokeCommand<AgentTeamPackageExportResult>(
+      CommandEnvelopeSchema.parse(
+        createEnvelope("agentTeams.exportPackage", payload, {
+          id,
+          correlationId: id
+        })
+      )
+    )
+  );
+}
+
+async function installAgentTeam(): Promise<AgentTeamPackageInstallResult> {
+  const id = browserId("cmd_agent_teams_install_package");
+  return AgentTeamPackageInstallResultSchema.parse(
+    await invokeCommand<AgentTeamPackageInstallResult>(
+      CommandEnvelopeSchema.parse(
+        createEnvelope(
+          "agentTeams.installPackage",
+          {},
+          {
+            id,
+            correlationId: id
+          }
+        )
+      )
+    )
+  );
+}
 
 async function saveWorkspaceAgents(
   rawSettings: ShortWorkspaceAgentSettingsInput
@@ -1794,27 +1566,6 @@ async function chooseWorkspaceDirectory(): Promise<WorkspaceDirectorySettings | 
   return WorkspaceDirectorySettingsSchema.nullable().parse(
     await invokeCommand<WorkspaceDirectorySettings | null>(
       createEnvelope("workspaceDirectory.choose", {}, { id, correlationId: id })
-    )
-  );
-}
-
-async function listAppearance(): Promise<AppearanceSettingsSnapshot> {
-  const id = browserId("cmd_appearance_list");
-  return AppearanceSettingsSnapshotSchema.parse(
-    await invokeCommand<AppearanceSettingsSnapshot>(
-      createEnvelope("appearance.list", {}, { id, correlationId: id })
-    )
-  );
-}
-
-async function saveAppearance(
-  rawSettings: AppearanceSettings
-): Promise<AppearanceSettingsSnapshot> {
-  const settings = AppearanceSettingsSchema.parse(rawSettings);
-  const id = browserId("cmd_appearance_save");
-  return AppearanceSettingsSnapshotSchema.parse(
-    await invokeCommand<AppearanceSettingsSnapshot>(
-      createEnvelope("appearance.save", settings, { id, correlationId: id })
     )
   );
 }
@@ -2077,6 +1828,8 @@ const api: DeepWriteApi = {
   catalog: {
     index: getCatalogIndex,
     readDocument: readCatalogDocument,
+    readWritingContext,
+    writeWritingContext,
     snapshot: getCatalogSnapshot,
     loadDraftRecovery,
     saveDraftRecovery,
@@ -2144,9 +1897,11 @@ const api: DeepWriteApi = {
     queryOfficialBalance: queryOfficialModelBalance,
     saveOfficialToken: saveOfficialModelToken,
     clearOfficialToken: clearOfficialModelToken,
+    setFreeModelEnabled,
     setOfficialModelEnabled,
     save: saveModels,
     test: testModel,
+    resolveCapacity: resolveModelCapacity,
     listRemote: listRemoteModels
   },
   modelUsage: {
@@ -2174,7 +1929,9 @@ const api: DeepWriteApi = {
     rename: renameAgentTeam,
     delete: deleteAgentTeam,
     setEnabled: setAgentTeamEnabled,
-    save: saveAgentTeams
+    save: saveAgentTeams,
+    download: downloadAgentTeam,
+    install: installAgentTeam
   },
   libraryAgents: {
     list: listLibraryAgents,
@@ -2190,10 +1947,7 @@ const api: DeepWriteApi = {
     list: listWorkspaceDirectory,
     choose: chooseWorkspaceDirectory
   },
-  appearance: {
-    list: listAppearance,
-    save: saveAppearance
-  },
+  appearance,
   generalSettings: {
     list: listGeneralSettings,
     save: saveGeneralSettings

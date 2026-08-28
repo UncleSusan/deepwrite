@@ -18,6 +18,7 @@ import {
   type LongWorkspaceSelection
 } from "../types/longWorkspace";
 import { createLongRootSelection } from "./longWorkspaceResourceTree";
+import { longLedgerApprovalTarget } from "./longLedgerApprovalTarget";
 
 export type LongApprovalNavigationCandidate =
   | { kind: "file"; fileId: string }
@@ -617,6 +618,9 @@ export function resolveLongProposalApprovalTarget(
         { kind: "root", root: "continuity_ledger" }
       ])
     };
+  }
+  if (event.type === "long.ledger_commit_proposal") {
+    return longLedgerApprovalTarget(event);
   }
   return {
     kind: "long",

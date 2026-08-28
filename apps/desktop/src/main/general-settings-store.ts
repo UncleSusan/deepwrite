@@ -8,9 +8,14 @@ import {
   type GeneralSettingsSnapshot
 } from "@deepwrite/contracts";
 
-interface DiskGeneralSettings extends Omit<GeneralSettings, "permissionMode"> {
+interface DiskGeneralSettings extends Omit<
+  GeneralSettings,
+  "permissionMode" | "autoApproveCrossStageOperations" | "defaultTextViewMode"
+> {
   version: 1;
   permissionMode: GeneralSettings["permissionMode"] | "full-access";
+  autoApproveCrossStageOperations?: boolean;
+  defaultTextViewMode?: GeneralSettings["defaultTextViewMode"];
 }
 
 function isNodeError(error: unknown, code: string): boolean {
@@ -60,10 +65,13 @@ export class GeneralSettingsStore {
           : candidate.permissionMode;
       const parsed = GeneralSettingsSchema.safeParse({
         permissionMode,
+        autoApproveCrossStageOperations:
+          candidate.autoApproveCrossStageOperations,
         autoSave: candidate.autoSave,
         language: candidate.language,
         showInMenuBar: candidate.showInMenuBar,
-        workspacePaneLayout: candidate.workspacePaneLayout
+        workspacePaneLayout: candidate.workspacePaneLayout,
+        defaultTextViewMode: candidate.defaultTextViewMode
       });
       if (!parsed.success) {
         return GeneralSettingsSnapshotSchema.parse({

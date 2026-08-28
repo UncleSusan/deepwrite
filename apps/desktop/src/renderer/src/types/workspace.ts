@@ -21,6 +21,7 @@ export type IconName =
   | "keyboard"
   | "ledger"
   | "library"
+  | "list"
   | "logo"
   | "mic"
   | "message"

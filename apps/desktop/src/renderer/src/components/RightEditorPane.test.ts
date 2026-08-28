@@ -10,6 +10,7 @@ import dialogLayerSource from "./WorkspaceDialogLayer.vue?raw";
 import dialogCoordinatorSource from "../composables/useWorkspaceDialogModuleCoordinator.ts?raw";
 import fixedTitleSource from "../utils/fixedWorkspaceDocumentTitle.ts?raw";
 import saveViewportSource from "../composables/useEditorSaveViewport.ts?raw";
+import textViewModeSource from "../composables/useTextViewMode.ts?raw";
 
 describe("RightEditorPane expert draft navigation", () => {
   it("expands a collapsed right-side agent when the editor is centered", () => {
@@ -42,6 +43,24 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(source).toContain("建议每个条目不超过 40,000 字，请勿上传过多内容");
     expect(source).toContain("contentExceedsRecommendedLength");
     expect(source).not.toContain("contentExceedsLimit");
+  });
+
+  it("keeps the editor save button outside the shrinking library hint row", () => {
+    const footerStart = source.indexOf('class="editor-footer"');
+    const metaStart = source.indexOf('class="editor-footer-meta"', footerStart);
+    const hintStart = source.indexOf(
+      'class="library-entry-limit-hint"',
+      metaStart
+    );
+    const metaClose = source.indexOf("</div>", hintStart);
+    const buttonStart = source.indexOf('class="save-button"', metaClose);
+
+    expect(footerStart).toBeGreaterThan(-1);
+    expect(metaStart).toBeGreaterThan(footerStart);
+    expect(hintStart).toBeGreaterThan(metaStart);
+    expect(hintStart).toBeLessThan(metaClose);
+    expect(buttonStart).toBeGreaterThan(metaClose);
+    expect(source).not.toContain('class="footer-spacer"');
   });
 
   it("shows a live, non-blocking format reason after the binding badge for skill entries", () => {
@@ -114,12 +133,23 @@ describe("RightEditorPane expert draft navigation", () => {
       "rememberCurrentDocumentScroll(previousScrollMemoryKey)"
     );
     expect(source).toContain(
-      'restoreDocumentScroll(nextScrollMemoryKey, "edit")'
+      "restoreDocumentScroll(nextScrollMemoryKey, nextViewMode)"
     );
     expect(source).toContain('@scroll="handleDocumentScroll"');
     expect(source).toContain(
       "scroller.scrollTop = recalledEditorScrollPosition(key, view)"
     );
+  });
+
+  it("resets every ordinary text document to the persisted default view mode", () => {
+    expect(source).toContain("defaultViewMode: TextViewMode");
+    expect(source).toContain("useTextViewMode({");
+    expect(source).toContain("defaultMode: () => props.defaultViewMode");
+    expect(source).toContain("const nextViewMode = resetToDefault()");
+    expect(source).toContain("() => props.defaultViewMode");
+    expect(source).toContain("(mode) => selectViewMode(mode)");
+    expect(textViewModeSource).toContain("function resetToDefault(");
+    expect(writingWorkspaceSource).toContain('| "defaultViewMode"');
   });
 
   it("preserves the latest active text viewport across manual and automatic saves", () => {
@@ -256,9 +286,8 @@ describe("RightEditorPane expert draft navigation", () => {
     expect(source).toContain(
       'import MarkdownContent from "./MarkdownContent.vue"'
     );
-    expect(source).toContain(
-      '<MarkdownContent v-if="content.trim()" :content="content" />'
-    );
+    expect(source).toContain("<MarkdownContent");
+    expect(source).toContain("annotate-headings");
     expect(source).not.toContain('v-for="(paragraph, index) in paragraphs"');
   });
 });

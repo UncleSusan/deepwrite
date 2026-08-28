@@ -37,6 +37,11 @@
   margin: 0;
   color: var(--text-secondary);
 }
+.catalog-header-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
 .primary-button,
 .secondary-button,
 .team-actions button,
@@ -53,6 +58,12 @@
   gap: 7px;
   color: var(--surface-main);
   background: var(--text-primary);
+}
+.catalog-header-actions .secondary-button,
+.team-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 button:disabled {
   cursor: not-allowed;
@@ -249,7 +260,11 @@ button:disabled {
     align-items: stretch;
     flex-direction: column;
   }
-  .catalog-header .primary-button {
+  .catalog-header-actions {
+    width: 100%;
+  }
+  .catalog-header-actions button {
+    flex: 1;
     justify-content: center;
   }
 }

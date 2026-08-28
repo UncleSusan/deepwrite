@@ -1,4 +1,5 @@
 import {
+  ModelCapacityResultSchema,
   ModelConnectionTestResultSchema,
   SessionAbortAcceptedPayloadSchema,
   SessionUserInputResponseAcceptedPayloadSchema,
@@ -524,6 +525,16 @@ bootUtility("agent", {
         status: "accepted",
         requestId: command.id,
         payload: result
+      };
+    }
+
+    if (command.type === "agent.model_capacity") {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: ModelCapacityResultSchema.parse(
+          runtime.resolveModelCapacity(command.payload.runtimeConfig)
+        )
       };
     }
 

@@ -4,7 +4,11 @@ import {
   AgentTeamSettingsInputSchema,
   CommandEnvelopeSchema,
   DEFAULT_AGENT_TEAM_SETTINGS,
+  DEFAULT_LONG_AGENT_TEAM_SETTINGS,
+  DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS,
   DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES,
+  LongAgentTeamSettingsSchema,
+  ScriptAgentTeamSettingsSchema,
   SubagentActivityEventEnvelopeSchema,
   createEnvelope,
   createDefaultCreativePlotStages,
@@ -26,7 +30,7 @@ function completeSettings() {
     workspaceType: "short" as const,
     teams: DEFAULT_AGENT_TEAM_SETTINGS.teams.map((team) => ({
       parentAgentId: team.parentAgentId,
-      subagents: team.parentAgentId === "plot_design" ? [{ ...definition }] : []
+      subagents: [{ ...definition }]
     }))
   };
 }
@@ -76,7 +80,7 @@ function shortWorkspace() {
 }
 
 describe("agent-team contracts", () => {
-  it("accepts the four-team short workspace shape", () => {
+  it("accepts the single-team short workspace shape", () => {
     expect(AgentTeamSettingsInputSchema.parse(completeSettings())).toEqual(
       completeSettings()
     );
@@ -84,10 +88,7 @@ describe("agent-team contracts", () => {
 
   it("defaults missing modelMode to inherit and requires modelId for custom", () => {
     const legacy = completeSettings();
-    const plotTeam = legacy.teams.find(
-      (team) => team.parentAgentId === "plot_design"
-    )!;
-    plotTeam.subagents = [
+    legacy.teams[0]!.subagents = [
       {
         id: "legacy_helper",
         name: "旧配置助手",
@@ -97,15 +98,12 @@ describe("agent-team contracts", () => {
       } as ShortAgentSubagentDefinition
     ];
     const parsed = AgentTeamSettingsInputSchema.parse(legacy);
-    expect(
-      parsed.teams.find((team) => team.parentAgentId === "plot_design")
-        ?.subagents[0]
-    ).toMatchObject({ modelMode: "inherit" });
+    expect(parsed.teams[0]?.subagents[0]).toMatchObject({
+      modelMode: "inherit"
+    });
 
     const customMissingModel = completeSettings();
-    customMissingModel.teams.find(
-      (team) => team.parentAgentId === "plot_design"
-    )!.subagents = [
+    customMissingModel.teams[0]!.subagents = [
       {
         ...definition,
         modelMode: "custom"
@@ -116,9 +114,7 @@ describe("agent-team contracts", () => {
     ).toBe(false);
 
     const customWithModel = completeSettings();
-    customWithModel.teams.find(
-      (team) => team.parentAgentId === "plot_design"
-    )!.subagents = [
+    customWithModel.teams[0]!.subagents = [
       {
         ...definition,
         modelMode: "custom",
@@ -131,9 +127,7 @@ describe("agent-team contracts", () => {
     ).toBe(true);
 
     const customOffWithoutTemperature = completeSettings();
-    customOffWithoutTemperature.teams.find(
-      (team) => team.parentAgentId === "plot_design"
-    )!.subagents = [
+    customOffWithoutTemperature.teams[0]!.subagents = [
       {
         ...definition,
         modelMode: "custom",
@@ -147,9 +141,7 @@ describe("agent-team contracts", () => {
     ).toBe(false);
 
     const customOffWithTemperature = completeSettings();
-    customOffWithTemperature.teams.find(
-      (team) => team.parentAgentId === "plot_design"
-    )!.subagents = [
+    customOffWithTemperature.teams[0]!.subagents = [
       {
         ...definition,
         modelMode: "custom",
@@ -165,9 +157,7 @@ describe("agent-team contracts", () => {
 
   it("rejects duplicate ids and names inside one parent team", () => {
     const duplicate = completeSettings();
-    duplicate.teams.find(
-      (team) => team.parentAgentId === "plot_design"
-    )!.subagents = [
+    duplicate.teams[0]!.subagents = [
       { ...definition },
       { ...definition, id: "other", name: definition.name.toUpperCase() }
     ];
@@ -182,9 +172,7 @@ describe("agent-team contracts", () => {
   });
 
   it("keeps subagent definitions internal to agent.prompt", () => {
-    const profile = DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES.find(
-      (candidate) => candidate.id === "plot_design"
-    )!;
+    const profile = DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES[0]!;
     expect(
       AgentPromptCommandPayloadSchema.safeParse({
         sessionId: "session-1",
@@ -201,6 +189,33 @@ describe("agent-team contracts", () => {
         subagentDefinitions: [definition]
       }).success
     ).toBe(false);
+  });
+
+  it("allows 60 short and script subagents while long remains capped at 20", () => {
+    const definitions = Array.from({ length: 60 }, (_, index) => ({
+      ...definition,
+      id: `helper_${index + 1}`,
+      name: `助手 ${index + 1}`
+    }));
+    expect(
+      AgentTeamSettingsInputSchema.safeParse({
+        workspaceType: "short",
+        teams: [{ parentAgentId: "short", subagents: definitions }]
+      }).success
+    ).toBe(true);
+
+    const script = structuredClone(DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS);
+    script.teams[0]!.subagents = definitions;
+    expect(ScriptAgentTeamSettingsSchema.safeParse(script).success).toBe(true);
+    script.teams[0]!.subagents = [
+      ...definitions,
+      { ...definition, id: "helper_61", name: "助手 61" }
+    ];
+    expect(ScriptAgentTeamSettingsSchema.safeParse(script).success).toBe(false);
+
+    const long = structuredClone(DEFAULT_LONG_AGENT_TEAM_SETTINGS);
+    long.teams[0]!.subagents = definitions.slice(0, 21);
+    expect(LongAgentTeamSettingsSchema.safeParse(long).success).toBe(false);
   });
 
   it("registers agentTeams commands and validates subagent event parent identity", () => {

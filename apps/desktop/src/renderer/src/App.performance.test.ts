@@ -6,6 +6,7 @@ import catalogLoaderSource from "./composables/useCatalogDocumentLoader.ts?raw";
 import catalogProjectionSource from "./composables/useCatalogWorkspaceProjectionCoordinator.ts?raw";
 import libraryTransactionsSource from "./composables/useCatalogLibraryTransactionsCoordinator.ts?raw";
 import lifecycleSource from "./composables/useWorkspaceLifecycleCoordinator.ts?raw";
+import layoutStoreSource from "./stores/layoutStore.ts?raw";
 import lazyLongBookLifecycleSource from "./composables/useLazyLongBookLifecycleCoordinator.ts?raw";
 import lazyLongRollbackSource from "./composables/useLazyLongRollbackCoordinator.ts?raw";
 import lazyLongStructureTransactionsSource from "./composables/useLazyLongStructureTransactionsCoordinator.ts?raw";
@@ -277,7 +278,7 @@ describe("App performance boundaries", () => {
     expect(source).toContain(
       "const writingEditorViewModel = computed(() => ({"
     );
-    expect(source).toContain(
+    expect(layoutStoreSource).toContain(
       "const writingRightPaneViewModel = computed(() => ({"
     );
     expect(source).toContain(':conversation-controller="activeConversation"');
@@ -298,7 +299,7 @@ describe("App performance boundaries", () => {
     expect(hotContext).not.toContain("buildLibraryAttachments(");
     expect(hotContext).not.toContain("buildLibraryAgentWorkspaceContext(");
     expect(shortConversationSource).toContain(
-      "const attachments =\n          contextSnapshot"
+      "const attachments = allAttachments"
     );
   });
 

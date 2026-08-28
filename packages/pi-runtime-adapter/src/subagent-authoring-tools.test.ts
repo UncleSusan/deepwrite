@@ -6,8 +6,8 @@ import {
 } from "./subagent-authoring-tools";
 
 const context = {
-  parentAgentId: "expert_draft_coordinator" as const,
-  parentAgentLabel: "正文",
+  parentAgentId: "script" as const,
+  parentAgentLabel: "剧本",
   outputMode: "handoff" as const,
   skills: [
     {

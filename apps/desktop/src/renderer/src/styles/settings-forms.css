@@ -437,11 +437,12 @@
 }
 
 .model-config-card {
-  grid-template-columns: 34px minmax(0, 1fr) minmax(235px, auto);
+  grid-template-columns: 34px minmax(0, 1fr) minmax(320px, auto);
 }
 
 .model-card-actions {
   display: flex !important;
+  flex-wrap: wrap;
   grid-auto-flow: column;
   align-items: center;
   justify-content: end;
@@ -624,6 +625,10 @@
 
 .model-fetch-hint-dialog .dialog-actions {
   padding: 16px 18px 18px;
+}
+
+.model-advanced-config-dialog {
+  width: min(460px, calc(100vw - 48px));
 }
 
 .model-managed-note {

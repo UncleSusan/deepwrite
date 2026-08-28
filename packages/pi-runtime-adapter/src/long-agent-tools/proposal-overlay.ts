@@ -127,3 +127,15 @@ export function createProposalOverlay() {
 }
 
 export type ProposalOverlay = ReturnType<typeof createProposalOverlay>;
+
+/**
+ * Proposal revisions shared for one parent run. Read credentials deliberately
+ * stay in each tool context so a child must still read before overwriting.
+ */
+export interface LongWorkspaceToolSharedState {
+  readonly proposalOverlay: ProposalOverlay;
+}
+
+export function createLongWorkspaceToolSharedState(): LongWorkspaceToolSharedState {
+  return { proposalOverlay: createProposalOverlay() };
+}

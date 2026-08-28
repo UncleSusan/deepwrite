@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import type { TextViewMode } from "@deepwrite/contracts";
 import { onBeforeUnmount, ref, watch } from "vue";
+import DocumentMetaRow from "./DocumentMetaRow.vue";
 import MarkdownContent from "./MarkdownContent.vue";
 
 defineProps<{
@@ -10,7 +12,8 @@ defineProps<{
   eyebrow: string;
   format: string;
   content: string;
-  viewMode: "edit" | "preview";
+  documentKey: string;
+  viewMode: TextViewMode;
   readOnly: boolean;
   busy: boolean;
   committedNotice: string | undefined;
@@ -27,6 +30,7 @@ const emit = defineEmits<{
 }>();
 
 const editorElement = ref<HTMLTextAreaElement | null>(null);
+const previewElement = ref<HTMLElement | null>(null);
 
 watch(editorElement, (element) => emit("editorElementChange", element), {
   flush: "post"
@@ -48,7 +52,13 @@ function updateTitle(event: Event): void {
     :class="{ 'is-readonly': readOnly }"
     aria-label="章节正文编辑区"
   >
-    <div class="long-document-meta-row">
+    <DocumentMetaRow
+      variant="long"
+      :view-mode="viewMode"
+      :content="content"
+      :preview-element="previewElement"
+      :document-key="documentKey"
+    >
       <span>{{ eyebrow }}</span>
       <span v-if="format" class="long-document-format">
         {{ format }}
@@ -57,7 +67,7 @@ function updateTitle(event: Event): void {
         {{ committedNotice }}
       </span>
       <span v-else-if="readOnly" class="long-readonly-badge"> 只读内容 </span>
-    </div>
+    </DocumentMetaRow>
 
     <input
       v-if="titleEditable"
@@ -87,8 +97,12 @@ function updateTitle(event: Event): void {
       @input="emit('input', $event)"
       @keydown="emit('keydown', $event)"
     />
-    <article v-else class="long-document-preview">
-      <MarkdownContent v-if="content.trim()" :content="content" />
+    <article v-else ref="previewElement" class="long-document-preview">
+      <MarkdownContent
+        v-if="content.trim()"
+        :content="content"
+        annotate-headings
+      />
       <p v-else class="is-empty">暂无正文</p>
     </article>
   </section>
@@ -108,16 +122,6 @@ function updateTitle(event: Event): void {
 
 .long-editor-writing-surface.is-readonly {
   background: var(--surface-raised);
-}
-
-.long-document-meta-row {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 7px;
-  padding-inline: var(--long-document-inline-padding);
-  color: var(--text-tertiary);
-  font-size: 0.714286rem;
 }
 
 .long-document-format,

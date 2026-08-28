@@ -2,6 +2,7 @@ import {
   ChatAssistantProjectConfigListSchema,
   ChatAssistantProjectConfigSchema,
   ChatAssistantProjectRefSchema,
+  ModelCapacityResultSchema,
   ModelConfigInputSchema,
   ModelConnectionTestResultSchema,
   ModelSettingsInputSchema,
@@ -21,6 +22,7 @@ import {
   type ChatAssistantProjectConfig,
   type ChatAssistantProjectRef,
   type DeepWriteApi,
+  type ModelCapacityResult,
   type ModelConfigInput,
   type ModelConnectionTestResult,
   type ModelSettings,
@@ -121,6 +123,22 @@ export async function refreshFreeModels(): Promise<ModelSettings> {
   );
 }
 
+export async function setFreeModelEnabled(
+  modelId: string,
+  enabled: boolean
+): Promise<ModelSettings> {
+  const id = browserId("cmd_models_set_free_enabled");
+  return ModelSettingsSchema.parse(
+    await invokeCommand<ModelSettings>(
+      createEnvelope(
+        "models.setFreeModelEnabled",
+        { modelId, enabled },
+        { id, correlationId: id }
+      )
+    )
+  );
+}
+
 export async function refreshOfficialModels(): Promise<ModelSettings> {
   const id = browserId("cmd_models_refresh_official");
   return ModelSettingsSchema.parse(
@@ -207,6 +225,22 @@ export async function testModel(
   return ModelConnectionTestResultSchema.parse(
     await invokeCommand<ModelConnectionTestResult>(
       createEnvelope("models.test", { model }, { id, correlationId: id })
+    )
+  );
+}
+
+export async function resolveModelCapacity(
+  rawModel: ModelConfigInput
+): Promise<ModelCapacityResult> {
+  const model = ModelConfigInputSchema.parse(rawModel);
+  const id = browserId("cmd_models_resolve_capacity");
+  return ModelCapacityResultSchema.parse(
+    await invokeCommand<ModelCapacityResult>(
+      createEnvelope(
+        "models.resolveCapacity",
+        { model },
+        { id, correlationId: id }
+      )
     )
   );
 }
@@ -305,6 +339,21 @@ export const session: DeepWriteApi["session"] = {
   prompt,
   abort,
   submitUserInput
+};
+
+export const models: DeepWriteApi["models"] = {
+  list: listModels,
+  refreshFree: refreshFreeModels,
+  setFreeModelEnabled,
+  refreshOfficial: refreshOfficialModels,
+  queryOfficialBalance: queryOfficialModelBalance,
+  saveOfficialToken: saveOfficialModelToken,
+  clearOfficialToken: clearOfficialModelToken,
+  setOfficialModelEnabled,
+  save: saveModels,
+  test: testModel,
+  resolveCapacity: resolveModelCapacity,
+  listRemote: listRemoteModels
 };
 
 export const modelUsage: DeepWriteApi["modelUsage"] = {

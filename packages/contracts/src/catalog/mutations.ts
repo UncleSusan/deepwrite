@@ -31,6 +31,7 @@ import {
   SkillLibrarySchema
 } from "./libraries";
 import {
+  CREATIVE_PLOT_STAGE_MAX_COUNT,
   CreativePlotStageIdSchema,
   CreativePlotStageSchema
 } from "./plot-stages";
@@ -89,6 +90,11 @@ export type CatalogReadDocumentResult = z.infer<
 export const CreateShortBookInputSchema = z.object({
   title: CatalogTitleSchema,
   genre: ShortBookGenreSchema,
+  defaultPlotStageIds: z
+    .array(CreativePlotStageIdSchema)
+    .min(1)
+    .max(CREATIVE_PLOT_STAGE_MAX_COUNT)
+    .optional(),
   linkedMaterialIdsByKind: LinkedMaterialIdsByKindInputSchema.optional(),
   linkedSkillIdsByKind: LinkedSkillIdsByKindInputSchema.optional()
 });
