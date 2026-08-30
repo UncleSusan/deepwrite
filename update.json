@@ -2,18 +2,18 @@
   "schemaVersion": 1,
   "enabled": true,
   "channel": "stable",
-  "version": "1.3.3",
-  "title": "DeepWrite 1.3.3",
-  "publishedAt": "2026-08-23T20:05:58+08:00",
+  "version": "1.4.0",
+  "title": "DeepWrite 1.4.0",
+  "publishedAt": "2026-08-30T15:39:40+08:00",
   "releaseNotes": [
-    "新增统一的智能体团队目录与配置管理，完善主进程、Preload 与 Renderer 间的契约联动",
-    "重构智能体团队设置界面，拆分目录页、表单样式与编辑辅助逻辑，提升维护性和操作体验",
-    "优化智能体会话中的用户输入卡、轮次导航及设置状态同步",
-    "补充智能体团队配置迁移、目录契约与相关自动化测试",
+    "重构长篇书籍分析流程，完善分析源文件、预设管理、执行过程与结果展示",
+    "优化会话模型与思考配置选择、上下文提示及相关交互体验",
+    "强化长篇结构删除与同步、连续性定稿、台账索引和批量章节提交的一致性",
+    "完善跨进程契约、存储迁移与相关自动化测试",
     "本版本提供 Windows x64、macOS Intel（x64）和 Apple Silicon（arm64）测试安装包；macOS 测试包采用 ad-hoc 签名，未进行 Apple 公证"
   ],
   "mandatory": false,
   "minimumSupportedVersion": "1.0.0",
-  "releasePage": "https://github.com/swjybky/deepwrite/releases/tag/v1.3.3",
+  "releasePage": "https://github.com/swjybky/deepwrite/releases/tag/v1.4.0",
   "feedUrl": "https://github.com/swjybky/deepwrite/releases/latest/download"
 }
