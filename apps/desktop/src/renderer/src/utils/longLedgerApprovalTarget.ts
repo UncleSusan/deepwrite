@@ -1,4 +1,7 @@
-import type { SystemEventEnvelope } from "@deepwrite/contracts";
+import {
+  longCommitInputCheckpointChapterId,
+  type SystemEventEnvelope
+} from "@deepwrite/contracts";
 
 type LongLedgerCommitProposalEvent = Extract<
   SystemEventEnvelope,
@@ -12,7 +15,7 @@ export function longLedgerApprovalTarget(event: LongLedgerCommitProposalEvent) {
     candidates: [
       {
         kind: "chapter-card" as const,
-        chapterCardId: event.payload.input.chapterCardId,
+        chapterCardId: longCommitInputCheckpointChapterId(event.payload.input),
         view: "continuity" as const
       },
       { kind: "root" as const, root: "continuity_ledger" as const }

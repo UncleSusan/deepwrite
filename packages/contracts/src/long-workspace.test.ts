@@ -335,6 +335,12 @@ describe("independent long-form workspace contracts", () => {
     expect(DEFAULT_LONG_AGENTS_MD).toContain("## 正文阶段");
     expect(DEFAULT_LONG_AGENTS_MD).toContain("## 持续性账本阶段");
     expect(DEFAULT_LONG_AGENTS_MD).toContain(
+      "多章批次必须属于同一本书、按叙事顺序连续"
+    );
+    expect(DEFAULT_LONG_AGENTS_MD).toContain(
+      "只在批次最后一章生成一次汇总连续性文件"
+    );
+    expect(DEFAULT_LONG_AGENTS_MD).toContain(
       "未读取的正文、剧情或设定不得当成事实"
     );
     expect(DEFAULT_LONG_AGENTS_MD).toContain("账本不能新增伏笔线和触点");

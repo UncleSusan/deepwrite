@@ -168,13 +168,65 @@ export type LongTextFilesCommitChapterInput = z.infer<
   typeof LongTextFilesCommitChapterInputSchema
 >;
 
+export const LongTextFilesBatchCommitInputSchema = z
+  .object({
+    mode: z.literal("text_files_batch"),
+    bookId: LongBookIdSchema,
+    chapterCardIds: z.array(LongChapterCardIdSchema).min(1).max(100_000),
+    checkpointChapterCardId: LongChapterCardIdSchema,
+    foreshadowingBeatDecisions: z
+      .record(
+        LongForeshadowingBeatIdSchema,
+        LongCommitExecutionDecisionInputSchema
+      )
+      .default({}),
+    commitMessage: RequiredLedgerCommitMessageSchema
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (new Set(input.chapterCardIds).size !== input.chapterCardIds.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["chapterCardIds"],
+        message: "A chapter batch cannot contain the same chapter twice."
+      });
+    }
+    if (input.chapterCardIds.at(-1) !== input.checkpointChapterCardId) {
+      context.addIssue({
+        code: "custom",
+        path: ["checkpointChapterCardId"],
+        message: "The checkpoint must be the final chapter in the batch."
+      });
+    }
+  });
+export type LongTextFilesBatchCommitInput = z.infer<
+  typeof LongTextFilesBatchCommitInputSchema
+>;
+
 export const LongCommitChapterInputSchema = z.union([
   LongStructuredCommitChapterInputSchema,
-  LongTextFilesCommitChapterInputSchema
+  LongTextFilesCommitChapterInputSchema,
+  LongTextFilesBatchCommitInputSchema
 ]);
 export type LongCommitChapterInput = z.infer<
   typeof LongCommitChapterInputSchema
 >;
+
+export function longCommitInputChapterIds(
+  input: LongCommitChapterInput
+): string[] {
+  return input.mode === "text_files_batch"
+    ? [...input.chapterCardIds]
+    : [input.chapterCardId];
+}
+
+export function longCommitInputCheckpointChapterId(
+  input: LongCommitChapterInput
+): string {
+  return input.mode === "text_files_batch"
+    ? input.checkpointChapterCardId
+    : input.chapterCardId;
+}
 
 export const LongCommitChapterResultSchema = z
   .object({ record: LongLedgerCommitRecordSchema })

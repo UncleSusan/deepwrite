@@ -87,6 +87,8 @@ import {
 } from "./learning-imitation";
 import {
   LongBookAnalysisChooseSourceCommandEnvelopeSchema,
+  LongBookAnalysisListSourcesCommandEnvelopeSchema,
+  LongBookAnalysisLoadSourceCommandEnvelopeSchema,
   LongBookAnalysisSettingsListCommandEnvelopeSchema,
   LongBookAnalysisSettingsResetCommandEnvelopeSchema,
   LongBookAnalysisSettingsSaveCommandEnvelopeSchema
@@ -354,6 +356,8 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   LearningImitationSettingsSaveCommandEnvelopeSchema,
   LearningImitationSettingsResetCommandEnvelopeSchema,
   LongBookAnalysisChooseSourceCommandEnvelopeSchema,
+  LongBookAnalysisListSourcesCommandEnvelopeSchema,
+  LongBookAnalysisLoadSourceCommandEnvelopeSchema,
   LongBookAnalysisSettingsListCommandEnvelopeSchema,
   LongBookAnalysisSettingsSaveCommandEnvelopeSchema,
   LongBookAnalysisSettingsResetCommandEnvelopeSchema,

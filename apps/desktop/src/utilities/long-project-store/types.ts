@@ -4,6 +4,7 @@ import {
   type LongBookSummary,
   type LongCommitChapterInput,
   type LongProjectManifest,
+  type LongTextFilesBatchCommitInput,
   type LongTextFilesCommitChapterInput,
   type LongWorkspaceFileReference,
   type LongWorkspaceIndexSnapshot,
@@ -208,7 +209,8 @@ export type StoreCommitLongChapterInput =
       Partial<StoreCommitTypedContinuityFields> & {
         mode?: "structured";
       })
-  | Omit<LongTextFilesCommitChapterInput, "bookId">;
+  | Omit<LongTextFilesCommitChapterInput, "bookId">
+  | Omit<LongTextFilesBatchCommitInput, "bookId">;
 export interface SecureTextFile {
   content: string;
   bytes: Buffer;

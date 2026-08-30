@@ -142,7 +142,7 @@ export async function commitStructuredChapter(
   return await finishChapterCommit({
     ctx,
     loaded,
-    chapterEntry,
+    chapterEntries: [chapterEntry],
     record,
     mode: "structured",
     fileOperations

@@ -303,12 +303,19 @@ export function firstEmptyChapter(index: LongWorkspaceIndexSnapshot) {
 
 export function contiguousRecordedThrough(
   index: LongWorkspaceIndexSnapshot,
-  additionalChapterId?: string
+  additionalChapterIds?: string | readonly string[]
 ): string | null {
   const recorded = new Set(
-    index.ledger.commits.map(({ chapterCardId }) => chapterCardId)
+    index.chapters
+      .filter(({ commitId }) => commitId !== null)
+      .map(({ chapterCardId }) => chapterCardId)
   );
-  if (additionalChapterId) recorded.add(additionalChapterId);
+  const additions = Array.isArray(additionalChapterIds)
+    ? additionalChapterIds
+    : additionalChapterIds
+      ? [additionalChapterIds]
+      : [];
+  additions.forEach((chapterCardId) => recorded.add(chapterCardId));
   let through: string | null = null;
   for (const chapter of orderedChapterCards(index)) {
     if (!recorded.has(chapter.id)) break;

@@ -1,21 +1,33 @@
-import { computed, ref, shallowRef, type ComputedRef, type Ref } from "vue";
+import {
+  computed,
+  ref,
+  shallowRef,
+  watch,
+  type ComputedRef,
+  type Ref
+} from "vue";
 import {
   LongBookAnalysisSettingsInputSchema,
   LongBookAnalysisSourceSchema,
-  type CatalogLibrary,
   type DeepWriteApi,
   type LongBookAnalysisChapter,
   type LongBookAnalysisPreset,
   type LongBookAnalysisResult,
+  type LongBookAnalysisSavedSourceSummary,
   type LongBookAnalysisSource,
   type LongBookAnalysisSourceKind,
   type ModelConfig,
-  type SystemEventEnvelope
+  type SystemEventEnvelope,
+  type ThinkingLevel
 } from "@deepwrite/contracts/renderer";
 import {
   LongBookAnalysisPipeline,
   type LongBookAnalysisPhase
 } from "./analysis-pipeline";
+import {
+  formatAnalysisProgress,
+  type LongBookAnalysisProcessEntry
+} from "./analysis-process";
 
 export type LongBookAnalysisRunStatus =
   "idle" | "running" | "stopping" | "stopped" | "error" | "completed";
@@ -25,24 +37,33 @@ export interface LongBookAnalysisStartInput {
   startOrder: number;
   endOrder: number;
   modelId?: string;
+  thinkingLevel?: ThinkingLevel;
+  libraryId?: string;
 }
 
 export interface LongBookAnalysisPersistInput {
-  libraryId?: string;
-  newLibraryName?: string;
+  libraryId: string;
   baseProjectRevision?: number;
 }
 
 export interface LongBookAnalysisController {
   source: Ref<LongBookAnalysisSource | null>;
+  savedSources: Ref<LongBookAnalysisSavedSourceSummary[]>;
+  sourcesLoading: Readonly<Ref<boolean>>;
   presets: Ref<LongBookAnalysisPreset[]>;
   presetsLoading: Readonly<Ref<boolean>>;
   selectedModelId: Ref<string>;
+  selectedThinkingLevel: Ref<ThinkingLevel>;
+  activePresetId: ComputedRef<string>;
+  targetLibraryId: ComputedRef<string>;
   status: Readonly<Ref<LongBookAnalysisRunStatus>>;
   phase: Readonly<Ref<LongBookAnalysisPhase | null>>;
   progressText: ComputedRef<string>;
   error: Readonly<Ref<string | null>>;
   result: Ref<LongBookAnalysisResult | null>;
+  processEntries: Readonly<Ref<LongBookAnalysisProcessEntry[]>>;
+  currentActivity: Readonly<Ref<string>>;
+  liveOutput: Readonly<Ref<string>>;
   isBusy: ComputedRef<boolean>;
   canRetry: ComputedRef<boolean>;
   setConfiguredModels(
@@ -52,14 +73,14 @@ export interface LongBookAnalysisController {
   loadPresets(): Promise<void>;
   savePresets(presets: readonly LongBookAnalysisPreset[]): Promise<void>;
   resetPresets(presetId?: string): Promise<void>;
+  loadSavedSources(): Promise<void>;
+  loadSavedSource(sourceId: string): Promise<boolean>;
   chooseSource(kind: LongBookAnalysisSourceKind): Promise<boolean>;
   replaceChapters(chapters: readonly LongBookAnalysisChapter[]): boolean;
   start(input: LongBookAnalysisStartInput): Promise<boolean>;
   retry(): Promise<boolean>;
   stop(): Promise<boolean>;
-  persistResult(
-    input: LongBookAnalysisPersistInput
-  ): Promise<CatalogLibrary | null>;
+  persistResult(input: LongBookAnalysisPersistInput): Promise<void>;
   handleEvent(event: SystemEventEnvelope): void;
   dispose(): void;
 }
@@ -68,9 +89,12 @@ export function useLongBookAnalysis(options: {
   api: () => DeepWriteApi | undefined;
 }): LongBookAnalysisController {
   const source = shallowRef<LongBookAnalysisSource | null>(null);
+  const savedSources = ref<LongBookAnalysisSavedSourceSummary[]>([]);
+  const sourcesLoading = ref(false);
   const presets = ref<LongBookAnalysisPreset[]>([]);
   const presetsLoading = ref(false);
   const selectedModelId = ref("");
+  const selectedThinkingLevel = ref<ThinkingLevel>("off");
   const configuredModels = shallowRef<readonly ModelConfig[]>([]);
   const status = ref<LongBookAnalysisRunStatus>("idle");
   const phase = ref<LongBookAnalysisPhase | null>(null);
@@ -78,6 +102,9 @@ export function useLongBookAnalysis(options: {
   const estimatedUnits = ref(0);
   const error = ref<string | null>(null);
   const result = ref<LongBookAnalysisResult | null>(null);
+  const processEntries = ref<LongBookAnalysisProcessEntry[]>([]);
+  const currentActivity = ref("");
+  const liveOutput = ref("");
   const isBusy = computed(
     () => status.value === "running" || status.value === "stopping"
   );
@@ -87,15 +114,15 @@ export function useLongBookAnalysis(options: {
       (status.value === "error" || status.value === "stopped")
   );
   const progressText = computed(() => {
-    if (!phase.value) return "尚未开始";
-    const labels: Record<LongBookAnalysisPhase, string> = {
-      batch: "分批提炼",
-      reduce: "递归归并",
-      final: "生成结果"
-    };
-    return `${labels[phase.value]} · ${completedUnits.value}/${Math.max(completedUnits.value + 1, estimatedUnits.value)}`;
+    return formatAnalysisProgress(
+      phase.value,
+      completedUnits.value,
+      estimatedUnits.value
+    );
   });
   let disposed = false;
+  let sourceListSequence = 0;
+  let activeSourceListRequests = 0;
 
   function api(): DeepWriteApi {
     const current = options.api();
@@ -109,7 +136,21 @@ export function useLongBookAnalysis(options: {
     completedUnits,
     estimatedUnits,
     error,
-    result
+    result,
+    processEntries,
+    currentActivity,
+    liveOutput
+  });
+  const activePresetId = computed(() =>
+    status.value ? (pipeline.preset?.id ?? "") : ""
+  );
+  const targetLibraryId = computed(() =>
+    status.value ? pipeline.targetLibraryId : ""
+  );
+
+  watch(selectedModelId, (modelId) => {
+    const model = configuredModels.value.find((item) => item.id === modelId);
+    selectedThinkingLevel.value = model?.defaultThinkingLevel ?? "off";
   });
 
   function setConfiguredModels(
@@ -117,11 +158,26 @@ export function useLongBookAnalysis(options: {
     defaultModelId?: string
   ): void {
     configuredModels.value = models;
-    if (models.some((model) => model.id === selectedModelId.value)) return;
-    selectedModelId.value =
-      (defaultModelId && models.some((model) => model.id === defaultModelId)
-        ? defaultModelId
-        : models[0]?.id) ?? "";
+    const selected =
+      models.find((model) => model.id === selectedModelId.value) ??
+      (defaultModelId
+        ? models.find((model) => model.id === defaultModelId)
+        : undefined) ??
+      models[0];
+    if (!selected) {
+      selectedModelId.value = "";
+      selectedThinkingLevel.value = "off";
+      return;
+    }
+    const modelChanged = selectedModelId.value !== selected.id;
+    selectedModelId.value = selected.id;
+    if (
+      modelChanged ||
+      (selectedThinkingLevel.value !== "off" &&
+        !selected.thinkingLevelOptions.includes(selectedThinkingLevel.value))
+    ) {
+      selectedThinkingLevel.value = selected.defaultThinkingLevel;
+    }
   }
 
   async function loadPresets(): Promise<void> {
@@ -152,6 +208,33 @@ export function useLongBookAnalysis(options: {
     ).presets;
   }
 
+  async function loadSavedSources(): Promise<void> {
+    const sequence = ++sourceListSequence;
+    activeSourceListRequests += 1;
+    sourcesLoading.value = true;
+    try {
+      const catalog = await api().longBookAnalysis.sources.list();
+      if (!disposed && sequence === sourceListSequence) {
+        savedSources.value = catalog.sources;
+      }
+    } finally {
+      activeSourceListRequests -= 1;
+      if (!disposed) sourcesLoading.value = activeSourceListRequests > 0;
+    }
+  }
+
+  async function loadSavedSource(sourceId: string): Promise<boolean> {
+    if (isBusy.value) {
+      throw new Error("分析运行中，不能更换导入来源。");
+    }
+    if (source.value?.id === sourceId) return false;
+    const selected = await api().longBookAnalysis.sources.load(sourceId);
+    if (disposed) return false;
+    pipeline.reset();
+    source.value = selected;
+    return true;
+  }
+
   async function chooseSource(
     kind: LongBookAnalysisSourceKind
   ): Promise<boolean> {
@@ -162,6 +245,7 @@ export function useLongBookAnalysis(options: {
     if (!selected) return false;
     pipeline.reset();
     source.value = selected;
+    await loadSavedSources();
     return true;
   }
 
@@ -187,42 +271,24 @@ export function useLongBookAnalysis(options: {
     if (!preset) throw new Error("请选择一个拆书预设。");
     pipeline.start(source.value, preset, {
       ...input,
-      modelId: input.modelId || selectedModelId.value
+      modelId: input.modelId || selectedModelId.value,
+      thinkingLevel: input.thinkingLevel ?? selectedThinkingLevel.value
     });
     return true;
   }
 
   async function persistResult(
     input: LongBookAnalysisPersistInput
-  ): Promise<CatalogLibrary | null> {
+  ): Promise<void> {
     const preset = pipeline.preset;
     if (!preset || !result.value) {
       throw new Error("当前没有可落库的拆书结果。");
     }
     const output = preset.output;
-    let library: CatalogLibrary | null = null;
-    let libraryId = input.libraryId;
-    if (!libraryId) {
-      const name = input.newLibraryName?.trim();
-      if (!name) throw new Error("请输入新资料库名称。");
-      library = await (output.domain === "material"
-        ? api().catalog.createLibrary({
-            domain: "material",
-            name,
-            materialKind: output.kind
-          })
-        : api().catalog.createLibrary({
-            domain: "skill",
-            name,
-            skillKind: output.kind
-          }));
-      if (!library) return null;
-      libraryId = library.id;
-    }
     if (output.domain === "material") {
       await api().catalog.createLibraryEntry({
         domain: "material",
-        libraryId,
+        libraryId: input.libraryId,
         title: result.value.title,
         content: result.value.body,
         stageId: output.stageId,
@@ -233,7 +299,7 @@ export function useLongBookAnalysis(options: {
     } else {
       await api().catalog.createLibraryEntry({
         domain: "skill",
-        libraryId,
+        libraryId: input.libraryId,
         title: result.value.title,
         content: result.value.body,
         stageId: output.stageId,
@@ -242,25 +308,34 @@ export function useLongBookAnalysis(options: {
           : { baseProjectRevision: input.baseProjectRevision })
       });
     }
-    return library;
   }
 
   return {
     source,
+    savedSources,
+    sourcesLoading,
     presets,
     presetsLoading,
     selectedModelId,
+    selectedThinkingLevel,
+    activePresetId,
+    targetLibraryId,
     status,
     phase,
     progressText,
     error,
     result,
+    processEntries,
+    currentActivity,
+    liveOutput,
     isBusy,
     canRetry,
     setConfiguredModels,
     loadPresets,
     savePresets,
     resetPresets,
+    loadSavedSources,
+    loadSavedSource,
     chooseSource,
     replaceChapters,
     start,

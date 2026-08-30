@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type {
-  LongWorkspaceImpactConfirmation,
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
@@ -30,10 +29,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: [];
-  previewMutation: [
-    batch: LongWorkspaceOperationBatch,
-    completion: (impact?: LongWorkspaceImpactConfirmation) => void
-  ];
   mutation: [
     batch: LongWorkspaceOperationBatch,
     completion: LongStructureMutationCompletion
@@ -66,13 +61,6 @@ function forwardMutation(
   completion: LongStructureMutationCompletion
 ): void {
   emit("mutation", batch, completion);
-}
-
-function forwardPreviewMutation(
-  batch: LongWorkspaceOperationBatch,
-  completion: (impact?: LongWorkspaceImpactConfirmation) => void
-): void {
-  emit("previewMutation", batch, completion);
 }
 
 function forwardSyncWorldbuilding(
@@ -198,7 +186,6 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
           :agents-md-pending="agentsMdPending"
           :sync-book-options="syncBookOptions"
           :disabled="pending"
-          @preview-mutation="forwardPreviewMutation"
           @mutation="forwardMutation"
           @modal-active-change="childModalActive = $event"
           @sync-worldbuilding="forwardSyncWorldbuilding"

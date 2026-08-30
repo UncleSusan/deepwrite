@@ -8,6 +8,10 @@ import {
 import { EnvelopeBaseSchema } from "./envelope";
 
 export const LONG_BOOK_ANALYSIS_MAX_PRESETS = 50;
+// Allows the three required built-ins to be restored for legacy configurations
+// that already reached the user-facing preset limit without them.
+const LONG_BOOK_ANALYSIS_MAX_PERSISTED_PRESETS =
+  LONG_BOOK_ANALYSIS_MAX_PRESETS + 3;
 export const LONG_BOOK_ANALYSIS_MAX_SELECTED_CHAPTERS = 50;
 export const LONG_BOOK_ANALYSIS_MAX_SOURCE_CHAPTERS = 10_000;
 export const LONG_BOOK_ANALYSIS_MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -21,17 +25,20 @@ export const LONG_BOOK_ANALYSIS_DEFAULT_CONTEXT_WINDOW = 272_000;
 
 const LongBookAnalysisIdSchema = z.string().trim().min(1).max(120);
 const LongBookAnalysisTitleSchema = z.string().trim().min(1).max(256);
+const LongBookAnalysisLibraryIdSchema = z.string().trim().min(1).max(512);
 
 export const LongBookAnalysisOutputSchema = z.discriminatedUnion("domain", [
   z.object({
     domain: z.literal("material"),
     kind: MaterialKindSchema,
-    stageId: MaterialStageIdSchema
+    stageId: MaterialStageIdSchema,
+    libraryId: LongBookAnalysisLibraryIdSchema.optional()
   }),
   z.object({
     domain: z.literal("skill"),
     kind: SkillKindSchema,
-    stageId: SkillStageIdSchema
+    stageId: SkillStageIdSchema,
+    libraryId: LongBookAnalysisLibraryIdSchema.optional()
   })
 ]);
 export type LongBookAnalysisOutput = z.infer<
@@ -85,7 +92,7 @@ export const LongBookAnalysisSettingsInputSchema = z
   .object({
     presets: z
       .array(LongBookAnalysisPresetSchema.omit({ builtin: true }))
-      .max(LONG_BOOK_ANALYSIS_MAX_PRESETS)
+      .max(LONG_BOOK_ANALYSIS_MAX_PERSISTED_PRESETS)
   })
   .superRefine((value, context) => validatePresetList(value.presets, context));
 export type LongBookAnalysisSettingsInput = z.infer<
@@ -96,7 +103,7 @@ export const LongBookAnalysisSettingsSchema = z
   .object({
     presets: z
       .array(LongBookAnalysisPresetSchema)
-      .max(LONG_BOOK_ANALYSIS_MAX_PRESETS),
+      .max(LONG_BOOK_ANALYSIS_MAX_PERSISTED_PRESETS),
     updatedAt: z.string().datetime().optional()
   })
   .superRefine((value, context) => validatePresetList(value.presets, context));
@@ -189,6 +196,45 @@ export type LongBookAnalysisSource = z.infer<
 export const LongBookAnalysisSourceKindSchema = z.enum(["txt", "directory"]);
 export type LongBookAnalysisSourceKind = z.infer<
   typeof LongBookAnalysisSourceKindSchema
+>;
+
+export const LongBookAnalysisSavedSourceIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(120)
+  .regex(/^[a-z0-9_-]+$/iu);
+export type LongBookAnalysisSavedSourceId = z.infer<
+  typeof LongBookAnalysisSavedSourceIdSchema
+>;
+
+export const LongBookAnalysisSavedSourceSummarySchema = z.object({
+  id: LongBookAnalysisSavedSourceIdSchema,
+  kind: LongBookAnalysisSourceKindSchema,
+  name: z.string().trim().min(1).max(1_024),
+  chapterCount: z
+    .number()
+    .int()
+    .positive()
+    .max(LONG_BOOK_ANALYSIS_MAX_SOURCE_CHAPTERS),
+  characterCount: z
+    .number()
+    .int()
+    .positive()
+    .max(LONG_BOOK_ANALYSIS_MAX_TOTAL_CHARACTERS),
+  importedAt: z.string().datetime()
+});
+export type LongBookAnalysisSavedSourceSummary = z.infer<
+  typeof LongBookAnalysisSavedSourceSummarySchema
+>;
+
+export const LongBookAnalysisSavedSourceCatalogSchema = z.object({
+  sources: z
+    .array(LongBookAnalysisSavedSourceSummarySchema)
+    .max(LONG_BOOK_ANALYSIS_MAX_SOURCE_CHAPTERS)
+});
+export type LongBookAnalysisSavedSourceCatalog = z.infer<
+  typeof LongBookAnalysisSavedSourceCatalogSchema
 >;
 
 export const LongBookAnalysisSegmentSchema = z.object({
@@ -310,6 +356,18 @@ export const LongBookAnalysisChooseSourceCommandEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("longBookAnalysis.chooseSource"),
     payload: z.object({ kind: LongBookAnalysisSourceKindSchema })
+  });
+
+export const LongBookAnalysisListSourcesCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("longBookAnalysis.listSources"),
+    payload: z.object({})
+  });
+
+export const LongBookAnalysisLoadSourceCommandEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("longBookAnalysis.loadSource"),
+    payload: z.object({ sourceId: LongBookAnalysisSavedSourceIdSchema })
   });
 
 export const LongBookAnalysisSettingsListCommandEnvelopeSchema =

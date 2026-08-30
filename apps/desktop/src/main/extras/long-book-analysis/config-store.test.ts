@@ -67,6 +67,52 @@ describe("long-book analysis config store", () => {
     );
   });
 
+  it("persists a preset's default target library", async () => {
+    const { store } = await createStore();
+    const presets = (await store.list()).presets.map(
+      ({ builtin: _builtin, ...preset }) =>
+        preset.id === "plot-structure"
+          ? {
+              ...preset,
+              output: { ...preset.output, libraryId: "material-library-1" }
+            }
+          : preset
+    );
+    await store.save({ presets });
+    expect(
+      (await store.list()).presets.find(
+        (preset) => preset.id === "plot-structure"
+      )?.output.libraryId
+    ).toBe("material-library-1");
+  });
+
+  it("restores missing built-in presets without overwriting edited defaults", async () => {
+    const { store } = await createStore();
+    const plotPreset = (await store.list()).presets.find(
+      (preset) => preset.id === "plot-structure"
+    )!;
+    const { builtin: _builtin, ...editablePlotPreset } = plotPreset;
+    const saved = await store.save({
+      presets: [
+        {
+          ...editablePlotPreset,
+          description: "保留用户修改后的剧情结构预设。"
+        }
+      ]
+    });
+
+    expect(saved.presets.map((preset) => preset.id)).toEqual([
+      "character",
+      "style",
+      "plot-structure"
+    ]);
+    expect(
+      saved.presets.find((preset) => preset.id === "plot-structure")
+        ?.description
+    ).toBe("保留用户修改后的剧情结构预设。");
+    expect(saved.presets.every((preset) => preset.builtin)).toBe(true);
+  });
+
   it("falls back safely when the persisted JSON is damaged", async () => {
     const { path, store } = await createStore();
     const configPath = join(path, "config", "long-book-analysis-presets.json");

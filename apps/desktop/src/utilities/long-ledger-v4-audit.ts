@@ -1,11 +1,12 @@
-import type {
-  LongLedgerCommitIndexEntry,
-  LongLedgerCommitRecord,
-  LongWorkspaceIndexSnapshot
+import {
+  longLedgerRecordCheckpointChapterId,
+  type LongLedgerCommitIndexEntry,
+  type LongLedgerCommitRecord,
+  type LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
 
 /**
- * A v4 record keeps the stable identities of the chapter continuity files.
+ * Text-file records keep the stable identities of checkpoint continuity files.
  * Their content remains directly editable and is intentionally not pinned.
  */
 export function assertLongV4LedgerFileAudit(
@@ -14,13 +15,16 @@ export function assertLongV4LedgerFileAudit(
   record: LongLedgerCommitRecord,
   _continuityFileContents?: ReadonlyMap<string, string>
 ): void {
-  if (record.schemaVersion !== 4) return;
+  if (record.schemaVersion !== 4 && record.schemaVersion !== 5) return;
+  const checkpointChapterCardId = longLedgerRecordCheckpointChapterId(record);
   const chapter = index.chapters.find(
-    ({ chapterCardId }) => chapterCardId === record.chapterCardId
+    ({ chapterCardId }) => chapterCardId === checkpointChapterCardId
   );
   if (!chapter) {
     throw new Error(
-      `v4 连续性账本引用了不存在的章节：${record.chapterCardId}。`
+      record.schemaVersion === 4
+        ? `v4 连续性账本引用了不存在的章节：${record.chapterCardId}。`
+        : `v5 批量连续性账本引用了不存在的检查点章节：${checkpointChapterCardId}。`
     );
   }
 
@@ -55,6 +59,10 @@ export function assertLongV4LedgerFileAudit(
       return !current || current.path !== audited.path;
     });
   if (invalid) {
-    throw new Error(`v4 连续性账本的文件清单与章节索引不一致：${record.id}。`);
+    throw new Error(
+      record.schemaVersion === 4
+        ? `v4 连续性账本的文件清单与章节索引不一致：${record.id}。`
+        : `v5 批量连续性账本的文件清单与检查点章节索引不一致：${record.id}。`
+    );
   }
 }

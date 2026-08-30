@@ -1,5 +1,6 @@
 import {
   LongCommitChapterInputSchema,
+  longCommitInputChapterIds,
   type SystemEventEnvelope
 } from "@deepwrite/contracts";
 import type { LongWorkspaceRendererApi } from "../types/longWorkspace";
@@ -16,7 +17,8 @@ function ipcSafeJson<T>(value: T): T {
 export function continuityFinalizationKey(
   event: LongContinuityFinalizationEvent
 ): string {
-  return `${event.payload.bookId}\u0000${event.payload.input.chapterCardId}`;
+  const chapterIds = longCommitInputChapterIds(event.payload.input);
+  return `${event.payload.bookId}\u0000${chapterIds.join("\u0000")}`;
 }
 
 export async function commitLongContinuityFinalization(

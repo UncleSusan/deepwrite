@@ -39,7 +39,9 @@ function fixture() {
   const model = {
     id: "model-1",
     contextWindow: 100_000,
-    maxTokens: 16_000
+    maxTokens: 16_000,
+    defaultThinkingLevel: "medium",
+    thinkingLevelOptions: ["low", "medium", "high"]
   } as ModelConfig;
   const state: LongBookAnalysisPipelineState = {
     status: ref("idle"),
@@ -47,7 +49,10 @@ function fixture() {
     completedUnits: ref(0),
     estimatedUnits: ref(0),
     error: ref(null),
-    result: ref(null)
+    result: ref(null),
+    processEntries: ref([]),
+    currentActivity: ref(""),
+    liveOutput: ref("")
   };
   return {
     prompts,
@@ -116,9 +121,12 @@ describe("long-book analysis pipeline checkpoints", () => {
       presetId: preset.id,
       startOrder: 1,
       endOrder: 1,
-      modelId: "model-1"
+      modelId: "model-1",
+      thinkingLevel: "high",
+      libraryId: "material-library-1"
     });
     const failed = await waitForPrompt(prompts, 1);
+    expect(failed.thinkingLevel).toBe("high");
     pipeline.handleEvent(
       event("agent.error", failed, { message: "temporary", code: "test" })
     );
@@ -135,7 +143,12 @@ describe("long-book analysis pipeline checkpoints", () => {
         note: { text: "保留章节证据的中间笔记。" }
       })
     );
-    pipeline.handleEvent(event("agent.message_completed", batch, {}));
+    pipeline.handleEvent(
+      event("agent.message_completed", batch, {
+        role: "assistant",
+        content: "批次分析完成。"
+      })
+    );
 
     const final = await waitForPrompt(prompts, 3);
     const finalContext = final.workspaceContext!.longBookAnalysis!;
@@ -147,10 +160,17 @@ describe("long-book analysis pipeline checkpoints", () => {
         result: { title: "剧情结构", body: "# 可编辑结果" }
       })
     );
-    pipeline.handleEvent(event("agent.message_completed", final, {}));
+    expect(state.result.value?.body).toBe("# 可编辑结果");
+    pipeline.handleEvent(
+      event("agent.message_completed", final, {
+        role: "assistant",
+        content: "正式结果已生成。"
+      })
+    );
 
     await vi.waitFor(() => expect(state.status.value).toBe("completed"));
     expect(state.result.value?.body).toBe("# 可编辑结果");
+    expect(state.processEntries.value.at(-1)?.title).toBe("当前预设执行完成");
   });
 
   it("aborts the active run and preserves it for resume", async () => {
@@ -159,7 +179,8 @@ describe("long-book analysis pipeline checkpoints", () => {
       presetId: preset.id,
       startOrder: 1,
       endOrder: 1,
-      modelId: "model-1"
+      modelId: "model-1",
+      libraryId: "material-library-1"
     });
     const active = await waitForPrompt(prompts, 1);
     await pipeline.stop();
@@ -169,5 +190,20 @@ describe("long-book analysis pipeline checkpoints", () => {
     );
     await vi.waitFor(() => expect(state.status.value).toBe("stopped"));
     expect(pipeline.hasJob).toBe(true);
+  });
+
+  it("runs only the selected preset without requiring a target library", async () => {
+    const { pipeline, prompts, state } = fixture();
+    pipeline.start(source, preset, {
+      presetId: preset.id,
+      startOrder: 1,
+      endOrder: 1,
+      modelId: "model-1"
+    });
+
+    const active = await waitForPrompt(prompts, 1);
+    expect(active.workspaceContext?.longBookAnalysis?.presetId).toBe(preset.id);
+    expect(pipeline.targetLibraryId).toBe("");
+    expect(state.processEntries.value[0]?.detail).toContain("仅运行当前预设");
   });
 });

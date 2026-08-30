@@ -5,6 +5,8 @@ import {
   LongProjectManifestSchema,
   LongWorkspaceFileReferenceSchema,
   LongWorkspaceIndexSnapshotSchema,
+  longLedgerCommitChapterIds,
+  longLedgerRecordChapterIds,
   longChapterContinuityFilePath,
   longChapterForeshadowingChangesFileId,
   longWorldbuildingItemContentPath,
@@ -302,8 +304,19 @@ export function assertLongLedgerRecordMatchesIndex(
   const indexedPosition = index.ledger.commits.findIndex(
     (candidate) => candidate.id === entry.id
   );
-  const chapter = index.chapters.find(
-    (candidate) => candidate.chapterCardId === entry.chapterCardId
+  const indexedChapterIds = longLedgerCommitChapterIds(entry);
+  const recordedChapterIds = longLedgerRecordChapterIds(record);
+  const chaptersMatch =
+    indexedChapterIds.length === recordedChapterIds.length &&
+    indexedChapterIds.every(
+      (chapterCardId, index) => chapterCardId === recordedChapterIds[index]
+    );
+  const chaptersCarryCommit = indexedChapterIds.every((chapterCardId) =>
+    index.chapters.some(
+      (candidate) =>
+        candidate.chapterCardId === chapterCardId &&
+        candidate.commitId === entry.id
+    )
   );
   const importCheckpointMatches =
     entry.mode === "import_checkpoint" &&
@@ -318,16 +331,20 @@ export function assertLongLedgerRecordMatchesIndex(
   const modeMatches =
     importCheckpointMatches ||
     (entry.mode === "text_files" && record.schemaVersion === 4) ||
-    (entry.mode === "structured" && record.schemaVersion !== 4);
+    (entry.mode === "text_files_batch" && record.schemaVersion === 5) ||
+    (entry.mode === "structured" &&
+      record.schemaVersion !== 4 &&
+      record.schemaVersion !== 5);
   if (
     indexedPosition < 0 ||
     record.id !== entry.id ||
     record.bookId !== index.bookId ||
     record.sequence !== entry.sequence ||
     record.chapterCardId !== entry.chapterCardId ||
+    !chaptersMatch ||
     record.committedAt !== entry.committedAt ||
     !modeMatches ||
-    chapter?.commitId !== entry.id ||
+    !chaptersCarryCommit ||
     !sameIdSet(
       entry.placementIds,
       record.placementChanges.map(({ placementId }) => placementId)

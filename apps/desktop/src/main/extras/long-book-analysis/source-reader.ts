@@ -29,6 +29,9 @@ const SPECIAL_HEADING =
 const ENGLISH_HEADING =
   /^\s*(chapter\s+[0-9ivxlcdm]+)(?:[\s:：._—-]+(.{1,80}))?\s*$/iu;
 const NUMERIC_HEADING = /^\s*(\d{1,6})(?:[.、\s:：_—-]+(.{1,80}))?\s*$/u;
+const PUBLICATION_TIMESTAMP =
+  /^\d{4}-\d{1,2}-\d{1,2}\s*\d{1,2}:\d{2}(?::\d{2})?\s*(?:发表|发布)?$/u;
+const DECORATIVE_PREFIX_LINE = /^(?:正文|目录|contents?|[-=_*—·]{3,})$/iu;
 
 interface HeadingCandidate {
   lineIndex: number;
@@ -47,10 +50,20 @@ interface TextLine {
 
 function normalizeText(text: string): string {
   return text
-    .replace(/^\uFEFF/u, "")
+    .replace(/\uFEFF/gu, "")
     .replace(/\r\n?/gu, "\n")
     .replace(/[ \t]+\n/gu, "\n")
     .trim();
+}
+
+function isDecorativePrefix(text: string): boolean {
+  const lines = normalizeText(text)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return (
+    lines.length > 0 && lines.every((line) => DECORATIVE_PREFIX_LINE.test(line))
+  );
 }
 
 function decodeUtf16BigEndian(bytes: Uint8Array): string {
@@ -114,7 +127,9 @@ function collectHeadings(lines: readonly TextLine[]): HeadingCandidate[] {
     const chapterMatch = CHAPTER_HEADING.exec(cleaned);
     const specialMatch = SPECIAL_HEADING.exec(cleaned);
     const englishMatch = ENGLISH_HEADING.exec(cleaned);
-    const numericMatch = NUMERIC_HEADING.exec(cleaned);
+    const numericMatch = PUBLICATION_TIMESTAMP.test(cleaned)
+      ? null
+      : NUMERIC_HEADING.exec(cleaned);
     const title = chapterMatch
       ? joinedHeading(chapterMatch[1]!, chapterMatch[2])
       : specialMatch
@@ -202,7 +217,9 @@ export function parseLongBookAnalysisTxt(
   const chapters: LongBookAnalysisChapter[] = [];
   const firstHeading = headings[0]!;
   const prefix = normalized.slice(0, firstHeading.blockStart);
-  const preface = chapter(1, "正文前内容", sourceName, prefix);
+  const preface = isDecorativePrefix(prefix)
+    ? undefined
+    : chapter(1, "正文前内容", sourceName, prefix);
   if (preface) {
     chapters.push(preface);
     diagnostics.push({
@@ -211,6 +228,7 @@ export function parseLongBookAnalysisTxt(
       sourceName
     });
   }
+  let emptyHeadingCount = 0;
   headings.forEach((heading, index) => {
     const next = headings[index + 1];
     const end = next ? next.blockStart : normalized.length;
@@ -222,14 +240,15 @@ export function parseLongBookAnalysisTxt(
       heading.volume
     );
     if (parsed) chapters.push(parsed);
-    else {
-      diagnostics.push({
-        code: "empty_chapter_skipped",
-        message: `章节“${heading.title}”没有正文，已跳过。`,
-        sourceName
-      });
-    }
+    else emptyHeadingCount += 1;
   });
+  if (emptyHeadingCount > 0) {
+    diagnostics.push({
+      code: "empty_headings_skipped",
+      message: `已跳过 ${emptyHeadingCount.toLocaleString("zh-CN")} 个没有正文的章节标题，其余正文已继续导入。`,
+      sourceName
+    });
+  }
   if (!chapters.length)
     throw new Error(`“${sourceName}”没有可读取的章节正文。`);
   return { chapters, diagnostics };

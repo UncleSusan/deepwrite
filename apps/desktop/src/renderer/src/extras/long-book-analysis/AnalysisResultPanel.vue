@@ -8,57 +8,54 @@ import type {
 import PopupSelect, {
   type PopupSelectOption
 } from "../../components/PopupSelect.vue";
+import {
+  analysisLibraryOption,
+  analysisOutputTypeLabel,
+  compatibleAnalysisLibraries
+} from "./task-options";
 
-const NEW_LIBRARY = "__new_library__";
 const props = defineProps<{
   result: LongBookAnalysisResult;
   preset: LongBookAnalysisPreset;
   catalogSnapshot: CatalogSnapshot | null;
+  targetLibraryId: string;
   saving: boolean;
 }>();
 const emit = defineEmits<{
   update: [result: LongBookAnalysisResult];
   save: [
     input: {
-      libraryId?: string;
-      newLibraryName?: string;
+      libraryId: string;
       baseProjectRevision?: number;
     }
   ];
 }>();
 
 const targetId = ref("");
-const newLibraryName = ref("");
-const compatibleLibraries = computed(() => {
-  const output = props.preset.output;
-  if (output.domain === "material") {
-    return (props.catalogSnapshot?.materials ?? []).filter(
-      (library) =>
-        library.materialKind === output.kind || library.materialKind === "mixed"
-    );
-  }
-  return (props.catalogSnapshot?.skills ?? []).filter(
-    (library) => library.skillKind === output.kind && !library.isBuiltin
+const compatibleLibraries = computed(() =>
+  compatibleAnalysisLibraries(props.preset, props.catalogSnapshot)
+);
+const targetOptions = computed<PopupSelectOption[]>(() =>
+  compatibleLibraries.value.map(analysisLibraryOption)
+);
+const targetLibrary = computed(() => {
+  return compatibleLibraries.value.find(
+    (library) => library.id === targetId.value
   );
 });
-const targetOptions = computed<PopupSelectOption[]>(() => [
-  ...compatibleLibraries.value.map((library) => ({
-    value: library.id,
-    label: library.title
-  })),
-  { value: NEW_LIBRARY, label: "新建兼容资料库" }
-]);
+const outputTypeLabel = computed(() => analysisOutputTypeLabel(props.preset));
 
 watch(
-  compatibleLibraries,
-  (libraries) => {
-    if (
-      targetId.value &&
-      (targetId.value === NEW_LIBRARY ||
-        libraries.some((library) => library.id === targetId.value))
-    )
-      return;
-    targetId.value = libraries[0]?.id ?? NEW_LIBRARY;
+  [() => props.targetLibraryId, compatibleLibraries],
+  ([preferredId, libraries]) => {
+    if (libraries.some((library) => library.id === targetId.value)) return;
+    const presetDefaultId = props.preset.output.libraryId ?? "";
+    targetId.value =
+      [preferredId, presetDefaultId].find((id) =>
+        libraries.some((library) => library.id === id)
+      ) ??
+      libraries[0]?.id ??
+      "";
   },
   { immediate: true }
 );
@@ -76,20 +73,13 @@ function updateBody(event: Event): void {
 }
 
 function save(): void {
-  const selected = compatibleLibraries.value.find(
-    (library) => library.id === targetId.value
-  );
-  emit(
-    "save",
-    targetId.value === NEW_LIBRARY
-      ? { newLibraryName: newLibraryName.value }
-      : {
-          libraryId: targetId.value,
-          ...(selected?.projectRevision === undefined
-            ? {}
-            : { baseProjectRevision: selected.projectRevision })
-        }
-  );
+  if (!targetLibrary.value) return;
+  emit("save", {
+    libraryId: targetLibrary.value.id,
+    ...(targetLibrary.value.projectRevision === undefined
+      ? {}
+      : { baseProjectRevision: targetLibrary.value.projectRevision })
+  });
 }
 </script>
 
@@ -98,11 +88,11 @@ function save(): void {
     <header class="analysis-card-heading">
       <div>
         <p class="analysis-eyebrow">分析与结果</p>
-        <h2>可编辑 Markdown 预览</h2>
+        <h2>“{{ preset.name }}”生成结果</h2>
       </div>
       <span
         >{{ preset.output.domain === "material" ? "素材" : "技能" }} ·
-        {{ preset.output.kind }} / {{ preset.output.stageId }}</span
+        {{ outputTypeLabel }}</span
       >
     </header>
     <input
@@ -120,34 +110,41 @@ function save(): void {
       @input="updateBody"
     />
     <div class="result-save-row">
-      <PopupSelect
-        v-model="targetId"
-        :options="targetOptions"
-        accessible-label="目标资料库"
-        :menu-min-width="260"
-      />
-      <input
-        v-if="targetId === NEW_LIBRARY"
-        v-model="newLibraryName"
-        maxlength="120"
-        placeholder="新资料库名称"
-        aria-label="新资料库名称"
-      />
+      <div class="result-target-library">
+        <label>
+          <span
+            >写入到{{
+              preset.output.domain === "material" ? "素材库" : "技能库"
+            }}</span
+          >
+          <PopupSelect
+            v-model="targetId"
+            :options="targetOptions"
+            accessible-label="结果写入目标资料库"
+            :placeholder="
+              targetOptions.length ? '选择具体资料库' : '没有兼容的资料库'
+            "
+            :disabled="saving || targetOptions.length === 0"
+            :menu-min-width="280"
+          />
+        </label>
+        <small>{{ outputTypeLabel }} · 生成后可随时更换目标库</small>
+      </div>
       <button
         class="analysis-primary-button"
         type="button"
-        :disabled="
-          saving ||
-          !targetId ||
-          (targetId === NEW_LIBRARY && !newLibraryName.trim())
-        "
+        :disabled="saving || !targetLibrary"
         @click="save"
       >
-        {{ saving ? "创建中…" : "确认创建新条目" }}
+        {{
+          saving
+            ? "写入中…"
+            : `写入${preset.output.domain === "material" ? "素材库" : "技能库"}`
+        }}
       </button>
     </div>
     <p class="analysis-help">
-      只会创建新条目，不会覆盖已有内容。结果在确认前不会落盘。
+      结果会一直保留在当前预览中；每次写入只创建新条目，不会覆盖已有内容。
     </p>
   </section>
 </template>
@@ -159,7 +156,7 @@ function save(): void {
 }
 .result-title,
 .result-body,
-.result-save-row > input {
+.result-target-library {
   box-sizing: border-box;
   width: 100%;
   border: 1px solid var(--theme-line-soft);
@@ -179,10 +176,31 @@ function save(): void {
   line-height: 1.7;
 }
 .result-save-row {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(200px, 1fr) auto;
+  display: flex;
+  justify-content: space-between;
   gap: 10px;
   align-items: center;
+}
+.result-save-row > .analysis-primary-button {
+  flex: 0 0 auto;
+  min-width: 110px;
+  white-space: nowrap;
+}
+.result-target-library {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+.result-target-library label {
+  display: grid;
+  grid-template-columns: auto minmax(220px, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.result-target-library label > span,
+.result-target-library small {
+  color: var(--text-tertiary);
+  font-size: 12px;
 }
 .analysis-help {
   margin: 0;
@@ -191,6 +209,10 @@ function save(): void {
 }
 @media (max-width: 800px) {
   .result-save-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .result-target-library label {
     grid-template-columns: 1fr;
   }
 }

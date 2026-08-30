@@ -460,7 +460,7 @@ const temperatureOptions = computed(
   () => selectedModel.value?.temperatureOptions ?? []
 );
 const temperatureSelectOptions = computed(() =>
-  temperatureOptions.value.map((value) => ({ value, label: `温度 ${value}` }))
+  temperatureOptions.value.map((value) => ({ value, label: String(value) }))
 );
 const approvalOptions = [
   {

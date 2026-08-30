@@ -326,7 +326,9 @@ export function createLongWorkspaceNavigationSnapshot(
       storyEvents: workspace.plot.storyEvents.length,
       storyPlots: workspace.plot.storyPlots.length,
       foreshadowingThreads: workspace.plot.foreshadowing.length,
-      committedChapters: workspace.ledger.commits.length
+      committedChapters: workspace.chapters.filter(
+        ({ commitId }) => commitId !== null
+      ).length
     },
     worldbuilding: workspace.worldbuilding.map(
       ({ id, title, order, format }) => ({ id, title, order, format })

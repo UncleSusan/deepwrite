@@ -94,6 +94,8 @@
 
 ### 1.3 素材库 / 技能库（同一体系，顺带说明）
 
+磁盘目录与左侧树的完整结构见 `docs/skill-and-material-library-structure.md`。摘要如下：
+
 ```text
 我的人设素材库/
 ├── deepwrite.json    # kind: "deepwrite.material-library"

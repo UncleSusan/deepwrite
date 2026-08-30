@@ -175,6 +175,41 @@ describe("long ledger contracts", () => {
     ).toBe(false);
   });
 
+  it("accepts one ordered batch with a final checkpoint", () => {
+    const input = LongCommitChapterInputSchema.parse({
+      mode: "text_files_batch",
+      bookId: "longbook_alpha",
+      chapterCardIds: ["chapter_one", "chapter_two"],
+      checkpointChapterCardId: "chapter_two",
+      foreshadowingBeatDecisions: {},
+      commitMessage: "一起提交前两章"
+    });
+    expect(input).toMatchObject({
+      mode: "text_files_batch",
+      chapterCardIds: ["chapter_one", "chapter_two"],
+      checkpointChapterCardId: "chapter_two"
+    });
+    expect(
+      LongCommitChapterInputSchema.safeParse({
+        ...input,
+        checkpointChapterCardId: "chapter_one"
+      }).success
+    ).toBe(false);
+
+    expect(
+      LongLedgerCommitRecordSchema.parse({
+        ...record,
+        schemaVersion: 5,
+        chapterCardId: "chapter_two",
+        chapterCardIds: ["chapter_one", "chapter_two"],
+        checkpointChapterCardId: "chapter_two"
+      })
+    ).toMatchObject({
+      schemaVersion: 5,
+      chapterCardIds: ["chapter_one", "chapter_two"]
+    });
+  });
+
   it("validates decision ownership and semantic change sources", () => {
     expect(
       LongLedgerCommitRecordSchema.safeParse({

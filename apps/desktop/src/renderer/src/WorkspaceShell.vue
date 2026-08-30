@@ -2729,7 +2729,6 @@ onBeforeUnmount(() => {
     @close-legacy-sync="closeLegacySyncDialog"
     @confirm-legacy-sync="confirmLegacySync"
     @close-long-structure="closeLongStructureDialog"
-    @preview-long-structure-mutation="previewActiveLongStructureMutation"
     @long-structure-mutation="handleActiveLongStructureMutation"
     @save-long-agents-md="saveLongAgentsMd"
     @sync-long-worldbuilding="handleLongWorldbuildingSync"

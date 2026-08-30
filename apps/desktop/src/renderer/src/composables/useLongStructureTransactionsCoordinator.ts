@@ -3,6 +3,7 @@ import type {
   LongWorkspaceImpactConfirmation,
   LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
+import { previewLongWorkspaceOperations } from "@deepwrite/contracts/renderer";
 import {
   isLongMigrationEvidenceCategoryId,
   type LongStructureMutationCompletion
@@ -129,30 +130,28 @@ export function useLongStructureTransactionsCoordinator(
       completion();
       return;
     }
-    await lease.runTracked(async () => {
-      try {
-        const impact = await sync.previewLongStructureImpact(
-          expectedBookId,
-          batch
-        );
-        if (
-          state.activeBookId.value !== expectedBookId ||
-          state.workspaceIndex.value !== expectedIndex
-        ) {
-          completion();
-          return;
-        }
-        completion(impact);
-      } catch (error: unknown) {
-        if (lease.isDisposed()) return;
-        options.notifications.warning(
-          error instanceof Error
-            ? error.message
-            : "无法读取这次结构修改的关联影响。"
-        );
+    try {
+      const impact = previewLongWorkspaceOperations(
+        expectedIndex,
+        batch
+      ).confirmation;
+      if (
+        state.activeBookId.value !== expectedBookId ||
+        state.workspaceIndex.value !== expectedIndex
+      ) {
         completion();
+        return;
       }
-    });
+      completion(impact);
+    } catch (error: unknown) {
+      if (lease.isDisposed()) return;
+      options.notifications.warning(
+        error instanceof Error
+          ? error.message
+          : "无法读取这次结构修改的关联影响。"
+      );
+      completion();
+    }
   }
 
   async function handleLongDraftSectionAction(

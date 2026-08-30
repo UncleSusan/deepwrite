@@ -21,6 +21,9 @@ import {
   type LongWorldbuildingItemId,
   type LongWorldbuildingFormat
 } from "@deepwrite/contracts";
+import { latestCommittedContinuityChapter } from "../utils/longLatestContinuityChapter";
+
+export { latestCommittedContinuityChapter } from "../utils/longLatestContinuityChapter";
 
 export type LongWorkspaceFileRole =
   | "content"
@@ -215,53 +218,6 @@ export function nextWritableLongChapterId(
       )
     )?.id ?? null
   );
-}
-
-type LongChapterFileEntry = LongWorkspaceIndexSnapshot["chapters"][number];
-
-/**
- * Resolves the newest committed chapter whose continuity outputs are
- * available as Markdown. Current text-file commits qualify directly; a
- * legacy structured commit qualifies only after the store has projected its
- * audit record into a non-empty per-chapter foreshadowing file.
- */
-export function latestCommittedContinuityChapter(
-  workspaceIndex: LongWorkspaceIndexSnapshot,
-  predicate: (chapter: LongChapterFileEntry) => boolean = () => true
-): LongChapterFileEntry | undefined {
-  const volumeOrder = new Map(
-    workspaceIndex.plot.volumes.map(({ id, order }) => [id, order])
-  );
-  const chapterOrder = new Map(
-    [...workspaceIndex.plot.chapterCards]
-      .sort(
-        (left, right) =>
-          (volumeOrder.get(left.volumeId) ?? Number.MAX_SAFE_INTEGER) -
-            (volumeOrder.get(right.volumeId) ?? Number.MAX_SAFE_INTEGER) ||
-          left.narrativeOrder - right.narrativeOrder ||
-          left.id.localeCompare(right.id)
-      )
-      .map(({ id }, order) => [id, order])
-  );
-  const commits = [...workspaceIndex.ledger.commits].sort(
-    (left, right) =>
-      (chapterOrder.get(right.chapterCardId) ?? -1) -
-        (chapterOrder.get(left.chapterCardId) ?? -1) ||
-      right.sequence - left.sequence ||
-      right.id.localeCompare(left.id)
-  );
-  for (const commit of commits) {
-    const chapter = workspaceIndex.chapters.find(
-      (entry) =>
-        entry.commitId === commit.id ||
-        (entry.chapterCardId === commit.chapterCardId &&
-          entry.commitId !== null)
-    );
-    if (chapter && predicate(chapter)) {
-      return chapter;
-    }
-  }
-  return undefined;
 }
 
 function characterDesignSelectionFiles(
@@ -1098,9 +1054,18 @@ export function reconcileLongWorkspaceSelection(
       ({ id }) => id === selection.key.slice("ledger:".length)
     );
     if (!commit) return undefined;
-    const chapter = summary.navigation.chapterCards.find(
-      ({ id }) => id === commit.chapterCardId
+    const chapterCardIds = commit.chapterCardIds ?? [commit.chapterCardId];
+    const titleByChapterId = new Map(
+      summary.navigation.chapterCards.map(({ id, title }) => [id, title])
     );
+    const firstTitle =
+      titleByChapterId.get(chapterCardIds[0]!) ?? chapterCardIds[0]!;
+    const checkpointTitle =
+      titleByChapterId.get(commit.chapterCardId) ?? commit.chapterCardId;
+    const recordTitle =
+      chapterCardIds.length === 1
+        ? checkpointTitle
+        : `${firstTitle} — ${checkpointTitle}`;
     const chapterSelection = createLongContinuitySelection(
       summary,
       workspaceIndex,
@@ -1112,14 +1077,9 @@ export function reconcileLongWorkspaceSelection(
         ...chapterSelection,
         key: selection.key,
         continuityView: "history",
-        title: chapter?.title ?? `第 ${commit.sequence} 章`,
-        breadcrumbs: [
-          summary.title,
-          "连续性账本",
-          "章节记录",
-          chapter?.title ?? `第 ${commit.sequence} 章`
-        ],
-        description: `${commit.committedAt} · 按章 Markdown 连续性记录`
+        title: recordTitle,
+        breadcrumbs: [summary.title, "连续性账本", "章节记录", recordTitle],
+        description: `${commit.committedAt} · ${chapterCardIds.length} 章共用的末章汇总连续性记录`
       },
       selection
     );

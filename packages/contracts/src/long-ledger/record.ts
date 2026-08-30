@@ -35,12 +35,15 @@ export const LongLedgerCommitRecordSchema = z
       z.literal(1),
       z.literal(2),
       z.literal(3),
-      z.literal(4)
+      z.literal(4),
+      z.literal(5)
     ]),
     id: LongLedgerCommitIdSchema,
     bookId: LongBookIdSchema,
     sequence: z.number().int().positive(),
     chapterCardId: LongChapterCardIdSchema,
+    chapterCardIds: z.array(LongChapterCardIdSchema).max(100_000).optional(),
+    checkpointChapterCardId: LongChapterCardIdSchema.optional(),
     committedAt: LedgerTimestampSchema,
     commitMessage: LedgerCommitMessageSchema.default(""),
     chapterSummary: LongChapterSummarySchema.default(
@@ -113,12 +116,46 @@ export const LongLedgerCommitRecordSchema = z
         }
       });
     }
-    if (record.schemaVersion === 4 && record.continuityFiles.length === 0) {
+    if (
+      (record.schemaVersion === 4 || record.schemaVersion === 5) &&
+      record.continuityFiles.length === 0
+    ) {
       context.addIssue({
         code: "custom",
         path: ["continuityFiles"],
-        message: "A v4 ledger record requires at least one continuity file."
+        message:
+          "A text-file ledger record requires at least one continuity file."
       });
+    }
+    if (record.schemaVersion === 5) {
+      const chapterCardIds = record.chapterCardIds ?? [];
+      if (chapterCardIds.length === 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["chapterCardIds"],
+          message: "A v5 ledger record requires at least one batch chapter."
+        });
+      }
+      if (new Set(chapterCardIds).size !== chapterCardIds.length) {
+        context.addIssue({
+          code: "custom",
+          path: ["chapterCardIds"],
+          message: "A batch ledger record cannot contain a chapter twice."
+        });
+      }
+      const checkpointChapterCardId = record.checkpointChapterCardId;
+      if (
+        checkpointChapterCardId === undefined ||
+        chapterCardIds.at(-1) !== checkpointChapterCardId ||
+        record.chapterCardId !== checkpointChapterCardId
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["checkpointChapterCardId"],
+          message:
+            "The batch checkpoint and compatibility chapter must be the final batch chapter."
+        });
+      }
     }
     if (record.schemaVersion === 3) {
       for (const [key, item] of Object.entries(record.coverage)) {
@@ -253,3 +290,25 @@ export const LongLedgerCommitRecordSchema = z
 export type LongLedgerCommitRecord = z.infer<
   typeof LongLedgerCommitRecordSchema
 >;
+
+export function longLedgerRecordChapterIds(
+  record: Pick<
+    LongLedgerCommitRecord,
+    "schemaVersion" | "chapterCardId" | "chapterCardIds"
+  >
+): string[] {
+  return record.schemaVersion === 5 && record.chapterCardIds
+    ? [...record.chapterCardIds]
+    : [record.chapterCardId];
+}
+
+export function longLedgerRecordCheckpointChapterId(
+  record: Pick<
+    LongLedgerCommitRecord,
+    "schemaVersion" | "chapterCardId" | "checkpointChapterCardId"
+  >
+): string {
+  return record.schemaVersion === 5
+    ? (record.checkpointChapterCardId ?? record.chapterCardId)
+    : record.chapterCardId;
+}

@@ -57,6 +57,16 @@ function cloneDefaults(): Array<Omit<LongBookAnalysisPreset, "builtin">> {
   );
 }
 
+function includeMissingDefaults(
+  presets: readonly Omit<LongBookAnalysisPreset, "builtin">[]
+): Array<Omit<LongBookAnalysisPreset, "builtin">> {
+  const existingIds = new Set(presets.map((preset) => preset.id));
+  return [
+    ...cloneDefaults().filter((preset) => !existingIds.has(preset.id)),
+    ...presets.map((preset) => structuredClone(preset))
+  ];
+}
+
 function defaultDiskSettings(): DiskSettings {
   return { version: 1, presets: cloneDefaults() };
 }
@@ -90,7 +100,7 @@ function normalizeDiskSettings(raw: unknown): DiskSettings {
     : undefined;
   return {
     version: 1,
-    presets: parsed.data.presets.map((preset) => structuredClone(preset)),
+    presets: includeMissingDefaults(parsed.data.presets),
     ...(timestamp ? { updatedAt: timestamp } : {})
   };
 }
@@ -138,7 +148,7 @@ export class LongBookAnalysisConfigStore {
     const input = LongBookAnalysisSettingsInputSchema.parse(rawInput);
     return this.enqueue(async () => ({
       version: 1,
-      presets: input.presets.map((preset) => structuredClone(preset)),
+      presets: includeMissingDefaults(input.presets),
       updatedAt: new Date().toISOString()
     }));
   }

@@ -164,10 +164,17 @@ export {
   LongBookAnalysisChapterSchema,
   LongBookAnalysisPresetSchema,
   LongBookAnalysisResultSchema,
+  LongBookAnalysisSavedSourceCatalogSchema,
+  LongBookAnalysisSavedSourceIdSchema,
+  LongBookAnalysisSavedSourceSummarySchema,
   LongBookAnalysisSettingsInputSchema,
   LongBookAnalysisSourceSchema
 } from "./long-book-analysis";
-export { LongCommitChapterInputSchema } from "./long-ledger";
+export {
+  LongCommitChapterInputSchema,
+  longCommitInputChapterIds,
+  longCommitInputCheckpointChapterId
+} from "./long-ledger";
 export {
   LONG_BOOK_GENRES,
   LONG_CHARACTER_CORE_FOCUS_MAX_CHARACTERS,

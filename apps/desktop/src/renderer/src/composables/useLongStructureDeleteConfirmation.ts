@@ -1,9 +1,10 @@
-import { computed, ref, type ComputedRef } from "vue";
+import { computed, ref, shallowRef, type ComputedRef } from "vue";
 import type {
   LongWorkspaceImpactConfirmation,
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
+import { previewLongWorkspaceOperations } from "@deepwrite/contracts/renderer";
 import { createLongStructureMutationBuilder } from "../types/longStructureMutations";
 import {
   isLongMigrationEvidenceCategoryId,
@@ -27,10 +28,6 @@ export type PendingLongStructureDelete = LongStructureDeleteRow & {
 interface Options {
   snapshot: ComputedRef<LongWorkspaceIndexSnapshot>;
   locked: () => boolean;
-  preview(
-    batch: LongWorkspaceOperationBatch,
-    completion: (impact?: LongWorkspaceImpactConfirmation) => void
-  ): void;
   mutate(
     batch: LongWorkspaceOperationBatch,
     completion: LongStructureMutationCompletion
@@ -42,7 +39,9 @@ interface Options {
 }
 
 export function useLongStructureDeleteConfirmation(options: Options) {
-  const pendingDelete = ref<PendingLongStructureDelete | null>(null);
+  // Electron cannot structured-clone Vue proxies. Keep the cached IPC batch and
+  // impact confirmation raw while replacing the top-level value for updates.
+  const pendingDelete = shallowRef<PendingLongStructureDelete | null>(null);
   const moveCharactersToTypeId = ref("");
   const characterTypeDeleteMode = ref<"move" | "cascade">("move");
   const submitting = ref(false);
@@ -159,26 +158,19 @@ export function useLongStructureDeleteConfirmation(options: Options) {
           : builder.deleteWorldbuilding(target.id);
       const pending: PendingLongStructureDelete = {
         ...target,
-        previewPending: true,
-        batch
+        previewPending: false,
+        batch,
+        expectedImpact: previewLongWorkspaceOperations(
+          options.snapshot.value,
+          batch
+        ).confirmation
       };
       pendingDelete.value = pending;
-      options.preview(batch, (expectedImpact) => {
-        if (pendingDelete.value !== pending) return;
-        if (!expectedImpact) {
-          reset();
-          return;
-        }
-        pendingDelete.value = {
-          ...pending,
-          previewPending: false,
-          expectedImpact
-        };
-      });
     } catch (error: unknown) {
       options.notify.warning(
         error instanceof Error ? error.message : "无法读取结构删除影响。"
       );
+      reset();
     }
   }
 

@@ -1,22 +1,29 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import type {
+  CatalogSnapshot,
   LongBookAnalysisPreset,
   MaterialKind,
   MaterialStageId,
-  SkillKind,
-  SkillStageId
+  SkillKind
 } from "@deepwrite/contracts/renderer";
 import { createId } from "@deepwrite/shared";
 import PopupSelect, {
   type PopupSelectOption
 } from "../../components/PopupSelect.vue";
 import { uiMessage } from "../../ui-feedback";
+import {
+  MATERIAL_KIND_LABELS,
+  MATERIAL_STAGE_KINDS,
+  SKILL_KIND_LABELS
+} from "../../data/catalogWorkspace";
+import { cloneLongBookAnalysisPreset } from "./preset-draft";
 
 const props = defineProps<{
   open: boolean;
   presets: readonly LongBookAnalysisPreset[];
   saving: boolean;
+  catalogSnapshot: CatalogSnapshot | null;
 }>();
 const emit = defineEmits<{
   close: [];
@@ -24,20 +31,13 @@ const emit = defineEmits<{
   reset: [presetId?: string];
 }>();
 
-const materialKinds: PopupSelectOption[] = [
-  "character",
-  "gimmick",
-  "plot",
-  "draft",
-  "other"
-].map((value) => ({ value, label: value }));
-const skillKinds: PopupSelectOption[] = [
-  "general",
-  "plot",
-  "style",
-  "other"
-].map((value) => ({ value, label: value }));
-const materialStages: PopupSelectOption[] = [
+const materialKinds: PopupSelectOption[] = (
+  ["character", "gimmick", "plot", "draft", "other"] as const
+).map((value) => ({ value, label: MATERIAL_KIND_LABELS[value] }));
+const skillKinds: PopupSelectOption[] = (
+  ["general", "plot", "style", "other"] as const
+).map((value) => ({ value, label: SKILL_KIND_LABELS[value] }));
+const materialStageIds: readonly MaterialStageId[] = [
   "gimmick",
   "character",
   "pacing",
@@ -45,14 +45,7 @@ const materialStages: PopupSelectOption[] = [
   "plot_refine",
   "draft_excerpt",
   "other"
-].map((value) => ({ value, label: value }));
-const skillStages: PopupSelectOption[] = [
-  "character_design",
-  "plot_design",
-  "outline",
-  "draft",
-  "expert_section_writer"
-].map((value) => ({ value, label: value }));
+] as const;
 const domainOptions: PopupSelectOption[] = [
   { value: "material", label: "素材库" },
   { value: "skill", label: "技能库" }
@@ -64,8 +57,7 @@ const draggedIndex = ref<number | null>(null);
 watch(
   () => [props.open, props.presets] as const,
   ([open]) => {
-    if (open)
-      draft.value = props.presets.map((preset) => structuredClone(preset));
+    if (open) draft.value = props.presets.map(cloneLongBookAnalysisPreset);
   },
   { immediate: true }
 );
@@ -89,7 +81,7 @@ function copyPreset(index: number): void {
   const current = draft.value[index];
   if (!current || draft.value.length >= 50) return;
   draft.value.splice(index + 1, 0, {
-    ...structuredClone(current),
+    ...cloneLongBookAnalysisPreset(current),
     id: createId("analysis_preset"),
     name: `${current.name} 副本`,
     builtin: false
@@ -121,21 +113,84 @@ function setDomain(
       : { domain: "material", kind: "other", stageId: "other" };
 }
 
-function setKind(preset: LongBookAnalysisPreset, value: string | number): void {
-  preset.output =
-    preset.output.domain === "material"
-      ? { ...preset.output, kind: value as MaterialKind }
-      : { ...preset.output, kind: value as SkillKind };
+function targetLibraryOptions(
+  preset: LongBookAnalysisPreset
+): PopupSelectOption[] {
+  const unset = { value: "", label: "每次任务时选择" };
+  if (preset.output.domain === "material") {
+    return [
+      unset,
+      ...(props.catalogSnapshot?.materials ?? [])
+        .filter(
+          (library) =>
+            library.materialKind === preset.output.kind ||
+            library.materialKind === "mixed"
+        )
+        .map((library) => ({
+          value: library.id,
+          label: library.title,
+          description: MATERIAL_KIND_LABELS[library.materialKind]
+        }))
+    ];
+  }
+  return [
+    unset,
+    ...(props.catalogSnapshot?.skills ?? [])
+      .filter(
+        (library) =>
+          library.skillKind === preset.output.kind && !library.isBuiltin
+      )
+      .map((library) => ({
+        value: library.id,
+        label: library.title,
+        description: SKILL_KIND_LABELS[library.skillKind]
+      }))
+  ];
 }
 
-function setStage(
+function setTargetLibrary(
   preset: LongBookAnalysisPreset,
   value: string | number
 ): void {
-  preset.output =
-    preset.output.domain === "material"
-      ? { ...preset.output, stageId: value as MaterialStageId }
-      : { ...preset.output, stageId: value as SkillStageId };
+  const libraryId = String(value).trim();
+  if (preset.output.domain === "material") {
+    const output = {
+      domain: preset.output.domain,
+      kind: preset.output.kind,
+      stageId: preset.output.stageId
+    } as const;
+    preset.output = libraryId ? { ...output, libraryId } : output;
+    return;
+  }
+  const output = {
+    domain: preset.output.domain,
+    kind: preset.output.kind,
+    stageId: preset.output.stageId
+  } as const;
+  preset.output = libraryId ? { ...output, libraryId } : output;
+}
+
+function setKind(preset: LongBookAnalysisPreset, value: string | number): void {
+  if (preset.output.domain === "material") {
+    const kind = value as MaterialKind;
+    const stageId =
+      MATERIAL_STAGE_KINDS[preset.output.stageId] === kind
+        ? preset.output.stageId
+        : materialStageIds.find(
+            (stageId) => MATERIAL_STAGE_KINDS[stageId] === kind
+          );
+    preset.output = {
+      domain: "material",
+      kind,
+      stageId: stageId ?? "other"
+    };
+    return;
+  }
+  preset.output = {
+    domain: "skill",
+    kind: value as SkillKind,
+    stageId: preset.output.stageId
+  };
 }
 </script>
 
@@ -164,6 +219,7 @@ function setStage(
         <div class="preset-toolbar">
           <button type="button" @click="addPreset">新增预设</button>
           <button type="button" @click="emit('reset')">恢复全部默认</button>
+          <small>默认预设可直接编辑，也可单项恢复</small>
           <span>{{ draft.length }} / 50</span>
         </div>
         <div class="preset-list">
@@ -191,6 +247,7 @@ function setStage(
                 恢复默认
               </button>
               <button
+                v-if="!preset.builtin"
                 class="delete-button"
                 type="button"
                 @click="removePreset(index)"
@@ -204,35 +261,41 @@ function setStage(
               aria-label="预设说明"
             />
             <div class="preset-output-row">
-              <PopupSelect
-                :model-value="preset.output.domain"
-                :options="domainOptions"
-                accessible-label="结果领域"
-                :menu-z-index="3200"
-                @update:model-value="setDomain(preset, $event)"
-              />
-              <PopupSelect
-                :model-value="preset.output.kind"
-                :options="
-                  preset.output.domain === 'material'
-                    ? materialKinds
-                    : skillKinds
-                "
-                accessible-label="资料类型"
-                :menu-z-index="3200"
-                @update:model-value="setKind(preset, $event)"
-              />
-              <PopupSelect
-                :model-value="preset.output.stageId"
-                :options="
-                  preset.output.domain === 'material'
-                    ? materialStages
-                    : skillStages
-                "
-                accessible-label="资料阶段"
-                :menu-z-index="3200"
-                @update:model-value="setStage(preset, $event)"
-              />
+              <label class="preset-output-field">
+                <span>输出领域</span>
+                <PopupSelect
+                  :model-value="preset.output.domain"
+                  :options="domainOptions"
+                  accessible-label="结果领域"
+                  :menu-z-index="3200"
+                  @update:model-value="setDomain(preset, $event)"
+                />
+              </label>
+              <label class="preset-output-field">
+                <span>资料库分类</span>
+                <PopupSelect
+                  :model-value="preset.output.kind"
+                  :options="
+                    preset.output.domain === 'material'
+                      ? materialKinds
+                      : skillKinds
+                  "
+                  accessible-label="资料库分类"
+                  :menu-z-index="3200"
+                  @update:model-value="setKind(preset, $event)"
+                />
+              </label>
+              <label class="preset-output-field">
+                <span>默认目标资料库</span>
+                <PopupSelect
+                  :model-value="preset.output.libraryId ?? ''"
+                  :options="targetLibraryOptions(preset)"
+                  accessible-label="默认目标资料库"
+                  :menu-min-width="260"
+                  :menu-z-index="3200"
+                  @update:model-value="setTargetLibrary(preset, $event)"
+                />
+              </label>
             </div>
             <textarea
               v-model="preset.systemPrompt"
@@ -312,6 +375,10 @@ function setStage(
   margin-left: auto;
   color: var(--text-tertiary);
 }
+.preset-toolbar small {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
 .preset-list {
   overflow: auto;
   padding: 14px 18px;
@@ -355,6 +422,15 @@ function setStage(
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+.preset-output-field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+.preset-output-field > span {
+  color: var(--text-tertiary);
+  font-size: 12px;
 }
 .analysis-preset-modal > footer {
   justify-content: flex-end;

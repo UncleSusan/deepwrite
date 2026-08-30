@@ -1,17 +1,26 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import type {
   CatalogSnapshot,
   LongBookAnalysisPreset,
   ModelConfig
 } from "@deepwrite/contracts/renderer";
+import AppIcon from "../../components/AppIcon.vue";
 import PopupSelect, {
   type PopupSelectOption
 } from "../../components/PopupSelect.vue";
 import { uiMessage } from "../../ui-feedback";
+import AnalysisProcessPanel from "./AnalysisProcessPanel.vue";
 import AnalysisResultPanel from "./AnalysisResultPanel.vue";
+import AnalysisSourceControls from "./AnalysisSourceControls.vue";
 import ChapterEditor from "./ChapterEditor.vue";
 import PresetManager from "./PresetManager.vue";
+import {
+  analysisLibraryOption,
+  analysisOutputTypeLabel,
+  analysisThinkingOptions,
+  compatibleAnalysisLibraries
+} from "./task-options";
 import type { LongBookAnalysisController } from "./useLongBookAnalysis";
 import "./long-book-analysis.css";
 
@@ -25,12 +34,14 @@ const emit = defineEmits<{
 }>();
 
 const selectedPresetId = ref("");
-const resultPresetId = ref("");
+const selectedTargetLibraryId = ref("");
 const startOrder = ref(1);
 const endOrder = ref(1);
 const presetManagerOpen = ref(false);
 const presetSaving = ref(false);
 const resultSaving = ref(false);
+const processOpen = ref(false);
+const resultAnchor = ref<HTMLElement | null>(null);
 
 const source = computed(() => props.controller.source.value);
 const presets = computed(() => props.controller.presets.value);
@@ -40,7 +51,9 @@ const selectedPreset = computed(
 );
 const resultPreset = computed(
   () =>
-    presets.value.find((preset) => preset.id === resultPresetId.value) ?? null
+    presets.value.find(
+      (preset) => preset.id === props.controller.activePresetId.value
+    ) ?? null
 );
 const presetOptions = computed<PopupSelectOption[]>(() =>
   presets.value.map((preset) => ({
@@ -58,6 +71,29 @@ const modelOptions = computed<PopupSelectOption[]>(() =>
       : `${model.provider} · 默认按 272,000 tokens 计算`
   }))
 );
+const selectedModel = computed(
+  () =>
+    props.models.find(
+      (model) => model.id === props.controller.selectedModelId.value
+    ) ?? null
+);
+const thinkingOptions = computed<PopupSelectOption[]>(() =>
+  analysisThinkingOptions(selectedModel.value)
+);
+const compatibleLibraries = computed(() =>
+  compatibleAnalysisLibraries(selectedPreset.value, props.catalogSnapshot)
+);
+const targetLibraryOptions = computed<PopupSelectOption[]>(() =>
+  compatibleLibraries.value.map(analysisLibraryOption)
+);
+const outputTypeLabel = computed(() =>
+  analysisOutputTypeLabel(selectedPreset.value)
+);
+const targetLibraryPlaceholder = computed(() =>
+  targetLibraryOptions.value.length > 0
+    ? "请选择具体资料库"
+    : "没有兼容的资料库"
+);
 const selectionCount = computed(() =>
   Math.max(0, endOrder.value - startOrder.value + 1)
 );
@@ -68,7 +104,7 @@ const runStatusLabel = computed(() => {
     stopping: "正在停止",
     stopped: "已停止，可继续",
     error: "阶段失败，可重试",
-    completed: "分析完成"
+    completed: "当前预设已完成"
   } as const;
   return labels[props.controller.status.value];
 });
@@ -87,6 +123,33 @@ watch(source, (next) => {
   if (!next) return;
   startOrder.value = 1;
   endOrder.value = Math.min(50, next.chapters.length);
+});
+
+watch(
+  selectedPresetId,
+  () => {
+    const defaultLibraryId = selectedPreset.value?.output.libraryId ?? "";
+    selectedTargetLibraryId.value = compatibleLibraries.value.some(
+      (library) => library.id === defaultLibraryId
+    )
+      ? defaultLibraryId
+      : "";
+  },
+  { immediate: true }
+);
+
+watch(compatibleLibraries, (libraries) => {
+  if (
+    libraries.some((library) => library.id === selectedTargetLibraryId.value)
+  ) {
+    return;
+  }
+  const defaultLibraryId = selectedPreset.value?.output.libraryId ?? "";
+  selectedTargetLibraryId.value = libraries.some(
+    (library) => library.id === defaultLibraryId
+  )
+    ? defaultLibraryId
+    : "";
 });
 
 function normalizeRange(anchor: "start" | "end"): void {
@@ -112,33 +175,37 @@ function normalizeRange(anchor: "start" | "end"): void {
   }
 }
 
-async function importSource(kind: "txt" | "directory"): Promise<void> {
-  try {
-    if (await props.controller.chooseSource(kind)) {
-      uiMessage.success(
-        kind === "txt" ? "TXT 已解析为章节。" : "章节文件夹已导入。"
-      );
-    }
-  } catch (error: unknown) {
-    uiMessage.error(error instanceof Error ? error.message : "导入来源失败。");
-  }
-}
-
 async function start(): Promise<void> {
   try {
     const started = await props.controller.start({
       presetId: selectedPresetId.value,
       startOrder: startOrder.value,
       endOrder: endOrder.value,
-      modelId: props.controller.selectedModelId.value
+      modelId: props.controller.selectedModelId.value,
+      thinkingLevel: props.controller.selectedThinkingLevel.value,
+      libraryId: selectedTargetLibraryId.value
     });
-    if (started) resultPresetId.value = selectedPresetId.value;
+    if (started) processOpen.value = true;
   } catch (error: unknown) {
     uiMessage.warning(
       error instanceof Error ? error.message : "无法开始分析。"
     );
   }
 }
+
+async function showResult(): Promise<void> {
+  await nextTick();
+  resultAnchor.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+watch(
+  () => props.controller.status.value,
+  (status) => {
+    if (status === "completed" && props.controller.result.value) {
+      void showResult();
+    }
+  }
+);
 
 async function savePresets(next: LongBookAnalysisPreset[]): Promise<void> {
   presetSaving.value = true;
@@ -165,19 +232,14 @@ async function resetPresets(presetId?: string): Promise<void> {
 }
 
 async function persistResult(input: {
-  libraryId?: string;
-  newLibraryName?: string;
+  libraryId: string;
   baseProjectRevision?: number;
 }): Promise<void> {
   resultSaving.value = true;
   try {
-    const createdLibrary = await props.controller.persistResult(input);
-    if (!input.libraryId && !createdLibrary) {
-      uiMessage.info("已取消新建资料库，结果仍保留在预览中。");
-      return;
-    }
+    await props.controller.persistResult(input);
     emit("refreshCatalog");
-    uiMessage.success("拆书结果已作为新条目写入资料库。");
+    uiMessage.success("拆书结果已作为新条目写入目标资料库。");
   } catch (error: unknown) {
     uiMessage.error(
       error instanceof Error ? error.message : "创建资料条目失败。"
@@ -199,37 +261,17 @@ onMounted(() => {
 <template>
   <div class="long-book-analysis-page">
     <header class="analysis-page-header">
-      <div>
+      <div class="analysis-page-intro">
         <p class="analysis-eyebrow">更多功能</p>
         <h1>长篇拆书分析</h1>
         <p>
-          导入章节，选择一个动态预设，让 Pi Agent
-          分批提炼并生成可编辑素材或技能。
+          导入章节，按预设分批提炼剧情、人物与文风，生成可继续编辑的素材或技能。
         </p>
       </div>
-      <div class="analysis-page-actions">
-        <button
-          type="button"
-          :disabled="controller.isBusy.value"
-          @click="importSource('txt')"
-        >
-          导入 TXT
-        </button>
-        <button
-          type="button"
-          :disabled="controller.isBusy.value"
-          @click="importSource('directory')"
-        >
-          导入章节文件夹
-        </button>
-        <button
-          type="button"
-          :disabled="controller.isBusy.value"
-          @click="presetManagerOpen = true"
-        >
-          管理预设
-        </button>
-      </div>
+      <AnalysisSourceControls
+        :controller="controller"
+        @manage-presets="presetManagerOpen = true"
+      />
     </header>
 
     <div class="analysis-content">
@@ -240,11 +282,21 @@ onMounted(() => {
         @update="controller.replaceChapters($event)"
       />
       <section v-else class="analysis-card analysis-empty-source">
-        <strong>先导入一本长篇</strong>
-        <p>
-          支持单个 TXT，或递归读取按章节保存的 TXT / Markdown
-          文件夹。源文件不会被修改。
-        </p>
+        <div class="analysis-empty-icon">
+          <AppIcon name="book" :size="26" />
+        </div>
+        <div class="analysis-empty-copy">
+          <strong>先导入一本长篇</strong>
+          <p>
+            支持单个 TXT，或递归读取按章节保存的 TXT / Markdown
+            文件夹；每次导入都会备份到工作目录，下次可从顶部直接选择。
+          </p>
+        </div>
+        <div class="analysis-empty-meta" aria-label="支持的导入格式">
+          <span>TXT</span>
+          <span>Markdown</span>
+          <span>最多选择 50 章</span>
+        </div>
       </section>
 
       <section class="analysis-card setup-card">
@@ -253,11 +305,17 @@ onMounted(() => {
             <p class="analysis-eyebrow">选择范围与预设</p>
             <h2>配置本次拆书任务</h2>
           </div>
-          <span>{{ runStatusLabel }}</span>
+          <span
+            class="analysis-status"
+            :class="`is-${controller.status.value}`"
+          >
+            <i aria-hidden="true"></i>
+            {{ runStatusLabel }}
+          </span>
         </header>
         <div class="setup-grid">
-          <label
-            ><span>拆书预设</span
+          <label class="setup-field"
+            ><span class="setup-field-label">拆书预设</span
             ><PopupSelect
               v-model="selectedPresetId"
               :options="presetOptions"
@@ -265,8 +323,8 @@ onMounted(() => {
               :disabled="controller.isBusy.value"
               :menu-min-width="280"
           /></label>
-          <label
-            ><span>分析模型</span
+          <label class="setup-field"
+            ><span class="setup-field-label">分析模型</span
             ><PopupSelect
               v-model="controller.selectedModelId.value"
               :options="modelOptions"
@@ -274,45 +332,99 @@ onMounted(() => {
               :disabled="controller.isBusy.value"
               :menu-min-width="280"
           /></label>
-          <label
-            ><span>起始章节</span
-            ><input
-              v-model.number="startOrder"
-              type="number"
-              min="1"
-              :max="source?.chapters.length ?? 1"
-              :disabled="!source || controller.isBusy.value"
-              @change="normalizeRange('start')"
+          <label class="setup-field setup-thinking-field"
+            ><span class="setup-field-label">思考等级</span
+            ><PopupSelect
+              v-model="controller.selectedThinkingLevel.value"
+              :options="thinkingOptions"
+              accessible-label="思考等级"
+              :disabled="controller.isBusy.value || !selectedModel"
+              :menu-min-width="180"
           /></label>
-          <label
-            ><span>结束章节</span
-            ><input
-              v-model.number="endOrder"
-              type="number"
-              min="1"
-              :max="source?.chapters.length ?? 1"
-              :disabled="!source || controller.isBusy.value"
-              @change="normalizeRange('end')"
-          /></label>
+          <div class="setup-field setup-range-field">
+            <span class="setup-field-label"
+              >章节范围 <small>单次最多 50 章</small></span
+            >
+            <div class="chapter-range-inputs">
+              <input
+                v-model.number="startOrder"
+                type="number"
+                aria-label="起始章节"
+                min="1"
+                :max="source?.chapters.length ?? 1"
+                :disabled="!source || controller.isBusy.value"
+                @change="normalizeRange('start')"
+              />
+              <span>至</span>
+              <input
+                v-model.number="endOrder"
+                type="number"
+                aria-label="结束章节"
+                min="1"
+                :max="source?.chapters.length ?? 1"
+                :disabled="!source || controller.isBusy.value"
+                @change="normalizeRange('end')"
+              />
+            </div>
+          </div>
         </div>
         <div v-if="selectedPreset" class="preset-summary">
-          <strong>{{ selectedPreset.name }}</strong>
-          <span>{{ selectedPreset.description }}</span>
-          <small
-            >输出到
-            {{
-              selectedPreset.output.domain === "material" ? "素材库" : "技能库"
-            }}
-            · {{ selectedPreset.output.kind }} /
-            {{ selectedPreset.output.stageId }}</small
-          >
+          <div class="preset-summary-main">
+            <div class="preset-summary-copy">
+              <strong>{{ selectedPreset.name }}</strong>
+              <span>{{ selectedPreset.description }}</span>
+            </div>
+            <small>
+              {{
+                selectedPreset.output.domain === "material"
+                  ? "素材条目"
+                  : "技能条目"
+              }}
+              · {{ outputTypeLabel }}
+            </small>
+          </div>
+          <label class="preset-target-field">
+            <span
+              >预选{{
+                selectedPreset.output.domain === "material"
+                  ? "素材库"
+                  : "技能库"
+              }}
+              <small>生成后可修改</small></span
+            >
+            <PopupSelect
+              v-model="selectedTargetLibraryId"
+              :options="targetLibraryOptions"
+              accessible-label="目标资料库"
+              :placeholder="targetLibraryPlaceholder"
+              :disabled="
+                controller.isBusy.value || targetLibraryOptions.length === 0
+              "
+              :menu-min-width="260"
+            />
+          </label>
         </div>
         <div class="analysis-run-bar">
-          <div>
-            <strong>{{ selectionCount }} 章</strong
-            ><span>{{ controller.progressText.value }}</span>
+          <div class="analysis-run-progress">
+            <strong>已选 {{ selectionCount }} 章</strong>
+            <span>{{ controller.progressText.value }}</span>
           </div>
           <div class="analysis-run-actions">
+            <button
+              v-if="controller.status.value !== 'idle'"
+              type="button"
+              :aria-expanded="processOpen"
+              @click="processOpen = !processOpen"
+            >
+              {{ processOpen ? "收起执行过程" : "查看执行过程" }}
+            </button>
+            <button
+              v-if="controller.result.value"
+              type="button"
+              @click="showResult"
+            >
+              查看生成结果
+            </button>
             <button
               v-if="controller.canRetry.value"
               type="button"
@@ -335,115 +447,50 @@ onMounted(() => {
               :disabled="
                 !source ||
                 !selectedPreset ||
+                !controller.selectedModelId.value ||
                 selectionCount < 1 ||
                 selectionCount > 50
               "
               @click="start"
             >
-              一键拆书
+              执行“{{ selectedPreset?.name ?? "当前" }}”预设
             </button>
           </div>
         </div>
+        <AnalysisProcessPanel
+          v-if="processOpen"
+          :entries="controller.processEntries.value"
+          :current-activity="controller.currentActivity.value"
+          :live-output="controller.liveOutput.value"
+          :error="controller.error.value"
+        />
       </section>
 
-      <AnalysisResultPanel
+      <div
         v-if="controller.result.value && resultPreset"
-        :result="controller.result.value"
-        :preset="resultPreset"
-        :catalog-snapshot="catalogSnapshot"
-        :saving="resultSaving"
-        @update="controller.result.value = $event"
-        @save="persistResult"
-      />
+        ref="resultAnchor"
+        class="analysis-result-anchor"
+      >
+        <AnalysisResultPanel
+          :result="controller.result.value"
+          :preset="resultPreset"
+          :catalog-snapshot="catalogSnapshot"
+          :target-library-id="controller.targetLibraryId.value"
+          :saving="resultSaving"
+          @update="controller.result.value = $event"
+          @save="persistResult"
+        />
+      </div>
     </div>
 
     <PresetManager
       :open="presetManagerOpen"
       :presets="presets"
       :saving="presetSaving"
+      :catalog-snapshot="catalogSnapshot"
       @close="presetManagerOpen = false"
       @save="savePresets"
       @reset="resetPresets"
     />
   </div>
 </template>
-
-<style scoped>
-.analysis-page-header h1 {
-  margin: 3px 0 6px;
-  font-size: clamp(24px, 3vw, 34px);
-}
-.analysis-page-header p {
-  max-width: 720px;
-  margin: 0;
-  line-height: 1.55;
-}
-.analysis-empty-source {
-  padding: 48px 20px;
-  text-align: center;
-  color: var(--text-secondary);
-}
-.analysis-empty-source strong {
-  color: var(--text-primary);
-  font-size: 18px;
-}
-.setup-grid {
-  display: grid;
-  grid-template-columns: 1.2fr 1.2fr 0.6fr 0.6fr;
-  gap: 10px;
-}
-.setup-grid label {
-  display: grid;
-  gap: 6px;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-.setup-grid input {
-  box-sizing: border-box;
-  width: 100%;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 9px;
-  padding: 9px 10px;
-  background: var(--surface-main);
-  color: var(--text-primary);
-}
-.preset-summary {
-  display: grid;
-  grid-template-columns: auto minmax(180px, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--surface-muted);
-}
-.preset-summary span,
-.preset-summary small {
-  color: var(--text-secondary);
-}
-.analysis-run-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--theme-line-soft);
-}
-.analysis-run-bar > div:first-child {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-}
-.analysis-run-bar span {
-  color: var(--text-secondary);
-}
-@media (max-width: 900px) {
-  .setup-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-  .preset-summary {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

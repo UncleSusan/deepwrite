@@ -63,6 +63,52 @@ describe("long-book analysis source reader", () => {
     expect(parsed.diagnostics[0]?.code).toBe("chapter_heading_not_found");
   });
 
+  it("keeps publication timestamps inside chapter text", () => {
+    const parsed = parseLongBookAnalysisTxt(
+      [
+        "第一章 起点",
+        "第一段正文。",
+        "2015-03-2313:00:01发表",
+        "网页评论内容。",
+        "第二章 继续",
+        "第二段正文。"
+      ].join("\n"),
+      "scraped.txt"
+    );
+
+    expect(parsed.chapters).toHaveLength(2);
+    expect(parsed.chapters[0]?.text).toContain("2015-03-2313:00:01发表");
+  });
+
+  it("imports repeated headings without overflowing diagnostics", async () => {
+    const root = await temporaryDirectory();
+    const path = join(root, "repeated-headings.txt");
+    const lines = ["------------", "正文", "------------"];
+    for (let index = 1; index <= 1_200; index += 1) {
+      lines.push(
+        `第${index}章 外层标题`,
+        `\uFEFF    第${index}章 正文标题`,
+        `这是第${index}章的正文内容。`
+      );
+    }
+    await writeFile(path, lines.join("\n"), "utf8");
+
+    const source = await readLongBookAnalysisSource("txt", path);
+
+    expect(source.chapters).toHaveLength(1_200);
+    expect(source.chapters[0]?.title).toBe("第1章 正文标题");
+    expect(source.chapters[0]?.text).not.toContain("\uFEFF");
+    expect(source.chapters.some((item) => item.title === "正文前内容")).toBe(
+      false
+    );
+    expect(source.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "empty_headings_skipped",
+        message: expect.stringContaining("1,200")
+      })
+    ]);
+  });
+
   it("decodes UTF-8 BOM and UTF-16 BOM", () => {
     expect(
       decodeLongBookAnalysisText(new Uint8Array([0xef, 0xbb, 0xbf, 0x41]))

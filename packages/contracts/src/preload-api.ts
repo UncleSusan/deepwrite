@@ -67,6 +67,7 @@ import type {
   LearningImitationStageId
 } from "./learning-imitation";
 import type {
+  LongBookAnalysisSavedSourceCatalog,
   LongBookAnalysisSettings,
   LongBookAnalysisSettingsInput,
   LongBookAnalysisSource,
@@ -461,6 +462,10 @@ export interface DeepWriteApi {
     chooseSource(
       kind: LongBookAnalysisSourceKind
     ): Promise<LongBookAnalysisSource | null>;
+    sources: {
+      list(): Promise<LongBookAnalysisSavedSourceCatalog>;
+      load(sourceId: string): Promise<LongBookAnalysisSource>;
+    };
     presets: {
       list(): Promise<LongBookAnalysisSettings>;
       save(

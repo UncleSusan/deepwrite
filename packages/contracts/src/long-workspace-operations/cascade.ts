@@ -164,7 +164,9 @@ export function deleteChapter(
   state.draft.chapters.splice(fileIndex, 1);
   state.draft.plot.chapterCards.splice(chapterIndex, 1);
   const recordedChapterIds = new Set(
-    state.draft.ledger.commits.map(({ chapterCardId }) => chapterCardId)
+    state.draft.chapters
+      .filter(({ commitId }) => commitId !== null)
+      .map(({ chapterCardId }) => chapterCardId)
   );
   state.draft.ledger.committedThroughChapterId = null;
   for (const orderedChapterId of orderedChapterIds(state.draft)) {

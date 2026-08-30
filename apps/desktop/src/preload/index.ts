@@ -66,6 +66,8 @@ import {
   LearningImitationStageIdSchema,
   LongBookAnalysisSettingsInputSchema,
   LongBookAnalysisSettingsSchema,
+  LongBookAnalysisSavedSourceCatalogSchema,
+  LongBookAnalysisSavedSourceIdSchema,
   LongBookAnalysisSourceKindSchema,
   LongBookAnalysisSourceSchema,
   CLOUD_BACKUP_IPC_CHANNEL,
@@ -218,6 +220,7 @@ import {
   type LearningImitationStageId,
   type LongBookAnalysisSettings,
   type LongBookAnalysisSettingsInput,
+  type LongBookAnalysisSavedSourceCatalog,
   type LongBookAnalysisSource,
   type LongBookAnalysisSourceKind,
   type MarketplaceContentRef,
@@ -1557,6 +1560,35 @@ async function chooseLongBookAnalysisSource(
   );
 }
 
+async function listLongBookAnalysisSources(): Promise<LongBookAnalysisSavedSourceCatalog> {
+  const id = browserId("cmd_long_book_analysis_sources_list");
+  return LongBookAnalysisSavedSourceCatalogSchema.parse(
+    await invokeCommand<LongBookAnalysisSavedSourceCatalog>(
+      createEnvelope(
+        "longBookAnalysis.listSources",
+        {},
+        { id, correlationId: id }
+      )
+    )
+  );
+}
+
+async function loadLongBookAnalysisSource(
+  rawSourceId: string
+): Promise<LongBookAnalysisSource> {
+  const sourceId = LongBookAnalysisSavedSourceIdSchema.parse(rawSourceId);
+  const id = browserId("cmd_long_book_analysis_source_load");
+  return LongBookAnalysisSourceSchema.parse(
+    await invokeCommand<LongBookAnalysisSource>(
+      createEnvelope(
+        "longBookAnalysis.loadSource",
+        { sourceId },
+        { id, correlationId: id }
+      )
+    )
+  );
+}
+
 async function listLongBookAnalysisPresets(): Promise<LongBookAnalysisSettings> {
   const id = browserId("cmd_long_book_analysis_presets_list");
   return LongBookAnalysisSettingsSchema.parse(
@@ -1993,6 +2025,10 @@ const api: DeepWriteApi = {
   },
   longBookAnalysis: {
     chooseSource: chooseLongBookAnalysisSource,
+    sources: {
+      list: listLongBookAnalysisSources,
+      load: loadLongBookAnalysisSource
+    },
     presets: {
       list: listLongBookAnalysisPresets,
       save: saveLongBookAnalysisPresets,

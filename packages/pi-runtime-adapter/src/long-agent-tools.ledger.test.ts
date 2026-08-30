@@ -46,8 +46,9 @@ describe("unified long-form tools: ledger", () => {
       kind: "long-ledger-commit-proposal",
       agentId: "long",
       input: expect.objectContaining({
-        chapterCardId: "chapter_one",
-        mode: "text_files"
+        chapterCardIds: ["chapter_one"],
+        checkpointChapterCardId: "chapter_one",
+        mode: "text_files_batch"
       })
     });
   });
@@ -76,7 +77,41 @@ describe("unified long-form tools: ledger", () => {
     expect(result.details).toMatchObject({
       kind: "long-ledger-commit-proposal",
       input: expect.objectContaining({
-        chapterCardId: "chapter_one"
+        chapterCardIds: ["chapter_one"],
+        checkpointChapterCardId: "chapter_one"
+      })
+    });
+  });
+
+  it("submits contiguous written chapters as one batch using only the final checkpoint files", async () => {
+    const index = twoWrittenChaptersIndex();
+    const first = index.chapters[0]!;
+    const second = index.chapters[1]!;
+    const tools = longTools({
+      executor: documentExecutor(index, {
+        [first.body.id]: "第一章正文。",
+        [second.body.id]: "第二章正文。",
+        [second.characterState.id]: "两章结束后的汇总状态。",
+        [second.handoff.id]: "从第二章末继续。"
+      }),
+      activeRoot: "continuity_ledger",
+      activeChapterCardId: "chapter_two",
+      index
+    });
+    const result = await toolByName(tools, "propose_continuity_commit").execute(
+      "batch-commit",
+      {
+        chapter_card_ids: ["chapter_one", "chapter_two"],
+        summary: "一起登记前两章连续性",
+        foreshadowing_touchpoint_decisions: []
+      }
+    );
+    expect(result.details).toMatchObject({
+      kind: "long-ledger-commit-proposal",
+      input: expect.objectContaining({
+        mode: "text_files_batch",
+        chapterCardIds: ["chapter_one", "chapter_two"],
+        checkpointChapterCardId: "chapter_two"
       })
     });
   });

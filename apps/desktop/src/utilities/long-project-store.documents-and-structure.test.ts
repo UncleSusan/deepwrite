@@ -372,7 +372,7 @@ describe("LongProjectStore: documents-and-structure", () => {
     expect(writtenBack.characterTypes).toHaveLength(4);
   });
 
-  it("stores every list worldbuilding item in its own Markdown file", async () => {
+  it("stores list items separately and cascades every file on category deletion", async () => {
     const { projectStore, created } = await createFixture("world-list");
     const category = created.book.workspaceIndex.worldbuilding[0]!;
     expect(category.format).toBe("list");
@@ -423,6 +423,36 @@ describe("LongProjectStore: documents-and-structure", () => {
         content: "每次施法都会遗忘一段记忆。"
       })
     ).resolves.toMatchObject({ fileId: item.items[0]!.file.id });
+
+    const overview = category.overview!;
+    const deleteBatch = {
+      updatedAt: FIXED_NOW,
+      operations: [{ type: "worldbuilding.delete" as const, id: category.id }],
+      documentWrites: []
+    };
+    const preview = await projectStore.previewWorkspaceOperations(
+      created.projectDirectory,
+      deleteBatch
+    );
+    expect(preview.confirmation.impact.deletedFileIds).toEqual(
+      expect.arrayContaining([overview.id, file.id])
+    );
+    await projectStore.applyWorkspaceOperations(created.projectDirectory, {
+      batch: { ...deleteBatch, expectedImpact: preview.confirmation }
+    });
+
+    const reopened = await projectStore.openBook(created.projectDirectory);
+    expect(
+      reopened.book.workspaceIndex.worldbuilding.some(
+        ({ id }) => id === category.id
+      )
+    ).toBe(false);
+    await expect(
+      lstat(join(created.projectDirectory, overview.path))
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      lstat(join(created.projectDirectory, file.path))
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("converts worldbuilding list/text formats transactionally without dropping existing content", async () => {

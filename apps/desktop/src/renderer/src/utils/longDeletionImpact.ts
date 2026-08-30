@@ -80,8 +80,10 @@ export function longDeletionImpactLines(
     const eventReferences = index.plot.storyEvents.filter((event) =>
       event.arcIds.some((arcId) => arcIds.has(arcId))
     ).length;
-    const ledgerRecords = index.ledger.commits.filter(({ chapterCardId }) =>
-      chapterIds.has(chapterCardId)
+    const ledgerRecords = index.ledger.commits.filter((commit) =>
+      (commit.chapterCardIds ?? [commit.chapterCardId]).some((chapterCardId) =>
+        chapterIds.has(chapterCardId)
+      )
     ).length;
     return [
       arcIds.size ? `删除 ${arcIds.size} 个从属剧情点` : "",

@@ -4,6 +4,7 @@ import {
 } from "@deepwrite/contracts";
 import { commitStructuredChapter } from "./commit-chapter-structured";
 import { commitTextFilesChapter } from "./commit-chapter-text-files";
+import { commitTextFilesBatch } from "./commit-chapter-text-files-batch";
 import { secureDirectory } from "./io";
 import { loadProject } from "./load-project";
 import type { LongProjectStoreContext } from "./store-context";
@@ -21,6 +22,9 @@ export async function commitChapter(
       ...rawInput,
       bookId: loaded.manifest.id
     });
+    if (input.mode === "text_files_batch") {
+      return await commitTextFilesBatch(ctx, loaded, input);
+    }
     const chapterEntry = loaded.index.chapters.find(
       ({ chapterCardId }) => chapterCardId === input.chapterCardId
     );

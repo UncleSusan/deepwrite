@@ -278,7 +278,7 @@ export async function migrateLegacyStructuredContinuityFiles(input: {
       record,
       recordDisk.content
     );
-    if (record.schemaVersion === 4) continue;
+    if (record.schemaVersion === 4 || record.schemaVersion === 5) continue;
     const projection = projectLegacyStructuredContinuity(
       index,
       record,

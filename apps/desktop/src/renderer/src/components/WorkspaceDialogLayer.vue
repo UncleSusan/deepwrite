@@ -172,10 +172,6 @@ const emit = defineEmits<WorkspaceDialogLayerEmits>();
       :snapshot="module.snapshot"
       :pending="module.pending"
       @close="emit('closeLongStructure')"
-      @preview-mutation="
-        (batch, completion) =>
-          emit('previewLongStructureMutation', batch, completion)
-      "
       @mutation="
         (batch, completion) => emit('longStructureMutation', batch, completion)
       "

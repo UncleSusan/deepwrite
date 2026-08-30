@@ -2,6 +2,7 @@ import {
   LONG_WORKSPACE_INDEX_PATH,
   LongProjectManifestSchema,
   LongWorkspaceIndexSnapshotSchema,
+  longLedgerRecordChapterIds,
   longLedgerCommitFileId,
   type LongCommitChapterResult,
   type LongLedgerCommitRecord,
@@ -50,6 +51,36 @@ export function collectChapterCommitTargets(
   return {
     placements,
     beats,
+    foreshadowingIdByBeatId: new Map(
+      index.plot.foreshadowing.flatMap((thread) =>
+        thread.beats.map((beat) => [beat.id, thread.id] as const)
+      )
+    )
+  };
+}
+
+export function collectChapterBatchCommitTargets(
+  index: LongWorkspaceIndexSnapshot,
+  chapterCardIds: readonly string[]
+): ChapterCommitTargets {
+  const chapterIds = new Set(chapterCardIds);
+  const placementById = new Map(
+    index.plot.narrativePlacements.map((placement) => [placement.id, placement])
+  );
+  return {
+    placements: index.plot.narrativePlacements.filter((placement) =>
+      chapterIds.has(placement.chapterCardId)
+    ),
+    beats: index.plot.foreshadowing.flatMap((thread) =>
+      thread.beats.filter((beat) => {
+        const placement =
+          beat.placementId === null
+            ? undefined
+            : placementById.get(beat.placementId);
+        const chapterCardId = beat.chapterCardId ?? placement?.chapterCardId;
+        return chapterCardId !== undefined && chapterIds.has(chapterCardId);
+      })
+    ),
     foreshadowingIdByBeatId: new Map(
       index.plot.foreshadowing.flatMap((thread) =>
         thread.beats.map((beat) => [beat.id, thread.id] as const)
@@ -121,9 +152,9 @@ export function applyChapterDecisions(input: {
 export async function finishChapterCommit(input: {
   ctx: LongProjectStoreContext;
   loaded: LoadedLongProject;
-  chapterEntry: LongWorkspaceIndexSnapshot["chapters"][number];
+  chapterEntries: readonly LongWorkspaceIndexSnapshot["chapters"][number][];
   record: LongLedgerCommitRecord;
-  mode: "structured" | "text_files";
+  mode: "structured" | "text_files" | "text_files_batch";
   fileOperations?: readonly ProjectTransactionFileOperation[];
 }): Promise<LongCommitChapterResult> {
   const timestamp = input.record.committedAt;
@@ -133,14 +164,25 @@ export async function finishChapterCommit(input: {
     path: ledgerPath(input.record.id),
     updatedAt: timestamp
   };
-  input.chapterEntry.commitId = input.record.id;
+  const chapterCardIds = longLedgerRecordChapterIds(input.record);
+  for (const chapterEntry of input.chapterEntries) {
+    chapterEntry.commitId = input.record.id;
+  }
   input.loaded.index.ledger.committedThroughChapterId =
     input.record.committedThroughChapterId;
+  const batchFields =
+    input.mode === "text_files_batch"
+      ? {
+          chapterCardIds,
+          checkpointChapterCardId: input.record.chapterCardId
+        }
+      : {};
   input.loaded.index.ledger.commits.push({
     id: input.record.id,
     mode: input.mode,
     sequence: input.record.sequence,
     chapterCardId: input.record.chapterCardId,
+    ...batchFields,
     committedAt: timestamp,
     placementIds: input.record.placementChanges.map(
       ({ placementId }) => placementId
@@ -184,7 +226,7 @@ export async function finishChapterCommit(input: {
 
 export function committedThroughChapterId(
   index: LongWorkspaceIndexSnapshot,
-  chapterCardId: string
+  chapterCardIds: string | readonly string[]
 ): string | null {
-  return contiguousRecordedThrough(index, chapterCardId);
+  return contiguousRecordedThrough(index, chapterCardIds);
 }

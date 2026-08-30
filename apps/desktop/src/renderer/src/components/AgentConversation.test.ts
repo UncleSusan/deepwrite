@@ -8,7 +8,7 @@ import rendererStyles from "virtual:deepwrite-renderer-styles";
 import conversationSource from "./AgentConversation.vue?raw";
 import composerSource from "./ConversationComposer.vue?raw";
 import teamModeSource from "./AgentTeamModeSelect.vue?raw";
-import thinkingSelectSource from "./ConversationThinkingSelect.vue?raw";
+import modelConfigSource from "./ConversationModelConfigSelect.vue?raw";
 import composerLogicSource from "../composables/useConversationComposer.ts?raw";
 import attachmentLogicSource from "../composables/useConversationAttachments.ts?raw";
 import userInputCardSource from "./AgentUserInputCard.vue?raw";
@@ -421,7 +421,8 @@ describe("AgentConversation edit proposal placement", () => {
 
   it("only lists configured models in the composer model selector", () => {
     expect(conversationSource).toContain("props.models.map");
-    expect(composerSource).toContain('placeholder="选择模型"');
+    expect(composerSource).toContain(':model-options="modelOptions"');
+    expect(modelConfigSource).toContain('?.label ?? "选择模型"');
     expect(`${conversationSource}\n${composerSource}`).not.toContain(
       '{ value: "", label: "DeepWrite Faux" }'
     );
@@ -642,14 +643,24 @@ describe("AgentConversation edit proposal placement", () => {
     );
   });
 
-  it("configures DeepSeek web search inside the thinking-level popup", () => {
-    expect(composerSource).toContain("<ConversationThinkingSelect");
-    expect(thinkingSelectSource).toContain('aria-label="联网"');
-    expect(thinkingSelectSource).toContain(':aria-pressed="webSearchEnabled"');
-    expect(thinkingSelectSource).toContain(
+  it("combines model, thinking, temperature and web search in one popup", () => {
+    expect(composerSource).toContain("<ConversationModelConfigSelect");
+    expect(composerSource).not.toContain("<ConversationThinkingSelect");
+    expect(composerSource).not.toContain('accessible-label="选择温度"');
+    expect(modelConfigSource).toContain("<span>模型</span>");
+    expect(modelConfigSource).toContain("<span>思考等级</span>");
+    expect(modelConfigSource).toContain("<span>温度</span>");
+    expect(modelConfigSource).toContain("activeParameterLabel");
+    expect(modelConfigSource).toContain("props.showsTemperature");
+    expect(modelConfigSource).toContain("`温度 ${temperatureLabel.value}`");
+    expect(modelConfigSource).toContain(": thinkingLabel.value");
+    expect(modelConfigSource).not.toContain("高级");
+    expect(modelConfigSource).toContain('aria-label="联网"');
+    expect(modelConfigSource).toContain(':aria-pressed="webSearchEnabled"');
+    expect(modelConfigSource).toContain(
       ':disabled="responding || !webSearchAvailable"'
     );
-    expect(thinkingSelectSource).toContain("emit('toggleWebSearch'");
+    expect(modelConfigSource).toContain("emit('toggleWebSearch'");
     expect(conversationSource).toContain(
       "@toggle-web-search=\"emit('toggleWebSearch', $event)\""
     );

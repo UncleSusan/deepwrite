@@ -13,6 +13,25 @@ import {
 import type { LongStructureLease } from "./lease";
 import type { LongStructureMutationLease } from "./types";
 
+const LONG_STRUCTURE_PREVIEW_TIMEOUT_MS = 15_000;
+
+async function previewWithTimeout<T>(preview: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      preview,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("核对长篇结构影响超时，请重试。")),
+          LONG_STRUCTURE_PREVIEW_TIMEOUT_MS
+        );
+      })
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 export function createLongStructureSync(
   host: LongStructureLease,
   _loadLongStructureMutationModule: () => Promise<
@@ -239,10 +258,12 @@ export function createLongStructureSync(
       const { expectedImpact: batchExpectedImpact, ...unconfirmedBatch } =
         batch;
       const confirmedImpact = options.expectedImpact ?? batchExpectedImpact;
-      const preview = await workspaceApi.previewOperations({
-        bookId: expectedBookId,
-        batch: unconfirmedBatch
-      });
+      const preview = await previewWithTimeout(
+        workspaceApi.previewOperations({
+          bookId: expectedBookId,
+          batch: unconfirmedBatch
+        })
+      );
       assertCurrentLongStructureMutationTarget(latestTarget, lease);
       if (preview.bookId !== expectedBookId) {
         throw new Error("结构影响预览返回了其他长篇项目。");
@@ -335,10 +356,12 @@ export function createLongStructureSync(
       throw new Error("当前长篇结构尚未就绪。");
     }
     const { expectedImpact: _expectedImpact, ...unconfirmedBatch } = batch;
-    const preview = await workspaceApi.previewOperations({
-      bookId,
-      batch: unconfirmedBatch
-    });
+    const preview = await previewWithTimeout(
+      workspaceApi.previewOperations({
+        bookId,
+        batch: unconfirmedBatch
+      })
+    );
     if (preview.bookId !== bookId) {
       throw new Error("结构影响预览返回了其他长篇项目。");
     }

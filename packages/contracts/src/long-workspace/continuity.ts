@@ -6,11 +6,8 @@ import {
   LongCharacterIdSchema,
   LongContinuityFactIdSchema,
   LongContinuityOpenLoopIdSchema,
-  LongForeshadowingBeatIdSchema,
-  LongJsonFileReferenceSchema,
   LongLedgerCommitIdSchema,
   LongMarkdownFileReferenceSchema,
-  LongNarrativePlacementIdSchema,
   LongStableIdSchema,
   createEmptyLongMarkdownFileReference,
   longChapterBodyFileId,
@@ -22,10 +19,16 @@ import {
   longChapterContinuityFilePath,
   longChapterForeshadowingChangesFileId,
   longChapterHandoffFileId,
-  longChapterWorldRevealsFileId,
-  longLedgerCommitFileId
+  longChapterWorldRevealsFileId
 } from "./ids";
-import { LongTimestampSchema } from "./primitives";
+import { LongLedgerCommitIndexEntrySchema } from "./ledger-index-entry";
+export {
+  LongLedgerCommitIndexEntrySchema,
+  longLedgerCommitChapterIds,
+  longLedgerCommitCheckpointChapterId,
+  longLedgerCommitContainsChapter,
+  type LongLedgerCommitIndexEntry
+} from "./ledger-index-entry";
 
 export const LongChapterCharacterContinuityFileIndexEntrySchema = z
   .object({
@@ -203,40 +206,6 @@ export const LongChapterFileIndexEntrySchema =
 export type LongChapterFileIndexEntry = z.infer<
   typeof LongChapterFileIndexEntrySchema
 >;
-
-const UniquePlacementIdListSchema = z
-  .array(LongNarrativePlacementIdSchema)
-  .max(100_000)
-  .superRefine((values, context) => {
-    const seen = new Set<string>();
-    values.forEach((value, index) => {
-      if (seen.has(value)) {
-        context.addIssue({
-          code: "custom",
-          path: [index],
-          message: `Duplicate placement decision: ${value}`
-        });
-      }
-      seen.add(value);
-    });
-  });
-
-const UniqueForeshadowingBeatIdListSchema = z
-  .array(LongForeshadowingBeatIdSchema)
-  .max(100_000)
-  .superRefine((values, context) => {
-    const seen = new Set<string>();
-    values.forEach((value, index) => {
-      if (seen.has(value)) {
-        context.addIssue({
-          code: "custom",
-          path: [index],
-          message: `Duplicate foreshadowing-beat decision: ${value}`
-        });
-      }
-      seen.add(value);
-    });
-  });
 
 export const LONG_CONTINUITY_DOMAINS = [
   "character",
@@ -570,33 +539,6 @@ export const EMPTY_LONG_CONTINUITY_PROJECTION: LongContinuityProjection = {
   openLoops: [],
   latestHandoff: null
 };
-
-export const LongLedgerCommitIndexEntrySchema = z
-  .object({
-    id: LongLedgerCommitIdSchema,
-    mode: z
-      .enum(["structured", "text_files", "import_checkpoint"])
-      .default("structured"),
-    sequence: z.number().int().positive(),
-    chapterCardId: LongChapterCardIdSchema,
-    committedAt: LongTimestampSchema,
-    placementIds: UniquePlacementIdListSchema,
-    foreshadowingBeatIds: UniqueForeshadowingBeatIdListSchema,
-    recordFile: LongJsonFileReferenceSchema
-  })
-  .strict()
-  .superRefine((entry, context) => {
-    if (entry.recordFile.id !== longLedgerCommitFileId(entry.id)) {
-      context.addIssue({
-        code: "custom",
-        path: ["recordFile", "id"],
-        message: "Ledger record file id must match its stable commit id."
-      });
-    }
-  });
-export type LongLedgerCommitIndexEntry = z.infer<
-  typeof LongLedgerCommitIndexEntrySchema
->;
 
 export const LongLedgerCommitIndexSchema = z
   .object({

@@ -5,6 +5,7 @@ import type {
   LongWorkspaceRoot
 } from "@deepwrite/contracts";
 import type { ResourceTreeNode } from "../types/workspace";
+import { longContinuityBatchLabel } from "./longContinuityBatchLabel";
 import { projectLongWorkspaceDraftTree } from "./longWorkspaceDraftTree";
 import {
   createLongChapterCardVolumeSelection,
@@ -31,7 +32,7 @@ export const LONG_WORKSPACE_ROOT_DESCRIPTIONS: Record<
   plot_design: "维护全书故事线、分卷、剧情点与章节卡。",
   draft: "按分卷和章卡顺序编辑正文。",
   continuity_ledger:
-    "按章核验正文，并留存人物状态与历史、世界观揭露、既有伏笔触点变化、章末状态和接续包。"
+    "按单章或连续章节批次核验正文；批次只在末章留存汇总人物状态与历史、世界观揭露、既有伏笔触点变化、章末状态和接续包。"
 };
 
 export function longNavigationNodeId(bookId: string, key: string): string {
@@ -679,17 +680,16 @@ export function projectLongWorkspaceNavigation(
         commit.chapterCardId
       );
       if (selection) {
-        const chapter = book.navigation.chapterCards.find(
-          ({ id }) => id === commit.chapterCardId
+        const display = longContinuityBatchLabel(
+          commit,
+          book.navigation.chapterCards
         );
         continuityRecordChildren.push(
           continuityChapterNode(selection, {
             icon: "file",
-            label: chapter?.title ?? selection.title,
+            label: display.label,
             badge:
-              commit.mode === "import_checkpoint"
-                ? "导入检查点"
-                : `第 ${commit.sequence} 章`
+              commit.mode === "import_checkpoint" ? "导入检查点" : display.badge
           })
         );
       }

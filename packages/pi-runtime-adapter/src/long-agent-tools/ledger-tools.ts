@@ -21,8 +21,11 @@ const ROLE_TITLES: Record<LongContinuityFileRole, string> = {
 
 export function chapterForeshadowingCandidates(
   index: LongWorkspaceIndexSnapshot,
-  chapterCardId: string
+  chapterCardIds: string | readonly string[]
 ) {
+  const chapterIds = new Set(
+    Array.isArray(chapterCardIds) ? chapterCardIds : [chapterCardIds]
+  );
   const placementById = new Map(
     index.plot.narrativePlacements.map((placement) => [placement.id, placement])
   );
@@ -33,8 +36,7 @@ export function chapterForeshadowingCandidates(
           ? undefined
           : placementById.get(beat.placementId);
       if (
-        (beat.chapterCardId ?? placement?.chapterCardId ?? null) !==
-        chapterCardId
+        !chapterIds.has(beat.chapterCardId ?? placement?.chapterCardId ?? "")
       ) {
         return [];
       }
@@ -55,9 +57,15 @@ export function buildLedgerCommitTool(ctx: LongToolContext): AgentTool {
     name: "propose_continuity_commit",
     label: "保存连续性记录",
     description:
-      "为指定或当前已有正文、尚未记录的章节登记连续性记录。未选中章卡时必须提供 chapter_card_id。必须逐项提交本章伏笔总览候选触点的结果和正文证据；没有候选时传空数组。伏笔总览是设计源，本工具只核验既有触点，不新增伏笔线或触点。",
+      "将同一本书中按叙事顺序连续、已有正文且尚未记录的一批章节登记为一个连续性批次。chapter_card_ids 按顺序传入；仅一章时也可用 chapter_card_id 或当前章。批次只读取全部正文作为证据，并只绑定末章的章末状态、接续包、人物状态/历史、世界观揭露与整批伏笔变化。必须逐项提交整批伏笔总览候选触点的结果和正文证据；没有候选时传空数组。",
     parameters: strictObject({
       chapter_card_id: Type.Optional(stableIdParameter("chapter")),
+      chapter_card_ids: Type.Optional(
+        Type.Array(stableIdParameter("chapter"), {
+          minItems: 1,
+          maxItems: 100_000
+        })
+      ),
       summary: Type.String({ minLength: 1, maxLength: 1_000 }),
       foreshadowing_touchpoint_decisions: Type.Array(
         strictObject({
@@ -71,22 +79,61 @@ export function buildLedgerCommitTool(ctx: LongToolContext): AgentTool {
     }),
     executionMode: "sequential",
     execute: async (_toolCallId, params, signal) => {
-      const { index, activeChapterCardId, chapter } =
-        await loadActiveChapterMutationContext(signal, params.chapter_card_id);
-      if (chapter.bodyStatus !== "written") {
+      if (params.chapter_card_id && params.chapter_card_ids) {
         throw new Error(
-          "Only a chapter with saved body text can receive a continuity record."
+          "chapter_card_id 与 chapter_card_ids 只能选择一种传入。"
         );
       }
+      const requestedCheckpoint =
+        params.chapter_card_ids?.at(-1) ?? params.chapter_card_id;
+      const { index, activeChapterCardId, chapter } =
+        await loadActiveChapterMutationContext(signal, requestedCheckpoint);
+      const chapterCardIds = params.chapter_card_ids ?? [activeChapterCardId];
+      const chapterById = new Map(
+        index.chapters.map((entry) => [entry.chapterCardId, entry])
+      );
+      const volumeOrder = new Map(
+        index.plot.volumes.map((volume) => [volume.id, volume.order])
+      );
+      const orderedChapterIds = [...index.plot.chapterCards]
+        .sort(
+          (left, right) =>
+            (volumeOrder.get(left.volumeId) ?? Number.MAX_SAFE_INTEGER) -
+              (volumeOrder.get(right.volumeId) ?? Number.MAX_SAFE_INTEGER) ||
+            left.narrativeOrder - right.narrativeOrder
+        )
+        .map(({ id }) => id);
+      const firstPosition = orderedChapterIds.indexOf(chapterCardIds[0]!);
+      const expectedChapterIds = orderedChapterIds.slice(
+        firstPosition,
+        firstPosition + chapterCardIds.length
+      );
+      if (
+        firstPosition < 0 ||
+        expectedChapterIds.length !== chapterCardIds.length ||
+        expectedChapterIds.some((id, index) => id !== chapterCardIds[index])
+      ) {
+        throw new Error("批量连续性记录只支持按叙事顺序排列的连续章节。");
+      }
+      const chapters = chapterCardIds.map((chapterCardId) => {
+        const entry = chapterById.get(chapterCardId);
+        if (
+          !entry ||
+          entry.commitId !== null ||
+          entry.bodyStatus !== "written"
+        ) {
+          throw new Error(
+            `批次章节不存在、正文未完成或已经有连续性记录：${chapterCardId}`
+          );
+        }
+        return entry;
+      });
       const summary = params.summary.trim();
       if (!summary) {
         throw new Error("Continuity commit summary must be non-empty.");
       }
 
-      const candidates = chapterForeshadowingCandidates(
-        index,
-        activeChapterCardId
-      );
+      const candidates = chapterForeshadowingCandidates(index, chapterCardIds);
       const candidateByBeatId = new Map(
         candidates.map((candidate) => [candidate.beat.id, candidate])
       );
@@ -99,7 +146,7 @@ export function buildLedgerCommitTool(ctx: LongToolContext): AgentTool {
         const candidate = candidateByBeatId.get(decision.beat_id);
         if (!candidate) {
           throw new Error(
-            `伏笔触点 ${decision.beat_id} 不属于当前章节的既有候选。`
+            `伏笔触点 ${decision.beat_id} 不属于当前批次的既有候选。`
           );
         }
         if (candidate.thread.id !== decision.foreshadowing_id) {
@@ -110,11 +157,15 @@ export function buildLedgerCommitTool(ctx: LongToolContext): AgentTool {
       }
       if (receivedBeatIds.size !== candidateByBeatId.size) {
         throw new Error(
-          "伏笔触点决策必须完整覆盖本章在伏笔总览中的既有候选，且不能包含其他触点。"
+          "伏笔触点决策必须完整覆盖整批章节在伏笔总览中的既有候选，且不能包含其他触点。"
         );
       }
 
-      const body = await readWholeDocument(chapter.body, signal);
+      const bodies = await Promise.all(
+        chapters.map(
+          async (entry) => await readWholeDocument(entry.body, signal)
+        )
+      );
       const targets: Array<{
         role: LongContinuityFileRole;
         characterId: string | null;
@@ -179,7 +230,9 @@ export function buildLedgerCommitTool(ctx: LongToolContext): AgentTool {
       }
 
       const missing = [
-        ...(body.content.trim() ? [] : ["正文"]),
+        ...bodies.flatMap((body, index) =>
+          body.content.trim() ? [] : [`${chapterCardIds[index]} / 正文`]
+        ),
         ...continuityFiles.flatMap((file) =>
           file.content.trim()
             ? []
@@ -197,9 +250,10 @@ export function buildLedgerCommitTool(ctx: LongToolContext): AgentTool {
       }
 
       const commitInput = LongCommitChapterInputSchema.parse({
-        mode: "text_files",
+        mode: "text_files_batch",
         bookId: workspace.bookId,
-        chapterCardId: activeChapterCardId,
+        chapterCardIds,
+        checkpointChapterCardId: activeChapterCardId,
         foreshadowingBeatDecisions: Object.fromEntries(
           params.foreshadowing_touchpoint_decisions.map((decision) => [
             decision.beat_id,
@@ -208,13 +262,21 @@ export function buildLedgerCommitTool(ctx: LongToolContext): AgentTool {
         ),
         commitMessage: summary
       });
-      const title =
-        index.plot.chapterCards.find(({ id }) => id === activeChapterCardId)
-          ?.title ?? activeChapterCardId;
+      const titleById = new Map(
+        index.plot.chapterCards.map((card) => [card.id, card.title])
+      );
+      const firstTitle =
+        titleById.get(chapterCardIds[0]!) ?? chapterCardIds[0]!;
+      const lastTitle =
+        titleById.get(activeChapterCardId) ?? activeChapterCardId;
+      const rangeTitle =
+        chapterCardIds.length === 1
+          ? `《${lastTitle}》`
+          : `《${firstTitle}》至《${lastTitle}》共 ${chapterCardIds.length} 章`;
       return textResult(
         longProposalResultSummary(
           input,
-          `仅已登记《${title}》连续性记录请求（${continuityFiles.length} 份连续性文件），当前尚未保存。客户端将在文件卡全部获批后尝试保存记录。`
+          `仅已登记${rangeTitle}的批量连续性记录请求（末章 ${continuityFiles.length} 份连续性文件），当前尚未保存。客户端将在文件卡全部获批后尝试保存记录。`
         ),
         {
           kind: "long-ledger-commit-proposal",

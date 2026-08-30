@@ -16,6 +16,20 @@ const event = computed(() =>
     : null
 );
 
+const batchInfo = computed(() => {
+  const input = event.value?.payload.input;
+  if (!input) return "";
+  const chapterCardIds =
+    input.mode === "text_files_batch"
+      ? input.chapterCardIds
+      : [input.chapterCardId];
+  const checkpointChapterCardId =
+    input.mode === "text_files_batch"
+      ? input.checkpointChapterCardId
+      : input.chapterCardId;
+  return `本批 ${chapterCardIds.length} 章 · 末章检查点 ${checkpointChapterCardId}`;
+});
+
 const statusLabel = computed(() => {
   switch (props.item.status) {
     case "waiting":
@@ -40,13 +54,13 @@ const statusMessage = computed(() => {
     return props.item.error ?? "连续性账本归档失败，当前文件仍保留在本地。";
   }
   if (props.item.status === "waiting") {
-    return "连续性文件全部保存后将自动归档。";
+    return "末章汇总连续性文件全部保存后，将自动归档整个章节批次。";
   }
   if (props.item.status === "submitting") {
-    return "正在校验历史账本和本章文件，并保存连续性记录……";
+    return "正在校验批次正文、历史账本和末章文件，并保存连续性记录……";
   }
   if (props.item.status === "accepted") {
-    return "本章连续性记录已经保存到本地账本。";
+    return "整批章节已共用一条连续性记录并保存到本地账本。";
   }
   return "等待执行连续性账本归档。";
 });
@@ -60,7 +74,7 @@ const statusMessage = computed(() => {
       </span>
       <div>
         <strong>连续性账本归档</strong>
-        <small>{{ event?.payload.agentId }}</small>
+        <small>{{ batchInfo }}</small>
       </div>
       <span class="ledger-finalization-status">{{ statusLabel }}</span>
     </header>

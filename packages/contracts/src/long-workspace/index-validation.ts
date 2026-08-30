@@ -23,6 +23,11 @@ import {
   validateUniqueValues,
   type ValidationPath
 } from "./index-validation-helpers";
+import { indexLedgerCommitMemberships } from "./index-ledger-membership";
+import {
+  longLedgerCommitChapterIds,
+  longLedgerCommitCheckpointChapterId
+} from "./ledger-index-entry";
 
 function validateLongWorkspaceIndexSnapshot(
   snapshot: LongWorkspaceIndexSnapshotInput,
@@ -829,12 +834,6 @@ function validateLongWorkspaceIndexSnapshot(
     "ledger commit id",
     context
   );
-  validateUniqueValues(
-    commits.map(({ chapterCardId }) => chapterCardId),
-    (index) => ["ledger", "commits", index, "chapterCardId"],
-    "committed chapter",
-    context
-  );
   commits.forEach((commit, index) => {
     if (index > 0 && commit.sequence <= commits[index - 1]!.sequence) {
       addIssue(
@@ -843,25 +842,7 @@ function validateLongWorkspaceIndexSnapshot(
         "Ledger record sequence must be strictly increasing and stored in order."
       );
     }
-    if (!chapterById.has(commit.chapterCardId)) {
-      addIssue(
-        context,
-        ["ledger", "commits", index, "chapterCardId"],
-        "Ledger commit must reference an existing chapter card."
-      );
-    }
   });
-  const commitById = new Map(commits.map((commit) => [commit.id, commit]));
-  const placementIdsByCommitId = new Map(
-    commits.map((commit) => [commit.id, new Set(commit.placementIds)])
-  );
-  const beatIdsByCommitId = new Map(
-    commits.map((commit) => [commit.id, new Set(commit.foreshadowingBeatIds)])
-  );
-  const commitByChapterId = new Map(
-    commits.map((commit) => [commit.chapterCardId, commit])
-  );
-
   const orderedChapters = [...chapterCards].sort((left, right) => {
     const leftVolumeOrder =
       volumeById.get(left.volumeId)?.order ?? Number.MAX_SAFE_INTEGER;
@@ -872,6 +853,18 @@ function validateLongWorkspaceIndexSnapshot(
       left.narrativeOrder - right.narrativeOrder
     );
   });
+  const commitByChapterId = indexLedgerCommitMemberships(
+    commits,
+    chapterCards.map(({ id }) => id),
+    context
+  );
+  const commitById = new Map(commits.map((commit) => [commit.id, commit]));
+  const placementIdsByCommitId = new Map(
+    commits.map((commit) => [commit.id, new Set(commit.placementIds)])
+  );
+  const beatIdsByCommitId = new Map(
+    commits.map((commit) => [commit.id, new Set(commit.foreshadowingBeatIds)])
+  );
   orderedChapters.forEach((chapter) => {
     const expectedCommitId = commitByChapterId.get(chapter.id)?.id ?? null;
     const fileIndex = chapterFilesById.get(chapter.id);
@@ -901,6 +894,7 @@ function validateLongWorkspaceIndexSnapshot(
   }
 
   commits.forEach((commit, commitIndex) => {
+    const memberIds = new Set(longLedgerCommitChapterIds(commit));
     commit.placementIds.forEach((placementId, placementIndex) => {
       const placement = placementById.get(placementId);
       if (!placement) {
@@ -910,7 +904,7 @@ function validateLongWorkspaceIndexSnapshot(
           "Ledger placement decision must reference an existing placement."
         );
       } else {
-        if (placement.chapterCardId !== commit.chapterCardId) {
+        if (!memberIds.has(placement.chapterCardId)) {
           addIssue(
             context,
             ["ledger", "commits", commitIndex, "placementIds", placementIndex],
@@ -942,7 +936,10 @@ function validateLongWorkspaceIndexSnapshot(
             : placementById.get(beat.placementId);
         const resolvedChapterId =
           beat.chapterCardId ?? beatPlacement?.chapterCardId;
-        if (resolvedChapterId !== commit.chapterCardId) {
+        if (
+          resolvedChapterId === undefined ||
+          !memberIds.has(resolvedChapterId)
+        ) {
           addIssue(
             context,
             [
@@ -1060,8 +1057,14 @@ function validateLongWorkspaceIndexSnapshot(
   }
   if (
     projection.latestHandoff &&
-    commitById.get(projection.latestHandoff.commitId)?.chapterCardId !==
-      projection.latestHandoff.chapterCardId
+    (() => {
+      const sourceCommit = commitById.get(projection.latestHandoff.commitId);
+      return (
+        sourceCommit === undefined ||
+        longLedgerCommitCheckpointChapterId(sourceCommit) !==
+          projection.latestHandoff.chapterCardId
+      );
+    })()
   ) {
     addIssue(
       context,
@@ -1111,7 +1114,10 @@ function validateLongWorkspaceIndexSnapshot(
       );
       return;
     }
-    if (sourceCommit.chapterCardId !== value.sourceChapterCardId) {
+    if (
+      longLedgerCommitCheckpointChapterId(sourceCommit) !==
+      value.sourceChapterCardId
+    ) {
       addIssue(
         context,
         [...path, "sourceChapterCardId"],

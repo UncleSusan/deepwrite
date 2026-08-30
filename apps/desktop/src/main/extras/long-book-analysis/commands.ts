@@ -1,4 +1,5 @@
 import {
+  LongBookAnalysisSavedSourceCatalogSchema,
   LongBookAnalysisSettingsSchema,
   LongBookAnalysisSourceSchema,
   type CommandEnvelope,
@@ -7,11 +8,23 @@ import {
 import type { BrowserWindow, Dialog } from "electron";
 import type { LongBookAnalysisConfigStore } from "./config-store";
 import { readLongBookAnalysisSource } from "./source-reader";
+import { LongBookAnalysisSourceStore } from "./source-store";
 
 export interface LongBookAnalysisCommandContext {
   dialog: Pick<Dialog, "showOpenDialog">;
   getMainWindow(): BrowserWindow;
   configStore(): LongBookAnalysisConfigStore;
+  getWorkspaceDirectory(): Promise<string | null>;
+}
+
+async function sourceStore(
+  context: LongBookAnalysisCommandContext
+): Promise<LongBookAnalysisSourceStore> {
+  const workspaceDirectory = await context.getWorkspaceDirectory();
+  if (!workspaceDirectory) {
+    throw new Error("请先在设置中选择 DeepWrite 工作目录。");
+  }
+  return new LongBookAnalysisSourceStore(workspaceDirectory);
 }
 
 function failure(
@@ -53,18 +66,58 @@ export async function handleLongBookAnalysisCommands(
       if (selection.canceled || !selection.filePaths[0]) {
         return { status: "accepted", requestId: command.id, payload: null };
       }
+      const source = LongBookAnalysisSourceSchema.parse(
+        await readLongBookAnalysisSource(kind, selection.filePaths[0])
+      );
+      await (await sourceStore(context)).save(source);
       return {
         status: "accepted",
         requestId: command.id,
-        payload: LongBookAnalysisSourceSchema.parse(
-          await readLongBookAnalysisSource(kind, selection.filePaths[0])
-        )
+        payload: source
       };
     } catch (error: unknown) {
       return failure(
         command,
         "long_book_analysis.source_failed",
         "读取长篇拆书来源失败。",
+        error
+      );
+    }
+  }
+
+  if (command.type === "longBookAnalysis.listSources") {
+    try {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongBookAnalysisSavedSourceCatalogSchema.parse(
+          await (await sourceStore(context)).list()
+        )
+      };
+    } catch (error: unknown) {
+      return failure(
+        command,
+        "long_book_analysis.sources_list_failed",
+        "加载已导入长篇失败。",
+        error
+      );
+    }
+  }
+
+  if (command.type === "longBookAnalysis.loadSource") {
+    try {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongBookAnalysisSourceSchema.parse(
+          await (await sourceStore(context)).load(command.payload.sourceId)
+        )
+      };
+    } catch (error: unknown) {
+      return failure(
+        command,
+        "long_book_analysis.source_load_failed",
+        "读取已导入长篇失败。",
         error
       );
     }

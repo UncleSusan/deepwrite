@@ -15,7 +15,6 @@ import type {
   LongChooseContinuationImportSourceResult,
   LongChooseLegacySyncSourceResult,
   LongImportContinuationInput,
-  LongWorkspaceImpactConfirmation,
   LongLegacySyncModule,
   LongManuscriptExportSection,
   LongWorkspaceIndexSnapshot,
@@ -404,10 +403,6 @@ export interface WorkspaceDialogLayerEmits {
   closeLegacySync: [];
   confirmLegacySync: [modules: LongLegacySyncModule[]];
   closeLongStructure: [];
-  previewLongStructureMutation: [
-    batch: LongWorkspaceOperationBatch,
-    completion: (impact?: LongWorkspaceImpactConfirmation) => void
-  ];
   longStructureMutation: [
     batch: LongWorkspaceOperationBatch,
     completion: LongStructureMutationCompletion

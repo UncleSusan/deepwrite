@@ -26,7 +26,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import AppIcon from "./AppIcon.vue";
 import AgentTeamModeSelect from "./AgentTeamModeSelect.vue";
 import ContextWindowIndicator from "./ContextWindowIndicator.vue";
-import ConversationThinkingSelect from "./ConversationThinkingSelect.vue";
+import ConversationModelConfigSelect from "./ConversationModelConfigSelect.vue";
 import PopupSelect from "./PopupSelect.vue";
 
 const settingsStore = useSettingsStore();
@@ -137,12 +137,6 @@ function editorReferenceTooltip(reference: EditorTextReference): string {
       ? `${reference.text.slice(0, 1_000)}…`
       : reference.text;
   return `${reference.documentPath.join(" / ")}\n第 ${reference.startLine}-${reference.endLine} 行\n\n${preview}`;
-}
-function handleModelChange(value: string | number): void {
-  emit("selectModel", String(value));
-}
-function handleTemperatureChange(value: string | number): void {
-  emit("selectTemperature", Number(value));
 }
 function handleApprovalChange(value: string | number): void {
   if (value === "request-approval" || value === "auto-approve")
@@ -365,25 +359,21 @@ function handleApprovalChange(value: string | number): void {
               >
                 <AppIcon name="plus" :size="18" />
               </button>
-              <PopupSelect
-                :model-value="selectedModelId"
-                :options="modelOptions"
-                accessible-label="选择模型"
-                placeholder="选择模型"
-                variant="compact"
-                :menu-min-width="210"
-                @update:model-value="handleModelChange"
-              >
-                <template #prefix><AppIcon name="model" :size="14" /></template>
-              </PopupSelect>
-              <ConversationThinkingSelect
+              <ConversationModelConfigSelect
+                :selected-model-id="selectedModelId"
+                :model-options="modelOptions"
                 :thinking-level="thinkingLevel"
-                :options="availableThinkingOptions"
+                :thinking-options="availableThinkingOptions"
+                :temperature="temperature"
+                :temperature-options="temperatureSelectOptions"
+                :shows-temperature="showsTemperature"
                 :web-search-enabled="webSearchEnabled"
                 :web-search-available="webSearchAvailable"
                 :web-search-disabled-reason="webSearchDisabledReason"
                 :responding="responding"
+                @select-model="emit('selectModel', $event)"
                 @select-thinking="emit('selectThinking', $event)"
+                @select-temperature="emit('selectTemperature', $event)"
                 @toggle-web-search="emit('toggleWebSearch', $event)"
               />
               <ContextWindowIndicator
@@ -391,19 +381,6 @@ function handleApprovalChange(value: string | number): void {
                 :messages="messages"
                 :model="selectedModel"
               />
-              <PopupSelect
-                v-if="showsTemperature"
-                :model-value="temperature"
-                :options="temperatureSelectOptions"
-                accessible-label="选择温度"
-                variant="compact"
-                :menu-min-width="160"
-                @update:model-value="handleTemperatureChange"
-              >
-                <template #prefix
-                  ><AppIcon name="temperature" :size="14"
-                /></template>
-              </PopupSelect>
             </div>
             <div class="composer-actions">
               <AgentTeamModeSelect

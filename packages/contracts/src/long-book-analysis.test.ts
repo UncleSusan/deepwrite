@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  CommandEnvelopeSchema,
+  createEnvelope,
+  LongBookAnalysisSavedSourceCatalogSchema,
   LongBookAnalysisRuntimeContextSchema,
   LongBookAnalysisSettingsInputSchema,
   WorkspaceRuntimeContextSchema
@@ -37,16 +40,64 @@ const profile = {
   output: {
     domain: "material" as const,
     kind: "plot" as const,
-    stageId: "pacing" as const
+    stageId: "pacing" as const,
+    libraryId: "material-library-1"
   }
 };
 
 describe("long-book analysis contracts", () => {
+  it("validates saved source catalogs and source commands", () => {
+    expect(
+      LongBookAnalysisSavedSourceCatalogSchema.parse({
+        sources: [
+          {
+            id: "long_book_analysis_source_1234abcd",
+            kind: "txt",
+            name: "测试长篇.txt",
+            chapterCount: 12,
+            characterCount: 24_000,
+            importedAt: "2026-08-30T01:02:03.000Z"
+          }
+        ]
+      }).sources
+    ).toHaveLength(1);
+    expect(
+      CommandEnvelopeSchema.safeParse({
+        ...createEnvelope(
+          "longBookAnalysis.listSources",
+          {},
+          {
+            id: "cmd-list-sources"
+          }
+        )
+      }).success
+    ).toBe(true);
+    expect(
+      CommandEnvelopeSchema.safeParse(
+        createEnvelope(
+          "longBookAnalysis.loadSource",
+          { sourceId: "../../unsafe" },
+          { id: "cmd-load-source" }
+        )
+      ).success
+    ).toBe(false);
+  });
+
   it("accepts dynamic output mappings and rejects duplicate preset names", () => {
     expect(
       LongBookAnalysisSettingsInputSchema.parse({ presets: [profile] })
         .presets[0]?.output
     ).toEqual(profile.output);
+    expect(() =>
+      LongBookAnalysisSettingsInputSchema.parse({
+        presets: [
+          {
+            ...profile,
+            output: { ...profile.output, libraryId: " " }
+          }
+        ]
+      })
+    ).toThrow();
     expect(() =>
       LongBookAnalysisSettingsInputSchema.parse({
         presets: [profile, { ...profile, id: "another", name: "剧情结构 " }]

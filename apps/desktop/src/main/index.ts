@@ -1406,7 +1406,9 @@ function registerIpc(): void {
           {
             dialog,
             getMainWindow: requireMainWindow,
-            configStore: requireLongBookAnalysisConfigStore
+            configStore: requireLongBookAnalysisConfigStore,
+            getWorkspaceDirectory: async () =>
+              (await requireWorkspaceDirectoryStore().list()).path
           },
           command
         );

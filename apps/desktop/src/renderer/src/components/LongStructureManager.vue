@@ -2,7 +2,6 @@
 import { computed, reactive, ref, watch } from "vue";
 import { LONG_AGENTS_MD_MAX_CHARACTERS } from "@deepwrite/contracts";
 import type {
-  LongWorkspaceImpactConfirmation,
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch,
   LongWorldbuildingFormat,
@@ -67,10 +66,6 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  previewMutation: [
-    batch: LongWorkspaceOperationBatch,
-    completion: (impact?: LongWorkspaceImpactConfirmation) => void
-  ];
   mutation: [
     batch: LongWorkspaceOperationBatch,
     completion: LongStructureMutationCompletion
@@ -147,7 +142,6 @@ const {
 } = useLongStructureDeleteConfirmation({
   snapshot: computed(() => props.snapshot),
   locked: () => props.disabled || pendingMutation.value !== null,
-  preview: (batch, completion) => emit("previewMutation", batch, completion),
   mutate: (batch, completion) => emit("mutation", batch, completion),
   notify: uiMessage
 });

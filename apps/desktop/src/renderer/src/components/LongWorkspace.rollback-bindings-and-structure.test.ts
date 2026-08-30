@@ -175,7 +175,13 @@ describe("long-form renderer vertical slice: bindings-and-structure", () => {
       '@sync-long-worldbuilding="handleLongWorldbuildingSync"'
     );
     expect(longStructureTransactionsSource).toContain(
-      "const preview = await workspaceApi.previewOperations({"
+      "const impact = previewLongWorkspaceOperations("
+    );
+    expect(longStructureTransactionsSource).toContain(
+      "const preview = await previewWithTimeout("
+    );
+    expect(longStructureTransactionsSource).toContain(
+      "workspaceApi.previewOperations({"
     );
     expect(longStructureTransactionsSource).toContain(
       "const applyResult = await workspaceApi.applyOperations({"
@@ -233,7 +239,7 @@ describe("long-form renderer vertical slice: bindings-and-structure", () => {
       "assertCurrentLongStructureMutationTarget(latestTarget, lease)"
     );
     const preview = applyMutation.indexOf(
-      "const preview = await workspaceApi.previewOperations("
+      "const preview = await previewWithTimeout("
     );
     const previewGuard = applyMutation.indexOf(
       "assertCurrentLongStructureMutationTarget(latestTarget, lease)",

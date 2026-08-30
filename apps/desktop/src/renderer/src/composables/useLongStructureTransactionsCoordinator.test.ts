@@ -377,6 +377,59 @@ describe("useLongStructureTransactionsCoordinator", () => {
     expect(result.succeed).toHaveBeenCalledTimes(1);
   });
 
+  it("previews manual structure deletion locally without waiting for Core", async () => {
+    const harness = createHarness({
+      previewOperations: vi.fn(() => new Promise<never>(() => undefined))
+    });
+    const completion = vi.fn();
+    const batch = createLongStructureMutationBuilder(
+      harness.workspaceIndex.value!
+    ).deleteVolume("volume_one");
+
+    await harness.coordinator.previewActiveLongStructureMutation(
+      batch,
+      completion
+    );
+
+    expect(harness.previewOperations).not.toHaveBeenCalled();
+    expect(completion).toHaveBeenCalledTimes(1);
+    expect(completion.mock.calls[0]?.[0]).toMatchObject({
+      impact: {
+        deletedEntityIds: expect.arrayContaining(["volume_one"])
+      }
+    });
+  });
+
+  it("releases a structure mutation when the final Core preview stalls", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({
+        previewOperations: vi.fn(() => new Promise<never>(() => undefined))
+      });
+      const result = completion();
+      const request = harness.coordinator.handleActiveLongStructureMutation(
+        mutationBatch(harness.workspaceIndex.value!),
+        result
+      );
+      await flushMicrotasks();
+
+      expect(harness.mutationPending.value).toBe(true);
+      await vi.advanceTimersByTimeAsync(15_000);
+      await request;
+
+      expect(harness.applyOperations).not.toHaveBeenCalled();
+      expect(result.fail.mock.calls[0]?.[0]).toBe(
+        "核对长篇结构影响超时，请重试。"
+      );
+      expect(harness.notifications.error).toHaveBeenCalledWith(
+        "核对长篇结构影响超时，请重试。"
+      );
+      expect(harness.mutationPending.value).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("never applies an unconfirmed explicit delete even when preview misses its effects", async () => {
     const harness = createHarness();
     const result = completion();

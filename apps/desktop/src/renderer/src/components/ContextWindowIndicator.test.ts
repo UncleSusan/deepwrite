@@ -3,20 +3,22 @@ import { describe, expect, it } from "vitest";
 import rendererStyles from "virtual:deepwrite-renderer-styles";
 import conversationSource from "./AgentConversation.vue?raw";
 import composerSource from "./ConversationComposer.vue?raw";
-import thinkingSelectSource from "./ConversationThinkingSelect.vue?raw";
+import modelConfigSource from "./ConversationModelConfigSelect.vue?raw";
 import indicatorSource from "./ContextWindowIndicator.vue?raw";
 import chatAssistantComposerSource from "../features/chat-assistant/ChatAssistantComposer.vue?raw";
 
 describe("ContextWindowIndicator", () => {
-  it("places the indicator after thinking and before temperature", () => {
-    const thinking = composerSource.indexOf("<ConversationThinkingSelect");
+  it("places the indicator after the unified model configuration", () => {
+    const modelConfig = composerSource.indexOf(
+      "<ConversationModelConfigSelect"
+    );
     const indicator = composerSource.indexOf("<ContextWindowIndicator");
-    const temperature = composerSource.indexOf('accessible-label="选择温度"');
 
-    expect(thinking).toBeGreaterThan(-1);
-    expect(thinkingSelectSource).toContain('accessible-label="选择思考等级"');
-    expect(indicator).toBeGreaterThan(thinking);
-    expect(temperature).toBeGreaterThan(indicator);
+    expect(modelConfig).toBeGreaterThan(-1);
+    expect(indicator).toBeGreaterThan(modelConfig);
+    expect(modelConfigSource).toContain("思考等级");
+    expect(modelConfigSource).toContain("温度");
+    expect(composerSource).not.toContain('accessible-label="选择温度"');
   });
 
   it("is limited to the shared creative composer", () => {

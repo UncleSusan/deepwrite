@@ -86,7 +86,7 @@ export async function commitTextFilesChapter(
   return await finishChapterCommit({
     ctx,
     loaded,
-    chapterEntry,
+    chapterEntries: [chapterEntry],
     record,
     mode: "text_files"
   });

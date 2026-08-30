@@ -1,5 +1,7 @@
 import {
   deriveLongForeshadowingStatusFromCommittedBeats,
+  longLedgerCommitChapterIds,
+  longLedgerCommitContainsChapter,
   type LongForeshadowing,
   type LongForeshadowingBeat,
   type LongLedgerCommitIndexEntry,
@@ -113,8 +115,8 @@ export function removeLedgerCommitForChapter(
   state: MutationState,
   chapterCardId: string
 ): LongLedgerCommitIndexEntry | null {
-  const commit = state.draft.ledger.commits.find(
-    (candidate) => candidate.chapterCardId === chapterCardId
+  const commit = state.draft.ledger.commits.find((candidate) =>
+    longLedgerCommitContainsChapter(candidate, chapterCardId)
   );
   if (!commit) return null;
 
@@ -127,6 +129,13 @@ export function removeLedgerCommitForChapter(
     ({ id }) => id !== commit.id
   );
   state.ledgerRecordEdits.delete(commit.id);
+
+  const memberChapterIds = new Set(longLedgerCommitChapterIds(commit));
+  state.draft.chapters.forEach((chapter) => {
+    if (!memberChapterIds.has(chapter.chapterCardId)) return;
+    chapter.commitId = null;
+    markUpdated(state, chapter.chapterCardId);
+  });
 
   state.draft.plot.narrativePlacements.forEach((placement) => {
     if (placement.commitId !== commit.id) return;

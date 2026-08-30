@@ -1,9 +1,11 @@
 .long-book-analysis-page {
-  --analysis-gap: 16px;
+  --analysis-gap: 14px;
+  container-name: analysis-page;
+  container-type: inline-size;
   height: 100%;
   overflow: auto;
   box-sizing: border-box;
-  padding: 24px clamp(16px, 3vw, 38px) 48px;
+  padding: 30px clamp(18px, 4%, 64px) 56px;
   background: var(--surface-main);
   color: var(--text-primary);
 }
@@ -17,8 +19,14 @@
 }
 
 .long-book-analysis-page .analysis-page-header {
-  max-width: 1280px;
-  margin: 0 auto 18px;
+  align-items: center;
+  max-width: 1080px;
+  margin: 0 auto 24px;
+}
+
+.long-book-analysis-page .analysis-page-intro {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .long-book-analysis-page .analysis-page-header h1,
@@ -32,11 +40,52 @@
   color: var(--text-secondary);
 }
 
+.long-book-analysis-page .analysis-page-header h1 {
+  margin: 5px 0 7px;
+  font-size: clamp(28px, 3vw, 36px);
+  font-weight: 680;
+  letter-spacing: -0.035em;
+}
+
+.long-book-analysis-page
+  .analysis-page-header
+  .analysis-page-intro
+  > p:last-child {
+  max-width: 650px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.928571rem;
+  line-height: 1.55;
+}
+
 .long-book-analysis-page .analysis-page-actions,
 .long-book-analysis-page .analysis-run-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
+}
+
+.long-book-analysis-page .analysis-page-controls {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.long-book-analysis-page .analysis-source-picker {
+  width: clamp(210px, 26vw, 290px);
+  min-width: 0;
+}
+
+.long-book-analysis-page .analysis-page-actions {
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 4px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 12px;
+  background: var(--surface-raised);
 }
 
 .long-book-analysis-page button,
@@ -46,12 +95,33 @@
 }
 
 .long-book-analysis-page button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   border: 1px solid var(--theme-line-soft);
   border-radius: 9px;
-  padding: 8px 11px;
+  min-height: 34px;
+  padding: 7px 11px;
   background: var(--surface-muted);
   color: var(--text-primary);
   cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.long-book-analysis-page button:hover:not(:disabled) {
+  border-color: var(--theme-line);
+  background: var(--surface-hover);
+}
+
+.long-book-analysis-page button:focus-visible,
+.long-book-analysis-page input:focus-visible {
+  border-color: var(--accent);
+  outline: 0;
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .long-book-analysis-page button:disabled {
@@ -65,6 +135,23 @@
   color: var(--surface-main);
 }
 
+.long-book-analysis-page .analysis-primary-button:hover:not(:disabled) {
+  border-color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 88%, var(--surface-main));
+}
+
+.long-book-analysis-page .analysis-page-actions button {
+  border-color: transparent;
+  background: transparent;
+  white-space: nowrap;
+}
+
+.long-book-analysis-page .analysis-page-actions .analysis-icon-button {
+  width: 34px;
+  padding: 0;
+  color: var(--text-secondary);
+}
+
 .long-book-analysis-page .analysis-danger-button {
   color: var(--danger, #c64b4b);
 }
@@ -72,16 +159,22 @@
 .long-book-analysis-page .analysis-content {
   display: grid;
   gap: var(--analysis-gap);
-  max-width: 1280px;
+  max-width: 1080px;
   margin: 0 auto;
+}
+
+.long-book-analysis-page .analysis-result-anchor {
+  scroll-margin-top: 18px;
 }
 
 .long-book-analysis-page .analysis-card {
   box-sizing: border-box;
-  border: 1px solid var(--theme-line);
-  border-radius: 16px;
-  padding: 16px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 15px;
+  padding: 18px;
   background: var(--surface-raised);
+  box-shadow: 0 1px 2px
+    color-mix(in srgb, var(--theme-foreground) 4%, transparent);
 }
 
 .long-book-analysis-page .analysis-card-heading {
@@ -90,7 +183,8 @@
 
 .long-book-analysis-page .analysis-card-heading h2 {
   margin-top: 3px;
-  font-size: 18px;
+  font-size: 1.142857rem;
+  font-weight: 650;
 }
 
 .long-book-analysis-page .analysis-eyebrow {
@@ -99,6 +193,255 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.long-book-analysis-page .analysis-empty-source {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 144px;
+  padding: 24px 26px;
+  border-style: dashed;
+  background: color-mix(
+    in srgb,
+    var(--surface-raised) 82%,
+    var(--surface-muted)
+  );
+}
+
+.long-book-analysis-page .analysis-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: 1px solid
+    color-mix(in srgb, var(--accent) 22%, var(--theme-line-soft));
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.long-book-analysis-page .analysis-empty-copy {
+  min-width: 0;
+}
+
+.long-book-analysis-page .analysis-empty-copy strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-primary);
+  font-size: 1.071429rem;
+  font-weight: 650;
+}
+
+.long-book-analysis-page .analysis-empty-copy p {
+  max-width: 620px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.892857rem;
+  line-height: 1.55;
+}
+
+.long-book-analysis-page .analysis-empty-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 230px;
+}
+
+.long-book-analysis-page .analysis-empty-meta span,
+.long-book-analysis-page .preset-summary small {
+  padding: 5px 8px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 999px;
+  background: var(--surface-main);
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.long-book-analysis-page .analysis-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: 0.821429rem;
+  white-space: nowrap;
+}
+
+.long-book-analysis-page .analysis-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+
+.long-book-analysis-page .analysis-status.is-running i,
+.long-book-analysis-page .analysis-status.is-stopping i {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.long-book-analysis-page .analysis-status.is-completed i {
+  background: var(--success, #2f8f5b);
+}
+
+.long-book-analysis-page .analysis-status.is-error i {
+  background: var(--danger, #c64b4b);
+}
+
+.long-book-analysis-page .setup-grid {
+  display: grid;
+  grid-template-columns:
+    minmax(190px, 1.1fr) minmax(190px, 1.1fr) minmax(120px, 0.65fr)
+    minmax(210px, 1fr);
+  gap: 12px;
+}
+
+.long-book-analysis-page .setup-field {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.long-book-analysis-page .setup-field-label {
+  color: var(--text-secondary);
+  font-size: 0.785714rem;
+  font-weight: 580;
+}
+
+.long-book-analysis-page .setup-field-label small {
+  margin-left: 5px;
+  color: var(--text-tertiary);
+  font-size: 0.714286rem;
+  font-weight: 450;
+}
+
+.long-book-analysis-page .chapter-range-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.long-book-analysis-page .chapter-range-inputs > span {
+  color: var(--text-tertiary);
+  font-size: 0.785714rem;
+}
+
+.long-book-analysis-page .setup-grid input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--theme-line);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: var(--surface-main);
+  color: var(--text-primary);
+}
+
+.long-book-analysis-page .preset-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid
+    color-mix(in srgb, var(--accent) 12%, var(--theme-line-soft));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface-muted));
+}
+
+.long-book-analysis-page .preset-summary > div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.long-book-analysis-page .preset-summary-main {
+  flex: 1 1 auto;
+}
+
+.long-book-analysis-page .preset-summary-copy {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.long-book-analysis-page .preset-target-field {
+  display: grid;
+  flex: 0 1 380px;
+  grid-template-columns: auto minmax(190px, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 280px;
+}
+
+.long-book-analysis-page .preset-target-field > span {
+  font-size: 0.785714rem;
+  font-weight: 580;
+}
+
+.long-book-analysis-page .preset-summary strong {
+  flex: 0 0 auto;
+  font-size: 0.928571rem;
+}
+
+.long-book-analysis-page .preset-summary span {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 0.857143rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.long-book-analysis-page .preset-summary small {
+  flex: 0 0 auto;
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--theme-line-soft));
+  color: var(--text-secondary);
+}
+
+.long-book-analysis-page .analysis-run-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 16px;
+  padding-top: 15px;
+  border-top: 1px solid var(--theme-line-soft);
+}
+
+.long-book-analysis-page .analysis-run-progress {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.long-book-analysis-page .analysis-run-progress strong {
+  flex: 0 0 auto;
+  font-size: 0.928571rem;
+}
+
+.long-book-analysis-page .analysis-run-progress span {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 0.857143rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.long-book-analysis-page .analysis-run-actions .analysis-primary-button {
+  min-width: 96px;
 }
 
 .long-book-analysis-page .analysis-diagnostics {
@@ -112,4 +455,104 @@
 
 .long-book-analysis-page .analysis-diagnostics p {
   margin: 3px 0;
+}
+
+@container analysis-page (max-width: 1040px) {
+  .long-book-analysis-page .analysis-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .long-book-analysis-page .setup-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .long-book-analysis-page .analysis-page-controls {
+    width: 100%;
+  }
+
+  .long-book-analysis-page .analysis-source-picker {
+    flex: 1 1 auto;
+  }
+
+  .long-book-analysis-page .preset-summary,
+  .long-book-analysis-page .analysis-run-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .long-book-analysis-page .preset-target-field {
+    width: 100%;
+    flex: 0 0 auto;
+  }
+
+  .long-book-analysis-page .analysis-run-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+@container analysis-page (max-width: 700px) {
+  .long-book-analysis-page .analysis-page-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .long-book-analysis-page .analysis-source-picker {
+    width: 100%;
+  }
+
+  .long-book-analysis-page .analysis-page-actions {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .long-book-analysis-page
+    .analysis-page-actions
+    button:not(.analysis-icon-button) {
+    flex: 1 1 auto;
+  }
+
+  .long-book-analysis-page .analysis-empty-source {
+    grid-template-columns: auto minmax(0, 1fr);
+    min-height: 0;
+    padding: 20px;
+  }
+
+  .long-book-analysis-page .analysis-empty-meta {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    max-width: none;
+  }
+
+  .long-book-analysis-page .setup-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .long-book-analysis-page .setup-range-field {
+    grid-column: auto;
+  }
+
+  .long-book-analysis-page .preset-summary > div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .long-book-analysis-page .preset-target-field {
+    width: 100%;
+    flex: 0 0 auto;
+    grid-template-columns: 1fr;
+    min-width: 0;
+  }
+
+  .long-book-analysis-page .preset-summary span,
+  .long-book-analysis-page .analysis-run-progress span {
+    overflow: visible;
+    white-space: normal;
+  }
+
+  .long-book-analysis-page .analysis-run-actions {
+    justify-content: flex-end;
+  }
 }
