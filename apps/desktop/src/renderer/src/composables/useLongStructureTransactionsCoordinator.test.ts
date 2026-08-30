@@ -2,6 +2,7 @@ import {
   LONG_BOOK_LINE_FILE_ID,
   LongWorkspaceIndexSnapshotSchema,
   type LongBookSummary,
+  type LongWorkspaceImpactConfirmation,
   type LongWorkspaceIndexSnapshot,
   type LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
@@ -16,6 +17,36 @@ import {
 
 const NOW = "2026-08-14T08:00:00.000Z";
 const BOOK_ID = "longbook_structure_alpha";
+const EMPTY_CONFIRMATION: LongWorkspaceImpactConfirmation = {
+  impact: {
+    createdEntityIds: [],
+    updatedEntityIds: [],
+    deletedEntityIds: [],
+    createdFileIds: [],
+    deletedFileIds: [],
+    documentWriteProposalIds: []
+  },
+  entityChanges: [],
+  relationshipChanges: [],
+  fileIntents: [],
+  ledgerRecordEdits: []
+};
+const DESTRUCTIVE_CONFIRMATION: LongWorkspaceImpactConfirmation = {
+  ...EMPTY_CONFIRMATION,
+  impact: {
+    ...EMPTY_CONFIRMATION.impact,
+    deletedEntityIds: ["worlditem_rule_one"]
+  },
+  entityChanges: [
+    {
+      id: "worlditem_rule_one",
+      kind: "worldbuilding-item",
+      action: "delete",
+      before: { id: "worlditem_rule_one", title: "第一条规则" },
+      after: null
+    }
+  ]
+};
 
 interface Deferred<Value> {
   promise: Promise<Value>;
@@ -36,19 +67,14 @@ async function flushMicrotasks(): Promise<void> {
   }
 }
 
-function workspaceIndex(
-  bookId = BOOK_ID,
-  revision = 1
-): LongWorkspaceIndexSnapshot {
+function workspaceIndex(bookId = BOOK_ID): LongWorkspaceIndexSnapshot {
   return LongWorkspaceIndexSnapshotSchema.parse({
     schemaVersion: 1,
-    revision,
     bookId,
     updatedAt: NOW,
     bookLine: {
       id: LONG_BOOK_LINE_FILE_ID,
       path: "long/plot/book-line.md",
-      revision: "v1:0:00000000",
       updatedAt: NOW
     },
     worldbuilding: [],
@@ -69,18 +95,29 @@ function workspaceIndex(
   });
 }
 
-function bookSummary(
-  bookId = BOOK_ID,
-  workspaceRevision = 1,
-  projectRevision = 10
-): LongBookSummary {
+function bookSummary(bookId = BOOK_ID): LongBookSummary {
   return {
+    schemaVersion: 1,
+    kind: "deepwrite.long-book",
     id: bookId,
     title: `长篇 ${bookId}`,
-    projectRevision,
+    bookType: "long",
+    genre: "测试",
+    status: "editing",
+    linkedMaterialIdsByKind: {
+      character: [],
+      gimmick: [],
+      plot: [],
+      draft: [],
+      other: []
+    },
+    linkedSkillIdsByKind: { general: [], plot: [], style: [], other: [] },
+    createdAt: NOW,
     updatedAt: NOW,
     navigation: {
-      revision: workspaceRevision,
+      schemaVersion: 1,
+      bookId,
+      updatedAt: NOW,
       worldbuilding: [],
       characterTypes: [],
       characters: [],
@@ -94,10 +131,13 @@ function bookSummary(
         volumes: 0,
         chapterCards: 0,
         foreshadowingThreads: 0,
-        committedChapters: 0
-      }
+        committedChapters: 0,
+        storyEvents: 0,
+        storyPlots: 0
+      },
+      committedThroughChapterId: null
     }
-  } as unknown as LongBookSummary;
+  };
 }
 
 function mutationBatch(
@@ -131,21 +171,44 @@ function createHarness(
       (async ({ bookId }) =>
         ({
           bookId,
-          projectRevision: activeLongBookSummary.value?.projectRevision ?? 0,
-          preview: { impact: {} }
+          preview: {
+            impact: {
+              createdEntityIds: [],
+              updatedEntityIds: [],
+              deletedEntityIds: [],
+              createdFileIds: [],
+              deletedFileIds: [],
+              documentWriteProposalIds: []
+            },
+            entityChanges: [],
+            relationshipChanges: [],
+            fileIntents: [],
+            ledgerRecordEdits: [],
+            confirmation: {
+              impact: {
+                createdEntityIds: [],
+                updatedEntityIds: [],
+                deletedEntityIds: [],
+                createdFileIds: [],
+                deletedFileIds: [],
+                documentWriteProposalIds: []
+              },
+              entityChanges: [],
+              relationshipChanges: [],
+              fileIntents: [],
+              ledgerRecordEdits: []
+            },
+            documentWrites: [],
+            provisionalIdMap: {}
+          }
         }) as never)
   );
   const applyOperations = vi.fn(
     overrides.applyOperations ??
-      (async ({ bookId, baseProjectRevision }) =>
+      (async ({ bookId }) =>
         ({
           bookId,
-          projectRevision: baseProjectRevision + 1,
-          summary: bookSummary(
-            bookId,
-            (activeLongWorkspaceIndex.value?.revision ?? 0) + 1,
-            baseProjectRevision + 1
-          ),
+          summary: bookSummary(bookId),
           operationResult: {}
         }) as never)
   );
@@ -252,8 +315,7 @@ describe("useLongStructureTransactionsCoordinator", () => {
     );
     pendingApply.resolve({
       bookId: BOOK_ID,
-      projectRevision: 11,
-      summary: bookSummary(BOOK_ID, 2, 11),
+      summary: bookSummary(BOOK_ID),
       operationResult: {}
     } as never);
     await Promise.all([first, duplicate]);
@@ -274,12 +336,11 @@ describe("useLongStructureTransactionsCoordinator", () => {
 
     const otherBookId = "longbook_structure_beta";
     harness.activeBookId.value = otherBookId;
-    harness.longBooks.value = [bookSummary(otherBookId, 4, 20)];
-    harness.workspaceIndex.value = workspaceIndex(otherBookId, 4);
+    harness.longBooks.value = [bookSummary(otherBookId)];
+    harness.workspaceIndex.value = workspaceIndex(otherBookId);
     pendingApply.resolve({
       bookId: BOOK_ID,
-      projectRevision: 11,
-      summary: bookSummary(BOOK_ID, 2, 11),
+      summary: bookSummary(BOOK_ID),
       operationResult: {}
     } as never);
     await request;
@@ -290,10 +351,10 @@ describe("useLongStructureTransactionsCoordinator", () => {
     expect(harness.refreshWorkspaceAfterProposal).not.toHaveBeenCalled();
   });
 
-  it("rebases against the authoritative revisions advanced by editor save", async () => {
+  it("saves the editor before previewing and applies without version fields", async () => {
     const save = vi.fn(async () => {
-      harness.workspaceIndex.value = workspaceIndex(BOOK_ID, 2);
-      harness.longBooks.value = [bookSummary(BOOK_ID, 2, 14)];
+      harness.workspaceIndex.value = workspaceIndex(BOOK_ID);
+      harness.longBooks.value = [bookSummary(BOOK_ID)];
       return true;
     });
     const harness = createHarness({ saveActiveEditorChanges: save });
@@ -307,14 +368,78 @@ describe("useLongStructureTransactionsCoordinator", () => {
 
     expect(harness.previewOperations).toHaveBeenCalledWith(
       expect.objectContaining({
-        bookId: BOOK_ID,
-        batch: expect.objectContaining({ baseRevision: 2 })
+        bookId: BOOK_ID
       })
     );
     expect(harness.applyOperations).toHaveBeenCalledWith(
-      expect.objectContaining({ baseProjectRevision: 14 })
+      expect.not.objectContaining({ baseProjectRevision: expect.anything() })
     );
     expect(result.succeed).toHaveBeenCalledTimes(1);
+  });
+
+  it("never applies an unconfirmed explicit delete even when preview misses its effects", async () => {
+    const harness = createHarness();
+    const result = completion();
+    const batch = createLongStructureMutationBuilder(
+      harness.workspaceIndex.value!
+    ).deleteVolume("volume_one");
+
+    await harness.coordinator.handleActiveLongStructureMutation(batch, result);
+
+    expect(harness.previewOperations).toHaveBeenCalledTimes(1);
+    expect(harness.applyOperations).not.toHaveBeenCalled();
+    expect(result.fail).toHaveBeenCalledWith(
+      "请先核对关联关系与删除影响，再确认执行。",
+      EMPTY_CONFIRMATION
+    );
+  });
+
+  it("requires confirmation for destructive effects hidden behind an update", async () => {
+    const harness = createHarness({
+      previewOperations: vi.fn(
+        async ({ bookId }) =>
+          ({
+            bookId,
+            preview: {
+              ...DESTRUCTIVE_CONFIRMATION,
+              confirmation: DESTRUCTIVE_CONFIRMATION,
+              documentWrites: [],
+              provisionalIdMap: {}
+            }
+          }) as never
+      )
+    });
+    const result = completion();
+    const batch: LongWorkspaceOperationBatch = {
+      updatedAt: NOW,
+      operations: [
+        {
+          type: "worldbuilding.update",
+          id: "world_rules",
+          patch: { format: "text" }
+        }
+      ],
+      documentWrites: []
+    };
+
+    await harness.coordinator.handleActiveLongStructureMutation(batch, result);
+
+    expect(harness.applyOperations).not.toHaveBeenCalled();
+    expect(result.fail).toHaveBeenCalledWith(
+      "请先核对关联关系与删除影响，再确认执行。",
+      DESTRUCTIVE_CONFIRMATION
+    );
+
+    await harness.coordinator.handleActiveLongStructureMutation(
+      { ...batch, expectedImpact: DESTRUCTIVE_CONFIRMATION },
+      result
+    );
+    expect(harness.applyOperations).toHaveBeenCalledWith({
+      bookId: BOOK_ID,
+      batch: expect.objectContaining({
+        expectedImpact: DESTRUCTIVE_CONFIRMATION
+      })
+    });
   });
 
   it("rejects a batch when the target changes after preview", async () => {
@@ -328,11 +453,10 @@ describe("useLongStructureTransactionsCoordinator", () => {
       result
     );
     await flushMicrotasks();
-    harness.workspaceIndex.value = workspaceIndex(BOOK_ID, 2);
+    harness.workspaceIndex.value = workspaceIndex(BOOK_ID);
     pendingPreview.resolve({
       bookId: BOOK_ID,
-      projectRevision: 10,
-      preview: { impact: {} }
+      preview: {}
     } as never);
     await request;
 
@@ -361,8 +485,7 @@ describe("useLongStructureTransactionsCoordinator", () => {
     expect(disposed).toBe(false);
     pendingApply.resolve({
       bookId: BOOK_ID,
-      projectRevision: 11,
-      summary: bookSummary(BOOK_ID, 2, 11),
+      summary: bookSummary(BOOK_ID),
       operationResult: {}
     } as never);
     await Promise.all([request, dispose]);

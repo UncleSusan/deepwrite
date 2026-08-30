@@ -52,16 +52,15 @@ describe("unified long-form tools: ledger", () => {
     });
   });
 
-  it("commits from the draft root when the live index is newer than send-time context", async () => {
+  it("commits from the draft root after workspace metadata changes", async () => {
     const frozen = twoWrittenChaptersIndex();
     const live = LongWorkspaceIndexSnapshotSchema.parse({
       ...frozen,
-      revision: frozen.revision + 5,
       updatedAt: "2026-07-26T13:00:00.000Z"
     });
     const { contents } = writtenChapterDocuments(live);
     const tools = longTools({
-      executor: documentExecutor(live, contents, 16),
+      executor: documentExecutor(live, contents),
       activeRoot: "draft",
       activeChapterCardId: "chapter_one",
       index: frozen
@@ -77,9 +76,7 @@ describe("unified long-form tools: ledger", () => {
     expect(result.details).toMatchObject({
       kind: "long-ledger-commit-proposal",
       input: expect.objectContaining({
-        chapterCardId: "chapter_one",
-        baseWorkspaceRevision: live.revision,
-        baseProjectRevision: 16
+        chapterCardId: "chapter_one"
       })
     });
   });
@@ -88,7 +85,6 @@ describe("unified long-form tools: ledger", () => {
     const frozen = twoWrittenChaptersIndex();
     const live = LongWorkspaceIndexSnapshotSchema.parse({
       ...frozen,
-      revision: frozen.revision + 1,
       updatedAt: "2026-07-26T13:00:00.000Z",
       chapters: frozen.chapters.map((chapter, index) =>
         index === 0 ? { ...chapter, commitId: "commit_one" } : chapter
@@ -102,8 +98,6 @@ describe("unified long-form tools: ledger", () => {
             sequence: 1,
             chapterCardId: "chapter_one",
             committedAt: "2026-07-26T13:00:00.000Z",
-            reversible: true,
-            sourceRevision: frozen.revision,
             placementIds: [],
             foreshadowingBeatIds: [],
             recordFile: file(
@@ -116,7 +110,7 @@ describe("unified long-form tools: ledger", () => {
     });
     const { contents } = writtenChapterDocuments(live);
     const tools = longTools({
-      executor: documentExecutor(live, contents, 12),
+      executor: documentExecutor(live, contents),
       activeRoot: "draft",
       activeChapterCardId: "chapter_two",
       index: frozen

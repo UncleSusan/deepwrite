@@ -12,10 +12,11 @@ import type {
   AgentConversationController,
   AgentRunSettings
 } from "../composables/useAgentConversation";
-import type {
-  AgentModelSelection,
-  AgentRunPreferences,
-  AgentRunPreferencesByScope
+import {
+  normalizeAgentRunPreferences,
+  type AgentModelSelection,
+  type AgentRunPreferences,
+  type AgentRunPreferencesByScope
 } from "../utils/agentRunPreferences";
 
 export const MODEL_SELECTION_PERSISTENCE_KEY =
@@ -65,7 +66,9 @@ function captureRunSettings(
     selectedModelId: controller.selectedModelId.value,
     thinkingLevel: controller.thinkingLevel.value,
     temperature: controller.temperature.value,
-    approvalMode: controller.approvalMode.value
+    approvalMode: controller.approvalMode.value,
+    agentTeamMode: controller.agentTeamMode.value,
+    webSearchEnabled: controller.webSearchEnabled.value
   };
 }
 
@@ -77,35 +80,22 @@ function validModelSelection(value: unknown): value is AgentModelSelection {
     candidate.selectedModelId.length <= 120 &&
     typeof candidate.thinkingLevel === "string" &&
     candidate.thinkingLevel.length > 0 &&
-    candidate.thinkingLevel.length <= 64
+    candidate.thinkingLevel.length <= 64 &&
+    (candidate.webSearchEnabled === undefined ||
+      typeof candidate.webSearchEnabled === "boolean")
   );
 }
 
-function validRunPreference(value: unknown): value is AgentRunPreferences {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.temperature === "number" &&
-    Number.isFinite(candidate.temperature) &&
-    candidate.temperature >= 0 &&
-    candidate.temperature <= 2 &&
-    (candidate.approvalMode === "request-approval" ||
-      candidate.approvalMode === "auto-approve")
-  );
-}
-
-function validRunPreferencesByScope(
+function normalizeRunPreferencesByScope(
   value: unknown
-): value is AgentRunPreferencesByScope {
-  return (
-    Boolean(value) &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    Object.entries(value as Record<string, unknown>).every(
-      ([scope, preference]) =>
-        scope.trim().length > 0 && validRunPreference(preference)
-    )
-  );
+): AgentRunPreferencesByScope | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const normalized = normalizeAgentRunPreferences(value);
+  return Object.keys(normalized).length === Object.keys(value).length
+    ? normalized
+    : undefined;
 }
 
 export const useConversationStore = defineStore("conversation", () => {
@@ -593,10 +583,11 @@ export const useConversationStore = defineStore("conversation", () => {
     if (validModelSelection(selection)) {
       setSessionAgentModelSelection(selection, { persist: false });
     }
-    if (validRunPreferencesByScope(preferences)) {
+    const normalizedPreferences = normalizeRunPreferencesByScope(preferences);
+    if (normalizedPreferences) {
       agentRunPreferences.value = rawValue(
         Object.fromEntries(
-          Object.entries(preferences).map(([scope, preference]) => [
+          Object.entries(normalizedPreferences).map(([scope, preference]) => [
             scope,
             { ...preference }
           ])

@@ -167,13 +167,13 @@ onBeforeUnmount(() => {
       @blur="focused = false"
       @keydown.esc.prevent="closeTooltip"
     >
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <circle class="context-window-indicator-track" cx="10" cy="10" r="7" />
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <circle class="context-window-indicator-track" cx="8" cy="8" r="5.5" />
         <circle
           class="context-window-indicator-progress"
-          cx="10"
-          cy="10"
-          r="7"
+          cx="8"
+          cy="8"
+          r="5.5"
           pathLength="100"
           stroke-dasharray="100"
           :stroke-dashoffset="dashOffset"

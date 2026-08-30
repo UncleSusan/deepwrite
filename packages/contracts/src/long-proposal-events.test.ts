@@ -37,7 +37,6 @@ const common = {
   summary: "形成待审阅提案。",
   runtime
 };
-const revision = "v1:0:00000000";
 const ledgerAudit = {
   commitMessage: "核验并提交第一章",
   chapterSummary: {
@@ -53,14 +52,12 @@ const ledgerAudit = {
 describe("long proposal event contracts", () => {
   it("preserves typed continuity text-file changes in the system event union", () => {
     const fileId = longChapterForeshadowingChangesFileId("chapter_one");
-    const nextRevision = "v1:6:12345678";
     const proposal = createEnvelope(
       "long.continuity_file_proposal",
       {
         ...common,
         agentId: "long" as const,
         batch: {
-          baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
           operations: [],
           documentWrites: [
@@ -69,14 +66,11 @@ describe("long proposal event contracts", () => {
               fileId,
               content: "蜡封伏笔已种下。",
               mode: "replace" as const,
-              expectedRevision: revision,
-              nextRevision,
               updatedAt: "2026-07-26T12:00:00.000Z",
               reason: "记录本章伏笔变化"
             }
           ]
         },
-        baseProjectRevision: 11,
         files: [
           {
             chapterCardId: "chapter_one",
@@ -90,9 +84,7 @@ describe("long proposal event contracts", () => {
             title: "第一章 / 伏笔变化",
             operation: "edit" as const,
             beforeText: "",
-            afterText: "蜡封伏笔已种下。",
-            beforeRevision: revision,
-            nextRevision
+            afterText: "蜡封伏笔已种下。"
           }
         ]
       },
@@ -118,14 +110,12 @@ describe("long proposal event contracts", () => {
 
   it("rejects unrelated structure operations hidden in continuity file proposals", () => {
     const fileId = longChapterForeshadowingChangesFileId("chapter_one");
-    const nextRevision = "v1:6:12345678";
     const proposal = createEnvelope(
       "long.continuity_file_proposal",
       {
         ...common,
         agentId: "long" as const,
         batch: {
-          baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
           operations: [
             {
@@ -140,14 +130,11 @@ describe("long proposal event contracts", () => {
               fileId,
               content: "蜡封伏笔已种下。",
               mode: "replace" as const,
-              expectedRevision: revision,
-              nextRevision,
               updatedAt: "2026-07-26T12:00:00.000Z",
               reason: "记录本章伏笔变化"
             }
           ]
         },
-        baseProjectRevision: 11,
         files: [
           {
             chapterCardId: "chapter_one",
@@ -161,9 +148,7 @@ describe("long proposal event contracts", () => {
             title: "第一章 / 伏笔变化",
             operation: "edit" as const,
             beforeText: "",
-            afterText: "蜡封伏笔已种下。",
-            beforeRevision: revision,
-            nextRevision
+            afterText: "蜡封伏笔已种下。"
           }
         ]
       },
@@ -181,7 +166,6 @@ describe("long proposal event contracts", () => {
       {
         ...common,
         batch: {
-          baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
           operations: [
             {
@@ -191,8 +175,7 @@ describe("long proposal event contracts", () => {
             }
           ],
           documentWrites: []
-        },
-        baseProjectRevision: 11
+        }
       },
       { id: "event-long-mutation", context }
     );
@@ -202,7 +185,6 @@ describe("long proposal event contracts", () => {
         ...common,
         agentId: "long" as const,
         batch: {
-          baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
           operations: [],
           documentWrites: [
@@ -211,14 +193,11 @@ describe("long proposal event contracts", () => {
               fileId: longChapterBodyFileId("chapter_one"),
               content: "正文",
               mode: "replace" as const,
-              expectedRevision: revision,
-              nextRevision: "v1:6:12345678",
               updatedAt: "2026-07-26T12:00:00.000Z",
               reason: "完成第一章"
             }
           ]
         },
-        baseProjectRevision: 11,
         file: {
           chapterCardId: "chapter_one",
           chapterTitle: "第一章",
@@ -226,9 +205,7 @@ describe("long proposal event contracts", () => {
           filePath: longChapterFilePath("chapter_one", "body.md"),
           operation: "create" as const,
           beforeText: "",
-          afterText: "正文",
-          beforeRevision: revision,
-          nextRevision: "v1:6:12345678"
+          afterText: "正文"
         }
       },
       { id: "event-long-chapter", context }
@@ -238,7 +215,6 @@ describe("long proposal event contracts", () => {
       {
         ...common,
         batch: {
-          baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
           operations: [
             {
@@ -254,7 +230,6 @@ describe("long proposal event contracts", () => {
                     "world_rules",
                     "worlditem_memory"
                   ),
-                  revision,
                   updatedAt: "2026-07-26T12:00:00.000Z"
                 }
               }
@@ -262,7 +237,6 @@ describe("long proposal event contracts", () => {
           ],
           documentWrites: []
         },
-        baseProjectRevision: 11,
         files: [
           {
             categoryId: "world_rules",
@@ -275,9 +249,7 @@ describe("long proposal event contracts", () => {
             title: "记忆代价",
             operation: "create" as const,
             beforeText: "",
-            afterText: "",
-            beforeRevision: null,
-            nextRevision: revision
+            afterText: ""
           }
         ]
       },
@@ -289,7 +261,6 @@ describe("long proposal event contracts", () => {
         ...common,
         agentId: "long" as const,
         batch: {
-          baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
           operations: [],
           documentWrites: [
@@ -298,14 +269,11 @@ describe("long proposal event contracts", () => {
               fileId: longCharacterCoreProfileFileId("character_lan"),
               content: "雾港巡夜人。",
               mode: "replace" as const,
-              expectedRevision: revision,
-              nextRevision: "v1:6:12345678",
               updatedAt: "2026-07-26T12:00:00.000Z",
               reason: "写入核心档案"
             }
           ]
         },
-        baseProjectRevision: 11,
         files: [
           {
             characterId: "character_lan",
@@ -316,9 +284,7 @@ describe("long proposal event contracts", () => {
             title: "林岚 / 核心档案",
             operation: "write" as const,
             beforeText: "",
-            afterText: "雾港巡夜人。",
-            beforeRevision: revision,
-            nextRevision: "v1:6:12345678"
+            afterText: "雾港巡夜人。"
           }
         ]
       },
@@ -332,17 +298,10 @@ describe("long proposal event contracts", () => {
         input: {
           bookId: common.bookId,
           chapterCardId: "chapter_one",
-          chapterFileRevisions: {
-            body: revision,
-            characterState: revision,
-            handoff: revision
-          },
           placementDecisions: {},
           foreshadowingBeatDecisions: {},
           fileUpdates: [],
-          ...ledgerAudit,
-          baseWorkspaceRevision: 7,
-          baseProjectRevision: 11
+          ...ledgerAudit
         },
         file: {
           chapterCardId: "chapter_one",
@@ -351,9 +310,7 @@ describe("long proposal event contracts", () => {
           filePath: longChapterFilePath("chapter_one", "body.md"),
           operation: "create" as const,
           beforeText: "",
-          afterText: "",
-          beforeRevision: revision,
-          nextRevision: revision
+          afterText: ""
         }
       },
       { id: "event-long-ledger", context }
@@ -362,8 +319,7 @@ describe("long proposal event contracts", () => {
     expect(
       LongMutationProposalEventEnvelopeSchema.parse(mutation).payload
     ).toMatchObject({
-      bookId: "longbook_proposal",
-      baseProjectRevision: 11
+      bookId: "longbook_proposal"
     });
     expect(
       LongWorldbuildingFileProposalEventEnvelopeSchema.parse(worldbuildingFile)
@@ -373,8 +329,7 @@ describe("long proposal event contracts", () => {
       files: [
         {
           title: "记忆代价",
-          operation: "create",
-          beforeRevision: null
+          operation: "create"
         }
       ]
     });
@@ -427,7 +382,6 @@ describe("long proposal event contracts", () => {
         ...common,
         agentId: "long" as const,
         batch: {
-          baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
           operations: [],
           documentWrites: [
@@ -436,14 +390,11 @@ describe("long proposal event contracts", () => {
               fileId: longChapterBodyFileId("chapter_one"),
               content: "不匹配的正文",
               mode: "replace" as const,
-              expectedRevision: revision,
-              nextRevision: revision,
               updatedAt: "2026-07-26T12:00:00.000Z",
               reason: "错误正文"
             }
           ]
         },
-        baseProjectRevision: 11,
         file: {
           chapterCardId: "chapter_one",
           chapterTitle: "第一章",
@@ -451,9 +402,7 @@ describe("long proposal event contracts", () => {
           filePath: longChapterFilePath("chapter_one", "body.md"),
           operation: "create" as const,
           beforeText: "",
-          afterText: "",
-          beforeRevision: revision,
-          nextRevision: revision
+          afterText: ""
         }
       },
       { id: "event-long-chapter-other", context }
@@ -470,17 +419,10 @@ describe("long proposal event contracts", () => {
         input: {
           bookId: common.bookId,
           chapterCardId: "chapter_one",
-          chapterFileRevisions: {
-            body: revision,
-            characterState: revision,
-            handoff: revision
-          },
           placementDecisions: {},
           foreshadowingBeatDecisions: {},
           fileUpdates: [],
-          ...ledgerAudit,
-          baseWorkspaceRevision: 7,
-          baseProjectRevision: 11
+          ...ledgerAudit
         }
       },
       {

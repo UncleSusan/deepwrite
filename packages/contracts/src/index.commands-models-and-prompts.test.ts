@@ -15,7 +15,8 @@ import {
   describe,
   expect,
   it,
-  runtime
+  runtime,
+  shortWorkspaceRuntimeFixture
 } from "./index.test-support";
 import {
   isDeepSeekWebSearchCompatible,
@@ -155,6 +156,41 @@ describe("DeepWrite desktop contracts: commands-models-and-prompts", () => {
     ).toThrow();
   });
 
+  it("accepts agent team mode only for creative workspace prompts", () => {
+    for (const agentTeamMode of ["normal", "team"] as const) {
+      expect(
+        SessionPromptCommandPayloadSchema.parse({
+          sessionId: `session_${agentTeamMode}`,
+          message: "继续创作",
+          agentTeamMode,
+          workspaceContext: {
+            shortWorkspace: shortWorkspaceRuntimeFixture()
+          }
+        }).agentTeamMode
+      ).toBe(agentTeamMode);
+    }
+    expect(
+      SessionPromptCommandPayloadSchema.parse({
+        sessionId: "session_default_mode",
+        message: "使用缺省模式"
+      }).agentTeamMode
+    ).toBeUndefined();
+    expect(() =>
+      SessionPromptCommandPayloadSchema.parse({
+        sessionId: "session_invalid_mode",
+        message: "非法模式",
+        agentTeamMode: "automatic"
+      })
+    ).toThrow();
+    expect(() =>
+      SessionPromptCommandPayloadSchema.parse({
+        sessionId: "session_non_creative_mode",
+        message: "非创作工作区",
+        agentTeamMode: "team"
+      })
+    ).toThrow();
+  });
+
   it("keeps chat-assistant prompts isolated from workspace and write context", () => {
     const accepted = createEnvelope(
       "session.prompt",
@@ -219,6 +255,7 @@ describe("DeepWrite desktop contracts: commands-models-and-prompts", () => {
     for (const forbidden of [
       { workspaceContext: {} },
       { writeApprovalMode: "request-approval" as const },
+      { agentTeamMode: "team" as const },
       { autoApproveCrossStageOperations: true }
     ]) {
       const envelope = createEnvelope(
@@ -250,6 +287,39 @@ describe("DeepWrite desktop contracts: commands-models-and-prompts", () => {
       }
     );
     expect(() => CommandEnvelopeSchema.parse(nonChatSearch)).toThrow();
+
+    const workspaceSearch = createEnvelope(
+      "session.prompt",
+      {
+        sessionId: "session_workspace_search",
+        message: "查一下近期同类题材",
+        thinkingLevel: "medium" as const,
+        webSearchEnabled: true
+      },
+      {
+        id: "cmd_workspace_search",
+        context: { sessionId: "session_workspace_search" }
+      }
+    );
+    expect(CommandEnvelopeSchema.parse(workspaceSearch)).toMatchObject({
+      payload: { webSearchEnabled: true }
+    });
+
+    const chatTopLevelSearch = createEnvelope(
+      "session.prompt",
+      {
+        sessionId: "session_chat_top_level_search",
+        message: "不要走顶层搜索开关",
+        mode: "chat-assistant" as const,
+        chatAssistant: { mode: "normal" as const },
+        webSearchEnabled: true
+      },
+      {
+        id: "cmd_chat_top_level_search",
+        context: { sessionId: "session_chat_top_level_search" }
+      }
+    );
+    expect(() => CommandEnvelopeSchema.parse(chatTopLevelSearch)).toThrow();
   });
 
   it("restricts DeepSeek web search to the two server-tool APIs", () => {

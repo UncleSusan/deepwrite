@@ -12,7 +12,6 @@ import {
   editorStructureSource,
   expect,
   foreshadowingFiltersSource,
-  foreshadowingMutationsSource,
   it,
   leftSidebarSource,
   longStructureTransactionsSource,
@@ -75,9 +74,6 @@ describe("long-form renderer vertical slice: navigation-and-characters", () => {
     );
     expect(appSource).toContain(
       '@mutation="handleActiveLongStructureMutation"'
-    );
-    expect(foreshadowingMutationsSource).toContain(
-      "createLongStructureMutationBuilder"
     );
     expect(foreshadowingFiltersSource).toContain(
       '"overview" | "volume" | "plotPoint"'
@@ -171,16 +167,22 @@ describe("long-form renderer vertical slice: navigation-and-characters", () => {
       '@delete-structure="deleteActiveLongNavigationStructure"'
     );
     expect(longStructureTransactionsSource).toContain(
-      "builder.deleteCharacter(target.id, true)"
+      "builder.deleteCharacter(target.id)"
     );
     expect(longStructureTransactionsSource).toContain(
-      "builder.deleteVolume(target.id, true)"
+      "builder.deleteVolume(target.id)"
     );
     expect(longStructureTransactionsSource).toContain(
-      "builder.deleteArc(target.id, true)"
+      "builder.deleteArc(target.id)"
     );
     expect(longStructureTransactionsSource).toContain(
-      "builder.deleteChapter(target.id, true)"
+      "builder.deleteChapter(target.id)"
+    );
+    expect(longStructureTransactionsSource).toContain(
+      "expectedImpact: pending.expectedImpact"
+    );
+    expect(longStructureTransactionsSource).toContain(
+      "onImpactChanged: (expectedImpact) =>"
     );
     expect(editorSource).toContain("emit('createCharacter')");
     expect(editorStructureSource).toContain('emit("createWorldbuildingItem")');
@@ -306,6 +308,8 @@ describe("long-form renderer vertical slice: navigation-and-characters", () => {
     expect(workspaceDialogLayerSource).toContain(
       "@submit=\"emit('submitCreateLongVolume', $event)\""
     );
+    expect(workspaceDialogLayerSource).toContain(':source="module.source"');
+    expect(dialogCoordinatorSource).toContain("source: volumeCreation.source");
     expect(appSource).toContain(
       '@submit-create-long-volume="createLongVolume"'
     );
@@ -376,18 +380,46 @@ describe("long-form renderer vertical slice: navigation-and-characters", () => {
     expect(chapterCardDialogSource).not.toContain("LongStructureManager");
     expect(plotPointDialogSource).toContain("新建剧情点");
     expect(plotPointDialogSource).not.toContain("LongStructureManager");
+    const createVolumeInternal = longStructureTransactionsSource.slice(
+      longStructureTransactionsSource.indexOf(
+        "async function openLongVolumeCreateInternal"
+      ),
+      longStructureTransactionsSource.indexOf(
+        "async function openLongVolumeCreate():"
+      )
+    );
+    expect(createVolumeInternal).toContain("source: target.source");
+    expect(createVolumeInternal).not.toContain(
+      "longStructureDialogOpen.value = true"
+    );
     const createVolumeEntry = longStructureTransactionsSource.slice(
       longStructureTransactionsSource.indexOf(
-        "async function openLongVolumeCreate"
+        "async function openLongVolumeCreate():"
       ),
       longStructureTransactionsSource.indexOf(
         "async function openLongPlotPointCreateForVolumeInternal"
       )
     );
-    expect(createVolumeEntry).toContain("longVolumeCreate.value = { bookId }");
+    expect(createVolumeEntry).toContain('source: "book-line"');
     expect(createVolumeEntry).not.toContain(
       "longStructureDialogOpen.value = true"
     );
+    expect(longStructureTransactionsSource).toContain(
+      'node.longWorkspaceSelection?.root === "draft"'
+    );
+    expect(longStructureTransactionsSource).toContain(
+      'longNavigationNodeId(target.bookId, "root:draft")'
+    );
+    expect(longStructureTransactionsSource).toContain("剧情阶段已同步生成卷纲");
+    const draftRootProjection = longWorkspaceResourceTreeSource.slice(
+      longWorkspaceResourceTreeSource.indexOf(
+        'node(createLongRootSelection(book, "draft")'
+      ),
+      longWorkspaceResourceTreeSource.indexOf(
+        'node(createLongRootSelection(book, "continuity_ledger")'
+      )
+    );
+    expect(draftRootProjection).toContain('kind: "volume"');
     const createPlotPointEntry = longStructureTransactionsSource.slice(
       longStructureTransactionsSource.indexOf(
         "async function openLongPlotPointCreateForVolumeInternal"

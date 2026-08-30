@@ -16,6 +16,8 @@ import {
   AgentTurnStartedPayloadSchema,
   AgentUsageObservedPayloadSchema,
   LearningImitationResultUpdatedPayloadSchema,
+  LongBookAnalysisNoteUpdatedPayloadSchema,
+  LongBookAnalysisResultUpdatedPayloadSchema,
   SubagentAuthoringDraftUpdatedPayloadSchema,
   type AgentErrorPayload,
   type AgentMessageCompletedPayload,
@@ -28,6 +30,8 @@ import {
   type AgentTurnStartedPayload,
   type AgentUsageObservedPayload,
   type LearningImitationResultUpdatedPayload,
+  type LongBookAnalysisNoteUpdatedPayload,
+  type LongBookAnalysisResultUpdatedPayload,
   type SubagentAuthoringDraftUpdatedPayload
 } from "./agent-events";
 import {
@@ -146,6 +150,18 @@ export const LearningImitationResultUpdatedEventEnvelopeSchema =
   EnvelopeBaseSchema.extend({
     type: z.literal("learning_imitation.result_updated"),
     payload: LearningImitationResultUpdatedPayloadSchema
+  }).superRefine(validateAgentEventContext);
+
+export const LongBookAnalysisNoteUpdatedEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long_book_analysis.note_updated"),
+    payload: LongBookAnalysisNoteUpdatedPayloadSchema
+  }).superRefine(validateAgentEventContext);
+
+export const LongBookAnalysisResultUpdatedEventEnvelopeSchema =
+  EnvelopeBaseSchema.extend({
+    type: z.literal("long_book_analysis.result_updated"),
+    payload: LongBookAnalysisResultUpdatedPayloadSchema
   }).superRefine(validateAgentEventContext);
 
 export const SubagentAuthoringDraftUpdatedEventEnvelopeSchema =
@@ -295,6 +311,14 @@ export type AgentUserInputRequestedEventEnvelope = Envelope<
 export type LearningImitationResultUpdatedEventEnvelope = Envelope<
   LearningImitationResultUpdatedPayload,
   "learning_imitation.result_updated"
+>;
+export type LongBookAnalysisNoteUpdatedEventEnvelope = Envelope<
+  LongBookAnalysisNoteUpdatedPayload,
+  "long_book_analysis.note_updated"
+>;
+export type LongBookAnalysisResultUpdatedEventEnvelope = Envelope<
+  LongBookAnalysisResultUpdatedPayload,
+  "long_book_analysis.result_updated"
 >;
 export type SubagentAuthoringDraftUpdatedEventEnvelope = Envelope<
   SubagentAuthoringDraftUpdatedPayload,

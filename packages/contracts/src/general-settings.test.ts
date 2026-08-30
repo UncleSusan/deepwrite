@@ -17,6 +17,7 @@ describe("general settings contracts", () => {
       })
     ).toMatchObject({
       autoApproveCrossStageOperations: false,
+      showContextUsage: true,
       workspacePaneLayout: "agent-editor",
       defaultTextViewMode: "edit"
     });

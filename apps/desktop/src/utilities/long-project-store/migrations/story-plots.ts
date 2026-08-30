@@ -3,8 +3,8 @@ import {
   LongProjectManifestSchema,
   LongWorkspaceIndexSnapshotSchema,
   longStoryPlotBodyFileId,
-  type LongFileRevision,
-  type LongProjectManifest
+  type LongProjectManifest,
+  type LongWorkspaceFileReference
 } from "@deepwrite/contracts";
 import { createId } from "@deepwrite/shared";
 import {
@@ -13,7 +13,6 @@ import {
   unknownRecord
 } from "../io";
 import { storyPlotPath } from "../paths";
-import { createLongFileRevision } from "../revisions";
 import {
   MANIFEST_PATH,
   MAX_LEDGER_RECORD_BYTES,
@@ -68,12 +67,7 @@ export async function migrateLegacyArcOutlineToStoryPlots(input: {
     arcId: string;
     title: string;
     order: number;
-    file: {
-      id: string;
-      path: string;
-      revision: LongFileRevision;
-      updatedAt: string;
-    };
+    file: LongWorkspaceFileReference;
     content: string;
   }> = [];
 
@@ -105,7 +99,6 @@ export async function migrateLegacyArcOutlineToStoryPlots(input: {
       file: {
         id: longStoryPlotBodyFileId(storyPlotId),
         path,
-        revision: createLongFileRevision(outline),
         updatedAt
       },
       content: outline
@@ -131,11 +124,7 @@ export async function migrateLegacyArcOutlineToStoryPlots(input: {
   });
   const indexContent = serializeJson(nextIndex);
   const nextManifest = LongProjectManifestSchema.parse({
-    ...input.manifest,
-    workspaceIndexFile: {
-      ...input.manifest.workspaceIndexFile,
-      revision: createLongFileRevision(indexContent)
-    }
+    ...input.manifest
   });
   await commitLongProjectTransaction({
     projectRoot: input.projectDirectory,

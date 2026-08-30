@@ -45,6 +45,7 @@ describe("agent conversation controller: workspace-context", () => {
     await sending;
 
     expect(deferred.prompts[0]?.autoApproveCrossStageOperations).toBe(true);
+    expect(deferred.prompts[0]?.agentTeamMode).toBe("normal");
 
     const context = deferred.prompts[0]?.workspaceContext;
     const plotStage = context?.shortWorkspace?.stages.find(
@@ -73,6 +74,7 @@ describe("agent conversation controller: workspace-context", () => {
     );
     if (!activeDocument) throw new Error("Missing script episode body.");
 
+    controller.selectAgentTeamMode("team");
     controller.draft.value = "继续编写第一集";
     const sending = controller.sendMessage(activeDocument, workspaceDocuments);
     const sessionId = controller.sessionId.value;
@@ -85,6 +87,7 @@ describe("agent conversation controller: workspace-context", () => {
     await sending;
 
     const context = deferred.prompts[0]?.workspaceContext;
+    expect(deferred.prompts[0]?.agentTeamMode).toBe("team");
     expect(context?.shortWorkspace).toBeUndefined();
     expect(context?.scriptWorkspace).toMatchObject({
       id: "script_story_1",
@@ -623,6 +626,8 @@ describe("agent conversation controller: workspace-context", () => {
     });
     await sending;
 
+    expect(deferred.prompts[0]).not.toHaveProperty("agentTeamMode");
+
     expect(deferred.prompts[0]?.workspaceContext).toMatchObject({
       activeResource: {
         id: activeDocument.id,
@@ -679,12 +684,8 @@ describe("agent conversation controller: workspace-context", () => {
         activeRoot: "worldbuilding",
         activeAgentId: "long",
         activeFileId: "file_world_rules:content",
-        activeFileRevision: "v1:3:1234abcd",
-        workspaceRevision: 7,
-        projectRevision: 11,
         navigation: {
           schemaVersion: 1,
-          revision: 7,
           bookId: "longbook_context",
           updatedAt: "2026-07-26T12:00:00.000Z",
           counts: {
@@ -741,10 +742,7 @@ describe("agent conversation controller: workspace-context", () => {
         bookId: "longbook_context",
         activeRoot: "worldbuilding",
         activeAgentId: "long",
-        activeFileId: "file_world_rules:content",
-        activeFileRevision: "v1:3:1234abcd",
-        workspaceRevision: 7,
-        projectRevision: 11
+        activeFileId: "file_world_rules:content"
       }),
       attachedSkills: [
         expect.objectContaining({
@@ -761,6 +759,7 @@ describe("agent conversation controller: workspace-context", () => {
         })
       ]
     });
+    expect(deferred.prompts[0]?.agentTeamMode).toBe("normal");
     expect(deferred.prompts[0]?.workspaceContext).not.toHaveProperty(
       "activeResource"
     );

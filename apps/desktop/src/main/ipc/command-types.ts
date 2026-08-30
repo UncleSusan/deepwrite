@@ -16,6 +16,7 @@ import type {
   MainInternalCommandActiveRun
 } from "../internal-command-authorizer";
 import type { LearningImitationConfigStore } from "../learning-imitation-config-store";
+import type { LongBookAnalysisConfigStore } from "../extras/long-book-analysis/config-store";
 import type { importLegacyLibraryArchives } from "../legacy-library-import-batch";
 import type { LegacySyncPreviewRegistry } from "../legacy-sync-preview-registry";
 import type { LibraryAgentConfigStore } from "../library-agent-config-store";
@@ -63,6 +64,7 @@ export interface IpcCommandContext {
   requireLibraryAgentConfigStore: () => LibraryAgentConfigStore;
   requireLongAgentConfigStore: () => LongAgentConfigStore;
   requireLearningImitationConfigStore: () => LearningImitationConfigStore;
+  requireLongBookAnalysisConfigStore: () => LongBookAnalysisConfigStore;
   requireWorkspaceDirectoryStore: () => WorkspaceDirectoryStore;
   requireAppearanceService: () => AppearanceService;
   requireGeneralSettingsStore: () => GeneralSettingsStore;

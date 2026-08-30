@@ -34,7 +34,6 @@ describe("long workspace operation engine: crud-and-deletion", () => {
     const result = applyLongWorkspaceOperations(
       source,
       LongWorkspaceOperationBatchSchema.parse({
-        baseRevision: source.revision,
         updatedAt: later,
         operations: [
           {
@@ -64,9 +63,7 @@ describe("long workspace operation engine: crud-and-deletion", () => {
     const source = workspace();
     const result = applyLongWorkspaceOperations(source, createBatch());
 
-    expect(source.revision).toBe(7);
     expect(source.plot.volumes).toHaveLength(1);
-    expect(result.resultRevision).toBe(8);
     expect(result.snapshot.plot.volumes.map(({ order }) => order)).toEqual([
       1, 2
     ]);
@@ -111,20 +108,23 @@ describe("long workspace operation engine: crud-and-deletion", () => {
       LongWorkspaceIndexSnapshotSchema.safeParse(result.snapshot).success
     ).toBe(true);
 
-    const deletedConnection = applyLongWorkspaceOperations(
+    const deleteConnectionBatch = LongWorkspaceOperationBatchSchema.parse({
+      updatedAt: later,
+      operations: [
+        {
+          type: "connection.delete",
+          id: "connection_letter_enables_bell"
+        }
+      ]
+    });
+    const deleteConnectionPreview = previewLongWorkspaceOperations(
       result.snapshot,
-      LongWorkspaceOperationBatchSchema.parse({
-        baseRevision: 8,
-        updatedAt: later,
-        operations: [
-          {
-            type: "connection.delete",
-            id: "connection_letter_enables_bell",
-            cascade: false
-          }
-        ]
-      })
+      deleteConnectionBatch
     );
+    const deletedConnection = applyLongWorkspaceOperations(result.snapshot, {
+      ...deleteConnectionBatch,
+      expectedImpact: deleteConnectionPreview.confirmation
+    });
     expect(deletedConnection.snapshot.plot.eventConnections).toHaveLength(0);
     expect(deletedConnection.impact.deletedEntityIds).toContain(
       "connection_letter_enables_bell"
@@ -136,7 +136,6 @@ describe("long workspace operation engine: crud-and-deletion", () => {
     const result = applyLongWorkspaceOperations(
       source,
       LongWorkspaceOperationBatchSchema.parse({
-        baseRevision: source.revision,
         updatedAt: later,
         operations: [
           {
@@ -199,7 +198,6 @@ describe("long workspace operation engine: crud-and-deletion", () => {
       later
     );
     const created = applyLongWorkspaceOperations(source, {
-      baseRevision: source.revision,
       updatedAt: later,
       operations: [
         {
@@ -229,11 +227,8 @@ describe("long workspace operation engine: crud-and-deletion", () => {
     });
 
     const characterDeleteBatch = {
-      baseRevision: created.resultRevision,
       updatedAt: later,
-      operations: [
-        { type: "character.delete", id: "character_alice", cascade: true }
-      ]
+      operations: [{ type: "character.delete", id: "character_alice" }]
     } satisfies Parameters<typeof previewLongWorkspaceOperations>[1];
     const characterDeletePreview = previewLongWorkspaceOperations(
       created.snapshot,
@@ -241,7 +236,7 @@ describe("long workspace operation engine: crud-and-deletion", () => {
     );
     const deletedCharacter = applyLongWorkspaceOperations(created.snapshot, {
       ...characterDeleteBatch,
-      expectedImpact: characterDeletePreview.impact
+      expectedImpact: characterDeletePreview.confirmation
     });
     expect(deletedCharacter.snapshot.chapters[0]!.characterContinuity).toEqual(
       []
@@ -254,72 +249,24 @@ describe("long workspace operation engine: crud-and-deletion", () => {
       )
     ).toHaveLength(2);
 
-    const deleted = applyLongWorkspaceOperations(created.snapshot, {
-      baseRevision: created.resultRevision,
+    const chapterDeleteBatch = {
       updatedAt: later,
-      operations: [
-        { type: "chapter.delete", id: "chapter_one", cascade: false }
-      ]
+      operations: [{ type: "chapter.delete", id: "chapter_one" }]
+    } satisfies Parameters<typeof previewLongWorkspaceOperations>[1];
+    const chapterDeletePreview = previewLongWorkspaceOperations(
+      created.snapshot,
+      chapterDeleteBatch
+    );
+    const deleted = applyLongWorkspaceOperations(created.snapshot, {
+      ...chapterDeleteBatch,
+      expectedImpact: chapterDeletePreview.confirmation
     });
     expect(
       deleted.fileIntents.filter(({ action }) => action === "delete")
     ).toHaveLength(8);
   });
 
-  it("creates custom character types and migrates characters atomically on delete", () => {
-    const source = workspace();
-    const created = applyLongWorkspaceOperations(source, {
-      baseRevision: source.revision,
-      updatedAt: later,
-      operations: [
-        {
-          type: "characterType.create",
-          characterType: {
-            id: "chartype_antagonist",
-            title: "反派",
-            order: source.characterTypes.length + 1
-          }
-        }
-      ]
-    });
-    expect(created.snapshot.characterTypes.at(-1)).toEqual({
-      id: "chartype_antagonist",
-      title: "反派",
-      order: 5
-    });
-
-    const originalFiles = structuredClone(created.snapshot.characterFiles);
-    const migrated = applyLongWorkspaceOperations(created.snapshot, {
-      baseRevision: created.resultRevision,
-      updatedAt: later,
-      operations: [
-        {
-          type: "characterType.delete",
-          id: "protagonist",
-          moveCharactersToTypeId: "chartype_antagonist"
-        }
-      ]
-    });
-    expect(
-      migrated.snapshot.characterTypes.some(({ id }) => id === "protagonist")
-    ).toBe(false);
-    expect(migrated.snapshot.characters[0]).toMatchObject({
-      id: "character_alice",
-      group: "chartype_antagonist",
-      order: 1
-    });
-    expect(migrated.snapshot.characterFiles).toEqual(originalFiles);
-
-    expect(() =>
-      applyLongWorkspaceOperations(created.snapshot, {
-        baseRevision: created.resultRevision,
-        updatedAt: later,
-        operations: [{ type: "characterType.delete", id: "protagonist" }]
-      })
-    ).toThrow(/requires another target type/u);
-  });
-
-  it("deletes only optional continuity files from uncommitted chapters", () => {
+  it("edits optional continuity files directly regardless of commit history", () => {
     const source = workspace();
     const currentState = file(
       longChapterCharacterCurrentStateFileId("chapter_one", "character_alice"),
@@ -345,7 +292,6 @@ describe("long workspace operation engine: crud-and-deletion", () => {
       later
     );
     const created = applyLongWorkspaceOperations(source, {
-      baseRevision: source.revision,
       updatedAt: later,
       operations: [
         {
@@ -363,8 +309,7 @@ describe("long workspace operation engine: crud-and-deletion", () => {
       ]
     });
 
-    const deleted = applyLongWorkspaceOperations(created.snapshot, {
-      baseRevision: created.resultRevision,
+    const deleteContinuityBatch = {
       updatedAt: later,
       operations: [
         {
@@ -377,6 +322,14 @@ describe("long workspace operation engine: crud-and-deletion", () => {
           characterId: "character_alice"
         }
       ]
+    } satisfies Parameters<typeof previewLongWorkspaceOperations>[1];
+    const deleteContinuityPreview = previewLongWorkspaceOperations(
+      created.snapshot,
+      deleteContinuityBatch
+    );
+    const deleted = applyLongWorkspaceOperations(created.snapshot, {
+      ...deleteContinuityBatch,
+      expectedImpact: deleteContinuityPreview.confirmation
     });
     expect(deleted.snapshot.chapters[0]).toMatchObject({
       worldReveals: null,
@@ -403,8 +356,6 @@ describe("long workspace operation engine: crud-and-deletion", () => {
       sequence: 1,
       chapterCardId: "chapter_one",
       committedAt: later,
-      reversible: true,
-      sourceRevision: committed.revision,
       placementIds: [],
       foreshadowingBeatIds: [],
       recordFile: file(
@@ -423,13 +374,15 @@ describe("long workspace operation engine: crud-and-deletion", () => {
         characterId: "character_alice"
       }
     ]) {
-      expect(() =>
-        applyLongWorkspaceOperations(structuredClone(committed), {
-          baseRevision: committed.revision,
-          updatedAt: later,
-          operations: [operation]
-        })
-      ).toThrow(/already been committed/u);
+      const target = structuredClone(committed);
+      const batch = { updatedAt: later, operations: [operation] };
+      const preview = previewLongWorkspaceOperations(target, batch);
+      expect(
+        applyLongWorkspaceOperations(target, {
+          ...batch,
+          expectedImpact: preview.confirmation
+        }).fileIntents.some(({ action }) => action === "delete")
+      ).toBe(true);
     }
 
     const committedWithoutOptionalFiles = committedWorkspace();
@@ -447,16 +400,15 @@ describe("long workspace operation engine: crud-and-deletion", () => {
         history
       }
     ]) {
-      expect(() =>
+      expect(
         applyLongWorkspaceOperations(
           structuredClone(committedWithoutOptionalFiles),
           {
-            baseRevision: committedWithoutOptionalFiles.revision,
             updatedAt: later,
             operations: [operation]
           }
-        )
-      ).toThrow(/already been committed/u);
+        ).fileIntents.some(({ action }) => action === "create")
+      ).toBe(true);
     }
 
     for (const forbiddenType of [
@@ -467,7 +419,6 @@ describe("long workspace operation engine: crud-and-deletion", () => {
     ]) {
       expect(
         LongWorkspaceOperationBatchSchema.safeParse({
-          baseRevision: source.revision,
           updatedAt: later,
           operations: [{ type: forbiddenType, chapterCardId: "chapter_one" }]
         }).success
@@ -475,45 +426,40 @@ describe("long workspace operation engine: crud-and-deletion", () => {
     }
   });
 
-  it("rejects deleting referenced entities unless cascade is explicit", () => {
+  it("previews and removes references before deleting related entities", () => {
     const source = workspace();
-    expectOperationError(
-      () =>
-        applyLongWorkspaceOperations(
-          source,
-          LongWorkspaceOperationBatchSchema.parse({
-            baseRevision: source.revision,
-            updatedAt: later,
-            operations: [
-              { type: "arc.delete", id: "arc_letter", cascade: false }
-            ]
-          })
-        ),
-      "cascade_required"
+    const arcBatch = LongWorkspaceOperationBatchSchema.parse({
+      updatedAt: later,
+      operations: [{ type: "arc.delete", id: "arc_letter" }]
+    });
+    const arcPreview = previewLongWorkspaceOperations(source, arcBatch);
+    const deletedArc = applyLongWorkspaceOperations(source, {
+      ...arcBatch,
+      expectedImpact: arcPreview.confirmation
+    });
+    expect(deletedArc.snapshot.plot.arcs).toEqual([]);
+    expect(deletedArc.snapshot.plot.storyEvents[0]?.arcIds).toEqual([]);
+
+    const characterBatch = LongWorkspaceOperationBatchSchema.parse({
+      updatedAt: later,
+      operations: [{ type: "character.delete", id: "character_alice" }]
+    });
+    const characterPreview = previewLongWorkspaceOperations(
+      source,
+      characterBatch
     );
-    expectOperationError(
-      () =>
-        applyLongWorkspaceOperations(
-          source,
-          LongWorkspaceOperationBatchSchema.parse({
-            baseRevision: source.revision,
-            updatedAt: later,
-            operations: [
-              {
-                type: "character.delete",
-                id: "character_alice",
-                cascade: false
-              }
-            ]
-          })
-        ),
-      "cascade_required"
+    const deletedCharacter = applyLongWorkspaceOperations(source, {
+      ...characterBatch,
+      expectedImpact: characterPreview.confirmation
+    });
+    expect(deletedCharacter.snapshot.characters).toEqual([]);
+    expect(deletedCharacter.snapshot.plot.storyEvents[0]?.characterIds).toEqual(
+      []
     );
 
     expectOperationError(
       () =>
         applyLongWorkspaceOperations(source, {
-          baseRevision: source.revision,
           updatedAt: later,
           operations: [
             {
@@ -540,10 +486,17 @@ describe("long workspace operation engine: crud-and-deletion", () => {
     source.plot.narrativePlacements = [];
     source.plot.foreshadowing = [];
 
-    const result = applyLongWorkspaceOperations(source, {
-      baseRevision: source.revision,
+    const arcDeleteBatch = {
       updatedAt: later,
-      operations: [{ type: "arc.delete", id: "arc_letter", cascade: false }]
+      operations: [{ type: "arc.delete", id: "arc_letter" }]
+    } satisfies Parameters<typeof previewLongWorkspaceOperations>[1];
+    const arcDeletePreview = previewLongWorkspaceOperations(
+      source,
+      arcDeleteBatch
+    );
+    const result = applyLongWorkspaceOperations(source, {
+      ...arcDeleteBatch,
+      expectedImpact: arcDeletePreview.confirmation
     });
 
     expect(result.snapshot.plot.arcs).toEqual([]);
@@ -559,10 +512,13 @@ describe("long workspace operation engine: crud-and-deletion", () => {
 
     const committed = committedWorkspace();
     committed.plot.storyEvents = [];
+    const committedArcDeletePreview = previewLongWorkspaceOperations(
+      committed,
+      arcDeleteBatch
+    );
     const committedResult = applyLongWorkspaceOperations(committed, {
-      baseRevision: committed.revision,
-      updatedAt: later,
-      operations: [{ type: "arc.delete", id: "arc_letter", cascade: false }]
+      ...arcDeleteBatch,
+      expectedImpact: committedArcDeletePreview.confirmation
     });
     expect(
       committedResult.snapshot.plot.chapterCards.find(

@@ -369,7 +369,7 @@ export type LongForeshadowing = z.infer<typeof LongForeshadowingSchema>;
 
 export const LongPlotIndexSchema = z
   .object({
-    volumes: z.array(LongVolumeSchema).min(1).max(10_000),
+    volumes: z.array(LongVolumeSchema).max(10_000),
     arcs: z.array(LongArcSchema).max(100_000),
     chapterCards: z.array(LongChapterCardSchema).max(100_000),
     storyEvents: z.array(LongStoryEventSchema).max(200_000),

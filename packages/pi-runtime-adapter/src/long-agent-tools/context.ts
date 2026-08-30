@@ -28,8 +28,6 @@ import type {
 export interface FullyReadDocumentEntry {
   content: string;
   file: LongWorkspaceFileReference;
-  workspaceRevision: number;
-  projectRevision: number;
 }
 
 export function longProposalResultSummary(
@@ -38,7 +36,7 @@ export function longProposalResultSummary(
 ): string {
   return input.writeApprovalMode === "auto-approve"
     ? pendingSummary.replace(
-        /等待客户端审阅(?:与冲突检查)?。$/,
+        /等待客户端审阅。$/,
         "已提交实时自动保存队列；以审批卡的落盘状态为准。"
       )
     : pendingSummary;
@@ -59,12 +57,7 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
   const writableRoots = new Set(profile.writeAccess.workspaceRoots);
   const capabilities = new Set(profile.writeAccess.capabilities);
 
-  let indexPromise:
-    | Promise<{
-        index: LongWorkspaceIndexSnapshot;
-        projectRevision: number;
-      }>
-    | undefined;
+  let indexPromise: Promise<LongWorkspaceIndexSnapshot> | undefined;
   let querySequence = 0;
   let indexSequence = 0;
   const fullyReadDocuments = new Map<string, FullyReadDocumentEntry>();
@@ -85,10 +78,7 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
 
   const loadIndex = async (
     signal?: AbortSignal
-  ): Promise<{
-    index: LongWorkspaceIndexSnapshot;
-    projectRevision: number;
-  }> => {
+  ): Promise<LongWorkspaceIndexSnapshot> => {
     if (!indexPromise) {
       const command = LongGetWorkspaceIndexCommandEnvelopeSchema.parse(
         createEnvelope(
@@ -112,10 +102,7 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
               "Core returned a workspace index for another book."
             );
           }
-          return {
-            index: result.workspaceIndex,
-            projectRevision: result.projectRevision
-          };
+          return result.workspaceIndex;
         })
         .catch((error) => {
           indexPromise = undefined;
@@ -124,10 +111,7 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
     }
     const value = await indexPromise;
     throwIfAborted(signal);
-    return {
-      index: proposalOverlay.applyToIndex(value.index),
-      projectRevision: value.projectRevision
-    };
+    return proposalOverlay.applyToIndex(value);
   };
 
   const reloadIndex = async (signal?: AbortSignal) => {
@@ -135,20 +119,15 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
     return loadIndex(signal);
   };
 
-  /** Reads a document end to end; Core may report a newer but consistent revision. */
+  /** Reads a document end to end. */
   const readWholeDocument = async (
     file: LongWorkspaceFileReference,
-    expectedWorkspaceRevision: number,
-    expectedProjectRevision: number,
     signal?: AbortSignal
   ): Promise<{ content: string; file: LongWorkspaceFileReference }> => {
     const pending = proposalOverlay.document(file.id);
     if (pending) return { content: pending.content, file: pending.file };
     let offset = 0;
     let content = "";
-    let readWorkspaceRevision: number | null = null;
-    let readProjectRevision: number | null = null;
-    let readFileRevision: string | null = null;
     for (;;) {
       const command = LongReadDocumentCommandEnvelopeSchema.parse(
         createEnvelope(
@@ -176,21 +155,10 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
         result.bookId !== workspace.bookId ||
         result.file.id !== file.id ||
         result.file.path !== file.path ||
-        result.offset !== offset ||
-        result.workspaceRevision < expectedWorkspaceRevision ||
-        result.projectRevision < expectedProjectRevision ||
-        (readFileRevision !== null &&
-          result.file.revision !== readFileRevision) ||
-        (readWorkspaceRevision !== null &&
-          result.workspaceRevision !== readWorkspaceRevision) ||
-        (readProjectRevision !== null &&
-          result.projectRevision !== readProjectRevision)
+        result.offset !== offset
       ) {
         throw new Error("Core returned a different long document.");
       }
-      readWorkspaceRevision ??= result.workspaceRevision;
-      readProjectRevision ??= result.projectRevision;
-      readFileRevision ??= result.file.revision;
       content += result.content;
       if (result.nextOffset === null) {
         return { content, file: result.file };
@@ -204,17 +172,14 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
     chapterCardId?: string
   ): Promise<{
     index: LongWorkspaceIndexSnapshot;
-    projectRevision: number;
     activeChapterCardId: string;
     chapter: LongWorkspaceIndexSnapshot["chapters"][number];
   }> => {
-    const { index, projectRevision } = await reloadIndex(signal);
+    const index = await reloadIndex(signal);
     const activeChapterCardId = chapterCardId ?? workspace.activeChapterCardId;
     if (!activeChapterCardId) {
       throw new Error("需要指定 chapter_card_id，或先选中一张待提交章卡。");
     }
-    // Send-time workspace/project revisions can lag after in-run file writes or
-    // a manuscript autosave. The live index is authoritative for the commit.
     if (
       workspace.navigation.bookId !== index.bookId ||
       workspace.navigation.committedThroughChapterId !==
@@ -235,13 +200,12 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
     if (chapter.commitId !== null) {
       throw new Error("The target long chapter is already committed.");
     }
-    return { index, projectRevision, activeChapterCardId, chapter };
+    return { index, activeChapterCardId, chapter };
   };
 
   const formLongMutationProposal = (proposal: {
     index: LongWorkspaceIndexSnapshot;
     batch: LongWorkspaceOperationBatch;
-    projectRevision: number;
     summary: string;
     message: string;
   }): AgentToolResult<LongAgentToolDetails> => {
@@ -255,7 +219,6 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
       bookId: workspace.bookId,
       agentId: profile.id,
       batch: proposal.batch,
-      baseProjectRevision: proposal.projectRevision,
       summary: proposal.summary
     });
   };
@@ -265,17 +228,13 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
     changes: readonly {
       file: LongWorkspaceFileReference;
       afterText: string;
-      nextRevision: string;
     }[];
     timestamp: string;
-    workspaceRevision: number;
-    projectRevision: number;
   }): void => {
     const writes = input.changes.map((change) => ({
       content: change.afterText,
       file: {
         ...change.file,
-        revision: change.nextRevision,
         updatedAt: input.timestamp
       }
     }));
@@ -283,9 +242,7 @@ export function createLongToolContext(input: BuildLongWorkspaceToolsInput) {
     for (const write of writes) {
       fullyReadDocuments.set(write.file.id, {
         content: write.content,
-        file: write.file,
-        workspaceRevision: input.workspaceRevision,
-        projectRevision: input.projectRevision
+        file: write.file
       });
     }
   };

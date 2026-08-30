@@ -5,11 +5,12 @@ import writingWorkspaceSource from "./components/WritingWorkspaceModule.vue?raw"
 import autoSaveSource from "./composables/useEditorAutoSaveCoordinator.ts?raw";
 import presentationCoordinatorSource from "./composables/useLongWorkspacePresentationCoordinator.ts?raw";
 import coordinatorSource from "./composables/useProposalCoordinator.ts?raw";
+import longImpactApprovalSource from "./composables/proposal-coordinator/long-impact-approval.ts?raw";
 import shortConversationSource from "./composables/useShortConversationCoordinator.ts?raw";
 import eventRoutesSource from "./events/registerWorkspaceSystemEventRoutes.ts?raw";
 
 describe("App agent realtime auto persistence", () => {
-  it("keeps editor writes behind the active run and review revision barrier", () => {
+  it("keeps editor writes behind the active run and review write barrier", () => {
     expect(presentationCoordinatorSource).toContain(
       "function agentRunScopeHasWriteBarrier"
     );
@@ -67,8 +68,14 @@ describe("App agent realtime auto persistence", () => {
       coordinatorSource
         .split("async function acceptLongDraftProposal(")[1]
         ?.split("async function applyAgentEdit(")[0] ?? "";
-    expect(acceptance).toContain("await api.previewOperations(");
+    expect(acceptance).toContain("await previewLongProposalImpact(");
     expect(acceptance).toContain("await api.applyOperations(");
+    expect(longImpactApprovalSource).toContain(
+      "const preview = await api.previewOperations({ bookId, batch })"
+    );
+    expect(longImpactApprovalSource).toContain(
+      "return preview.preview.confirmation"
+    );
     expect(acceptance).not.toContain("api.writeChapter(");
   });
 

@@ -14,7 +14,7 @@ import {
   projectTransactionFileIdentity,
   type CommitProjectTransactionInput
 } from "../project-transaction";
-import { createLongFileRevision, encodeUtf8Strict } from "./revisions";
+import { encodeUtf8Strict } from "./utf8";
 import {
   MANIFEST_PATH,
   MAX_AGENTS_MD_BYTES,
@@ -25,7 +25,7 @@ import {
   type SecureTextFile
 } from "./types";
 
-export { encodeUtf8Strict } from "./revisions";
+export { encodeUtf8Strict } from "./utf8";
 
 export function parseJson(text: string, label: string): unknown {
   try {
@@ -70,8 +70,20 @@ export async function commitLongProjectTransaction(
       );
     }
   }
+  // Long-form editing is intentionally last-write-wins. The generic project
+  // transaction still gives us atomic multi-file replacement and crash
+  // recovery, but long-form callers must not turn hashes captured while
+  // reading into a user-visible optimistic-concurrency boundary. A null
+  // precondition is retained only for files that are being created.
+  const operations = input.operations.flatMap((operation) => {
+    if (operation.action === "check") return [];
+    if (operation.expectedSha256 === null) return [operation];
+    const { expectedSha256: _expectedSha256, ...lastWriteWins } = operation;
+    return [lastWriteWins];
+  });
   return await commitProjectTransaction({
     ...input,
+    operations,
     maxFileBytes: MAX_LEDGER_RECORD_BYTES
   });
 }
@@ -120,7 +132,6 @@ export async function readSecureTextFile(
     content,
     bytes,
     sha256: projectTransactionContentSha256(bytes),
-    revision: createLongFileRevision(bytes),
     updatedAt: info.mtime.toISOString(),
     identity: projectTransactionFileIdentity(info),
     size: Number(info.size),

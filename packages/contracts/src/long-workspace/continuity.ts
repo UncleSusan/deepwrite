@@ -25,7 +25,7 @@ import {
   longChapterWorldRevealsFileId,
   longLedgerCommitFileId
 } from "./ids";
-import { LongRevisionSchema, LongTimestampSchema } from "./primitives";
+import { LongTimestampSchema } from "./primitives";
 
 export const LongChapterCharacterContinuityFileIndexEntrySchema = z
   .object({
@@ -580,8 +580,6 @@ export const LongLedgerCommitIndexEntrySchema = z
     sequence: z.number().int().positive(),
     chapterCardId: LongChapterCardIdSchema,
     committedAt: LongTimestampSchema,
-    reversible: z.boolean(),
-    sourceRevision: LongRevisionSchema,
     placementIds: UniquePlacementIdListSchema,
     foreshadowingBeatIds: UniqueForeshadowingBeatIdListSchema,
     recordFile: LongJsonFileReferenceSchema

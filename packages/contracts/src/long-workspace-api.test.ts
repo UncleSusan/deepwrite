@@ -18,7 +18,6 @@ import {
 
 const runtimeNavigation = {
   schemaVersion: 1 as const,
-  revision: 3,
   bookId: "longbook_api",
   updatedAt: "2026-07-26T10:00:00.000Z",
   counts: {
@@ -63,8 +62,6 @@ function runtimeContext(
     title: "时间尽头",
     activeRoot: "draft",
     activeAgentId: "long",
-    workspaceRevision: 3,
-    projectRevision: 3,
     navigation: runtimeNavigation,
     ...overrides
   };
@@ -128,11 +125,9 @@ describe("long workspace API contracts", () => {
     ).toThrow(/exist.*navigation/iu);
     expect(() =>
       LongWorkspaceRuntimeContextSchema.parse(
-        runtimeContext({
-          workspaceRevision: 4
-        })
+        runtimeContext({ workspaceRevision: 4 })
       )
-    ).toThrow(/navigation revision/iu);
+    ).toThrow();
   });
 
   it("accepts AGENTS.md context for every long agent and rejects oversized snapshots", () => {
@@ -194,7 +189,6 @@ describe("long workspace API contracts", () => {
           activeRoot: "worldbuilding",
           activeAgentId: "long",
           activeFileId: "file_faction_watch:content",
-          activeFileRevision: "v1:3:1234abcd",
           worldbuildingFocus: focus
         })
       )
@@ -210,7 +204,6 @@ describe("long workspace API contracts", () => {
           activeRoot: "worldbuilding",
           activeAgentId: "long",
           activeFileId: "file_faction_watch:content",
-          activeFileRevision: "v1:3:1234abcd",
           worldbuildingFocus: {
             ...focus,
             overview: undefined
@@ -224,7 +217,6 @@ describe("long workspace API contracts", () => {
           activeRoot: "worldbuilding",
           activeAgentId: "long",
           activeFileId: "file_world_rules:content",
-          activeFileRevision: "v1:3:1234abcd",
           worldbuildingFocus: {
             categoryTitle: "世界规则",
             format: "text",
@@ -327,7 +319,6 @@ describe("long workspace API contracts", () => {
           activeRoot: "character_design",
           activeAgentId: "long",
           activeFileId: "file_character_lan:relationships",
-          activeFileRevision: "v1:3:1234abcd",
           characterFocus: focus
         })
       )
@@ -343,7 +334,6 @@ describe("long workspace API contracts", () => {
           activeRoot: "character_design",
           activeAgentId: "long",
           activeFileId: "file_character_lan:relationships",
-          activeFileRevision: "v1:3:1234abcd",
           characterFocus: { ...focus, coreProfile: undefined }
         })
       )
@@ -543,7 +533,6 @@ describe("long workspace API contracts", () => {
     expect(() =>
       LongUpdateBindingsInputSchema.parse({
         bookId: "longbook_api",
-        expectedProjectRevision: 3,
         linkedMaterialIdsByKind: { plot: oversized },
         linkedSkillIdsByKind: {}
       })
@@ -554,18 +543,15 @@ describe("long workspace API contracts", () => {
     expect(
       LongRenameBookInputSchema.parse({
         bookId: "longbook_api",
-        expectedProjectRevision: 3,
         title: "  时间尽头  "
       })
     ).toEqual({
       bookId: "longbook_api",
-      expectedProjectRevision: 3,
       title: "时间尽头"
     });
     expect(() =>
       LongRenameBookInputSchema.parse({
         bookId: "longbook_api",
-        expectedProjectRevision: 3,
         title: "   "
       })
     ).toThrow();
@@ -578,15 +564,12 @@ describe("long workspace API contracts", () => {
         file: {
           id: "file_chapter_api:body",
           path: "long/chapters/api/body.md",
-          revision: "v1:3:1234abcd",
           updatedAt: "2026-07-26T10:00:00.000Z"
         },
         content: "abcd",
         offset: 10,
         totalCharacters: 20,
-        nextOffset: 15,
-        workspaceRevision: 2,
-        projectRevision: 2
+        nextOffset: 15
       })
     ).toThrow();
   });
@@ -598,15 +581,12 @@ describe("long workspace API contracts", () => {
         file: {
           id: "file_chapter_api:body",
           path: "long/chapters/api/body.md",
-          revision: "v1:5:1234abcd",
           updatedAt: "2026-07-26T10:00:00.000Z"
         },
         content: "甲😀",
         offset: 0,
         totalCharacters: 3,
-        nextOffset: 2,
-        workspaceRevision: 2,
-        projectRevision: 2
+        nextOffset: 2
       })
     ).toMatchObject({ nextOffset: 2 });
   });
@@ -636,7 +616,6 @@ describe("long workspace API contracts", () => {
       "long.applyLegacySyncAtPath",
       {
         bookId: "longbook_api",
-        expectedProjectRevision: 3,
         modules: ["worldbuilding", "plot"],
         sourcePath: "/imports/legacy.zip",
         expectedFingerprint: "b".repeat(64)
@@ -671,7 +650,6 @@ describe("long workspace API contracts", () => {
       "long.updateBindings",
       {
         bookId: "longbook_api",
-        expectedProjectRevision: 3,
         linkedMaterialIdsByKind: { plot: ["material-long"] },
         linkedSkillIdsByKind: { style: ["skill-long"] }
       },
@@ -681,7 +659,6 @@ describe("long workspace API contracts", () => {
       "long.rename",
       {
         bookId: "longbook_api",
-        expectedProjectRevision: 3,
         title: "时间尽头"
       },
       { id: "cmd_long_rename" }

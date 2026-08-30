@@ -12,11 +12,7 @@ import {
   type UnicodePageAnchor
 } from "./types";
 import { readSecureTextFile, secureTextFileMetadataMatches } from "./io";
-import { isPinnedMarkdownFile, requireIndexedFileDescriptor } from "./paths";
-import {
-  longRevisionMatchesSecureTextFile,
-  longRevisionsMatchContent
-} from "./revisions";
+import { requireIndexedFileDescriptor } from "./paths";
 import type { LongProjectStoreContext } from "./store-context";
 
 export function createCachedPagedTextFile(
@@ -159,24 +155,6 @@ export async function loadIndexedFile(
     descriptor.reference.path,
     descriptor.kind === "json" ? MAX_LEDGER_RECORD_BYTES : MAX_DOCUMENT_BYTES
   );
-  const indexedRevisionMatchesDisk = longRevisionsMatchContent(
-    descriptor.reference.revision,
-    disk.revision,
-    disk.bytes
-  );
-  if (
-    (descriptor.kind === "json" ||
-      isPinnedMarkdownFile(loaded.index, descriptor.reference.id)) &&
-    !indexedRevisionMatchesDisk
-  ) {
-    throw new Error(
-      `长篇已锁定文件 revision 不一致，检测到索引外修改：${descriptor.reference.path}`
-    );
-  }
-  // Markdown files intentionally tolerate external editing. The first actual
-  // read hydrates the in-memory reference with the content revision that all
-  // subsequent CAS writes in this operation must use.
-  descriptor.reference.revision = disk.revision;
   descriptor.reference.updatedAt = disk.updatedAt;
   descriptor.disk = disk;
   return descriptor as LoadedIndexedFile;
@@ -218,19 +196,6 @@ export async function loadPagedIndexedFile(
     ctx.documentReadCache.delete(cacheKey);
     ctx.documentReadCache.set(cacheKey, paging);
   }
-  if (
-    (descriptor.kind === "json" ||
-      isPinnedMarkdownFile(loaded.index, descriptor.reference.id)) &&
-    !longRevisionMatchesSecureTextFile(
-      descriptor.reference.revision,
-      paging.disk
-    )
-  ) {
-    throw new Error(
-      `长篇已锁定文件 revision 不一致，检测到索引外修改：${descriptor.reference.path}`
-    );
-  }
-  descriptor.reference.revision = paging.disk.revision;
   descriptor.reference.updatedAt = paging.disk.updatedAt;
   descriptor.disk = paging.disk;
   return {

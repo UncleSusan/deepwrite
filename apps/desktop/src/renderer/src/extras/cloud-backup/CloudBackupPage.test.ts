@@ -4,7 +4,10 @@ import source from "./CloudBackupPage.vue?raw";
 import appSource from "../../WorkspaceShell.vue?raw";
 import sidebarSource from "../../components/LeftSidebar.vue?raw";
 import featureModulesSource from "../../components/WorkspaceFeatureModules.vue?raw";
-import featureHostSource from "../../composables/useWorkspaceFeatureHostCoordinator.ts?raw";
+import featureHostCoordinatorSource from "../../composables/useWorkspaceFeatureHostCoordinator.ts?raw";
+import featureHostModuleSource from "../../composables/workspaceFeatureHostModule.ts?raw";
+
+const featureHostSource = `${featureHostCoordinatorSource}\n${featureHostModuleSource}`;
 
 describe("CloudBackupPage", () => {
   it("lives under more features and never asks the user to log in", () => {

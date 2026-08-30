@@ -4,6 +4,7 @@ import type { ChatAssistantRuntimeContext } from "../chat-assistant";
 import { ChatAssistantRequestContextSchema } from "../chat-assistant-base";
 import { EnvelopeBaseSchema } from "../envelope";
 import { LearningImitationAgentProfileSchema } from "../learning-imitation";
+import { LongBookAnalysisAgentProfileSchema } from "../long-book-analysis";
 import { LibraryAgentProfileSchema } from "../library-agent";
 import {
   LongAgentProfileSchema,
@@ -27,6 +28,7 @@ import {
 } from "./user-input";
 import {
   AgentRuntimeRefSchema,
+  AgentTeamRunModeSchema,
   AgentWriteApprovalModeSchema,
   WorkspaceRuntimeContextSchema
 } from "./runtime";
@@ -81,7 +83,9 @@ export const SessionPromptCommandPayloadSchema = z
     thinkingLevel: ThinkingLevelSchema.optional(),
     temperature: TemperatureSchema.optional(),
     writeApprovalMode: AgentWriteApprovalModeSchema.optional(),
+    agentTeamMode: AgentTeamRunModeSchema.optional(),
     autoApproveCrossStageOperations: z.boolean().optional(),
+    webSearchEnabled: z.boolean().optional(),
     chatAssistant: ChatAssistantRequestContextSchema.optional(),
     workspaceContext: WorkspaceRuntimeContextSchema.optional()
   })
@@ -94,7 +98,27 @@ export const SessionPromptCommandPayloadSchema = z
           message: "Chat assistant context requires chat-assistant mode."
         });
       }
+      if (
+        value.agentTeamMode !== undefined &&
+        !value.workspaceContext?.shortWorkspace &&
+        !value.workspaceContext?.scriptWorkspace &&
+        !value.workspaceContext?.longWorkspace
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["agentTeamMode"],
+          message: "Agent team mode requires a short, script or long workspace."
+        });
+      }
       return;
+    }
+    if (value.webSearchEnabled !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["webSearchEnabled"],
+        message:
+          "Chat assistant sessions must request web search through chatAssistant.webSearchEnabled."
+      });
     }
     if (value.workspaceContext !== undefined) {
       context.addIssue({
@@ -108,6 +132,13 @@ export const SessionPromptCommandPayloadSchema = z
         code: "custom",
         path: ["writeApprovalMode"],
         message: "Chat assistant sessions cannot request write approval."
+      });
+    }
+    if (value.agentTeamMode !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["agentTeamMode"],
+        message: "Chat assistant sessions cannot request agent team mode."
       });
     }
     if (value.autoApproveCrossStageOperations !== undefined) {
@@ -267,7 +298,8 @@ export const AgentPromptCommandPayloadSchema =
       .record(z.string().min(1).max(120), AgentProviderRuntimeConfigSchema)
       .optional(),
     libraryAgentProfile: LibraryAgentProfileSchema.optional(),
-    learningImitationProfile: LearningImitationAgentProfileSchema.optional()
+    learningImitationProfile: LearningImitationAgentProfileSchema.optional(),
+    longBookAnalysisProfile: LongBookAnalysisAgentProfileSchema.optional()
   }).superRefine((value, context) => {
     if (value.mode === "chat-assistant") {
       const requestedMode = value.chatAssistant?.mode ?? "normal";
@@ -430,6 +462,28 @@ export const AgentPromptCommandPayloadSchema =
         code: "custom",
         path: ["learningImitationProfile", "id"],
         message: "Learning-imitation profile must match the active stage."
+      });
+    }
+    if (
+      Boolean(value.workspaceContext?.longBookAnalysis) !==
+      Boolean(value.longBookAnalysisProfile)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["longBookAnalysisProfile"],
+        message:
+          "Long-book analysis context and agent profile must be provided together."
+      });
+    }
+    if (
+      value.longBookAnalysisProfile &&
+      value.workspaceContext?.longBookAnalysis?.presetId !==
+        value.longBookAnalysisProfile.id
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["longBookAnalysisProfile", "id"],
+        message: "Long-book analysis profile must match the active preset."
       });
     }
     if (

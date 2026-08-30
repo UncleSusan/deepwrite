@@ -57,12 +57,6 @@ export function applyCharacterOperation(
       break;
     }
     case "characterType.delete": {
-      if (workspace.characterTypes.length <= 1) {
-        operationError(
-          "invalid_reference",
-          "A long workspace must retain at least one character type."
-        );
-      }
       const typeIndex = findEntityIndex(
         workspace.characterTypes,
         operation.id,
@@ -73,27 +67,36 @@ export function applyCharacterOperation(
       );
       if (affected.length > 0) {
         const targetId = operation.moveCharactersToTypeId;
-        if (!targetId || targetId === operation.id) {
+        if (targetId === operation.id) {
           operationError(
             "invalid_reference",
-            "Deleting a non-empty character type requires another target type."
+            "A deleted character type cannot migrate characters to itself."
           );
         }
-        findEntityIndex(workspace.characterTypes, targetId, "Character type");
-        const nextOrder = workspace.characters.filter(
-          ({ group }) => group === targetId
-        ).length;
-        affected
-          .sort((left, right) => left.order - right.order)
-          .forEach((character, index) => {
-            character.group = targetId;
-            character.order = nextOrder + index + 1;
-            markUpdated(state, character.id);
-          });
+        if (targetId === undefined) {
+          affected.forEach((character) => deleteCharacter(state, character.id));
+        } else {
+          findEntityIndex(workspace.characterTypes, targetId, "Character type");
+          const nextOrder = workspace.characters.filter(
+            ({ group }) => group === targetId
+          ).length;
+          affected
+            .sort((left, right) => left.order - right.order)
+            .forEach((character, index) => {
+              character.group = targetId;
+              character.order = nextOrder + index + 1;
+              markUpdated(state, character.id);
+            });
+        }
       } else if (
         operation.moveCharactersToTypeId !== undefined &&
-        operation.moveCharactersToTypeId !== operation.id
+        operation.moveCharactersToTypeId === operation.id
       ) {
+        operationError(
+          "invalid_reference",
+          "A deleted character type cannot migrate characters to itself."
+        );
+      } else if (operation.moveCharactersToTypeId !== undefined) {
         findEntityIndex(
           workspace.characterTypes,
           operation.moveCharactersToTypeId,
@@ -176,7 +179,7 @@ export function applyCharacterOperation(
       break;
     }
     case "character.delete": {
-      deleteCharacter(state, operation.id, operation.cascade);
+      deleteCharacter(state, operation.id);
       break;
     }
     case "character.move": {

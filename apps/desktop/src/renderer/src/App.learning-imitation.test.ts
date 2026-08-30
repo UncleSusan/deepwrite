@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import { expectSourceToContain } from "../../test-utils/sourceText";
 import source from "./WorkspaceShell.vue?raw";
 import featureModulesSource from "./components/WorkspaceFeatureModules.vue?raw";
-import featureHostSource from "./composables/useWorkspaceFeatureHostCoordinator.ts?raw";
+import featureHostCoordinatorSource from "./composables/useWorkspaceFeatureHostCoordinator.ts?raw";
+import featureHostModuleSource from "./composables/workspaceFeatureHostModule.ts?raw";
 import eventRoutesSource from "./events/registerWorkspaceSystemEventRoutes.ts?raw";
+
+const featureHostSource = `${featureHostCoordinatorSource}\n${featureHostModuleSource}`;
 
 describe("App learning-imitation integration", () => {
   it("lazily owns one long-lived controller and routes runtime events to it", () => {
@@ -13,7 +16,7 @@ describe("App learning-imitation integration", () => {
       "dependencies.learningImitation.handleEvent(event)"
     );
     expect(featureHostSource).toContain(
-      "await options.features.learningImitation.ensureLoaded()"
+      "options.features.learningImitation.ensureLoaded()"
     );
     expect(featureHostSource).toContain(
       "controller: options.features.learningImitation.controller.value"

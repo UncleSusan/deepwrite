@@ -122,13 +122,10 @@ describe("unified long-form tools: continuity create with content", () => {
       content: "林岚在章末确认旧信来自港务所。"
     });
 
-    const history = await create.execute("create-history", {
-      kind: "continuity_character",
-      meta: {
-        chapter_card_id: "chapter_one",
-        character_id: "character_alice",
-        document: "history"
-      },
+    const history = await toolByName(tools, "edit").execute("edit-history", {
+      id: "character_alice",
+      chapter_id: "chapter_one",
+      document: "history",
       content: "林岚在第一章追查到港务所。",
       summary: "写入林岚历史轨迹"
     });
@@ -213,14 +210,11 @@ describe("unified long-form tools: continuity create with content", () => {
       sequence: 1,
       chapterCardId: "chapter_one",
       committedAt: index.updatedAt,
-      reversible: true,
-      sourceRevision: index.revision,
       placementIds: [],
       foreshadowingBeatIds: [],
       recordFile: {
         id: longLedgerCommitFileId("commit_existing"),
         path: "long/ledger/commit-existing.json",
-        revision: "v1:0:00000000",
         updatedAt: index.updatedAt
       }
     });

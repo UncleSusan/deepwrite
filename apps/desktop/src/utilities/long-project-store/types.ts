@@ -3,9 +3,7 @@ import {
   type LongBook,
   type LongBookSummary,
   type LongCommitChapterInput,
-  type LongFileRevision,
   type LongProjectManifest,
-  type LongRollbackLastCommitInput,
   type LongTextFilesCommitChapterInput,
   type LongWorkspaceFileReference,
   type LongWorkspaceIndexSnapshot,
@@ -118,14 +116,12 @@ export interface OpenedLongBook {
 }
 
 export interface UpdateLongBookBindingsInput {
-  expectedProjectRevision: number;
   linkedMaterialIdsByKind: LongProjectManifest["linkedMaterialIdsByKind"];
   linkedSkillIdsByKind: LongProjectManifest["linkedSkillIdsByKind"];
   linkedResourceStageScopes?: LongProjectManifest["linkedResourceStageScopes"];
 }
 
 export interface RenameLongBookInput {
-  expectedProjectRevision: number;
   title: string;
 }
 
@@ -138,9 +134,6 @@ export interface ReadLongDocumentInput {
 export interface ReadLongDocumentResult {
   fileId: string;
   path: string;
-  revision: LongFileRevision;
-  workspaceRevision: number;
-  projectRevision: number;
   content: string;
   offset: number;
   nextOffset: number | null;
@@ -158,14 +151,12 @@ export interface SearchLongProjectInput {
 export interface LongProjectSearchResume {
   fileIndex: number;
   fileId: string;
-  fileRevision: LongFileRevision;
   characterOffset: number;
 }
 
 export interface LongProjectSearchMatch {
   fileId: string;
   path: string;
-  revision: LongFileRevision;
   offset: number;
   endOffset: number;
   line: number;
@@ -174,8 +165,6 @@ export interface LongProjectSearchMatch {
 
 export interface SearchLongProjectResult {
   query: string;
-  workspaceRevision: number;
-  projectRevision: number;
   matches: LongProjectSearchMatch[];
   nextResume: LongProjectSearchResume | null;
   truncated: boolean;
@@ -184,26 +173,18 @@ export interface SearchLongProjectResult {
 export interface WriteLongDocumentInput {
   fileId: string;
   content: string;
-  expectedFileRevision: string;
-  expectedWorkspaceRevision: number;
-  expectedProjectRevision: number;
 }
 
 export interface WriteLongDocumentResult extends OpenedLongBook {
   fileId: string;
-  fileRevision: LongFileRevision;
-  workspaceRevision: number;
-  projectRevision: number;
 }
 
 export interface ApplyLongWorkspaceOperationsInput {
   batch: LongWorkspaceOperationBatch;
-  expectedProjectRevision: number;
 }
 
 export interface ApplyLongWorkspaceOperationsResult extends OpenedLongBook {
   operationResult: LongWorkspaceOperationResult;
-  projectRevision: number;
 }
 
 export type StoreWriteLongChapterInput = Omit<LongWriteChapterInput, "bookId">;
@@ -228,32 +209,10 @@ export type StoreCommitLongChapterInput =
         mode?: "structured";
       })
   | Omit<LongTextFilesCommitChapterInput, "bookId">;
-export type StoreRollbackLastCommitInput = Omit<
-  LongRollbackLastCommitInput,
-  "bookId"
->;
-
-export type LongProjectConflictScope =
-  "file" | "workspace" | "project" | "transaction";
-
-export class LongProjectConflictError extends Error {
-  constructor(
-    readonly scope: LongProjectConflictScope,
-    readonly expected: string | number,
-    readonly actual: string | number
-  ) {
-    super(
-      `长篇项目 ${scope} revision 冲突：期望 ${expected}，实际 ${actual}。`
-    );
-    this.name = "LongProjectConflictError";
-  }
-}
-
 export interface SecureTextFile {
   content: string;
   bytes: Buffer;
   sha256: string;
-  revision: LongFileRevision;
   updatedAt: string;
   identity: string;
   size: number;

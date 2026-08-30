@@ -19,8 +19,7 @@ import {
 import {
   useLongWorkspaceStore,
   type LongWorkspaceFileContext,
-  type LongWorkspaceRefreshStatus,
-  type LongWorkspaceRevisionSyncRequirement
+  type LongWorkspaceRefreshStatus
 } from "../stores/longWorkspaceStore";
 import { useLongWorkspaceRefreshCoordinator } from "./useLongWorkspaceRefreshCoordinator";
 
@@ -41,15 +40,6 @@ export interface LongWorkspaceEditorPort {
   ensureDocumentsLoaded(
     files: LongWorkspaceSelection["files"]
   ): Promise<boolean>;
-  synchronizeProjectRevisions(
-    workspaceRevision: number,
-    projectRevision: number
-  ): void;
-  synchronizeProjectRevisionsIfClean(
-    bookId: string,
-    workspaceRevision: number,
-    projectRevision: number
-  ): boolean;
 }
 
 const LONG_WORKSPACE_EDITOR_PORT_METHODS = [
@@ -59,9 +49,7 @@ const LONG_WORKSPACE_EDITOR_PORT_METHODS = [
   "focusTarget",
   "captureNavigationSelection",
   "captureForeshadowingFocus",
-  "ensureDocumentsLoaded",
-  "synchronizeProjectRevisions",
-  "synchronizeProjectRevisionsIfClean"
+  "ensureDocumentsLoaded"
 ] as const satisfies readonly (keyof LongWorkspaceEditorPort)[];
 
 export function isLongWorkspaceEditorPort(
@@ -85,10 +73,6 @@ export interface LongWorkspaceSessionState {
   fileContext: Ref<LongWorkspaceFileContext | null>;
   refreshStatus: Ref<LongWorkspaceRefreshStatus | null>;
   activeRefreshStatus: Readonly<Ref<LongWorkspaceRefreshStatus | null>>;
-  revisionRequirement: Ref<LongWorkspaceRevisionSyncRequirement | null>;
-  activeRevisionRequirement: Readonly<
-    Ref<LongWorkspaceRevisionSyncRequirement | null>
-  >;
 }
 
 export interface LongWorkspaceSessionScheduler<TimerHandle> {
@@ -125,7 +109,6 @@ export function useLongWorkspaceSessionCoordinator<TimerHandle>(
   let disposed = false;
   const refresh = useLongWorkspaceRefreshCoordinator({
     state,
-    editor,
     api: context.api,
     isDisposed: () => disposed,
     synchronizeSelectedResourceForLayout:
@@ -391,8 +374,6 @@ export function useLongWorkspaceSessionCoordinator<TimerHandle>(
     saveActiveEditorBeforeLeaving,
     openBook,
     refreshActiveWorkspace: refresh.refreshActiveWorkspace,
-    refreshAndSynchronizeRequiredRevision:
-      refresh.refreshAndSynchronizeRequiredRevision,
     selectWorkspaceFile,
     selectCharacterTab,
     selectPlotPointTab,

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import source from "./WorkspaceShell.vue?raw";
 import featureModulesSource from "./components/WorkspaceFeatureModules.vue?raw";
 import autoSaveSource from "./composables/useEditorAutoSaveCoordinator.ts?raw";
-import featureHostSource from "./composables/useWorkspaceFeatureHostCoordinator.ts?raw";
+import featureHostCoordinatorSource from "./composables/useWorkspaceFeatureHostCoordinator.ts?raw";
+import featureHostModuleSource from "./composables/workspaceFeatureHostModule.ts?raw";
+
+const featureHostSource = `${featureHostCoordinatorSource}\n${featureHostModuleSource}`;
 
 describe("App editor auto-save integration", () => {
   it("debounces live changes and uses the existing serialized persistence path", () => {

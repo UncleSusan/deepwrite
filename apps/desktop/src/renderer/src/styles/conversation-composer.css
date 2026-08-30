@@ -445,6 +445,42 @@
   opacity: 0.42;
 }
 
+.composer-thinking-web-search-indicator {
+  color: var(--accent);
+}
+
+.composer-web-search {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.785714rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.composer-web-search:not(:disabled):hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.composer-web-search.is-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.composer-web-search:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
 .send-button {
   background: var(--text-primary);
   color: var(--accent-contrast, #ffffff);

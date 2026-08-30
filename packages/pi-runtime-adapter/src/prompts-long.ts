@@ -38,7 +38,7 @@ export function buildLongFixedContextLines(
     `【人物设计列表（发送时快照）】\n${renderLongCharacterDirectory(
       longWorkspace.navigation
     )}\n新建人物时只能使用目录中的 type_id；人物类型目录只能由用户在结构管理中维护。需要某类完整人物列表时调用 list（stage=character, scope_id=<type_id>）。`,
-    `【长篇结构导航（发送时快照；条目正文与最新修订请通过工具读取）】\n${renderLongPlotNavigation(
+    `【长篇结构导航（发送时快照；条目正文与最新内容请通过工具读取）】\n${renderLongPlotNavigation(
       longWorkspace.navigation,
       longWorkspace.activeChapterCardId
     )}`,
@@ -79,7 +79,7 @@ export function buildLongFollowUpContextLines(
     longWorkspace.activeChapterCardId
       ? `当前章卡: ${longWorkspace.activeChapterCardId}`
       : "",
-    `【长篇结构导航（本轮发送时快照；条目正文与最新修订请通过工具读取）】\n${renderLongPlotNavigation(
+    `【长篇结构导航（本轮发送时快照；条目正文与最新内容请通过工具读取）】\n${renderLongPlotNavigation(
       longWorkspace.navigation,
       longWorkspace.activeChapterCardId
     )}`,

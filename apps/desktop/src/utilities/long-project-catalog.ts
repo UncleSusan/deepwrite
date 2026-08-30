@@ -12,6 +12,7 @@ import { randomHex8 } from "@deepwrite/shared";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, rm } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { stripLegacyLongVersionMetadata } from "./long-version-metadata";
 
 const REGISTRY_FILE = "long-project-registry.json";
 const REGISTRY_BACKUP_FILE = "long-project-registry.json.bak";
@@ -37,7 +38,6 @@ export interface LongProjectAccess {
   openBook(projectDirectory: string): Promise<OpenLongProject>;
   inspectBook(projectDirectory: string): Promise<{
     bookId: string;
-    projectRevision: number;
     updatedAt: string;
   }>;
 }
@@ -59,7 +59,6 @@ interface LongProjectRegistration {
 
 interface LongProjectRegistry {
   schemaVersion: 1 | 2;
-  revision: number;
   updatedAt: string;
   projects: LongProjectRegistration[];
 }
@@ -181,7 +180,6 @@ export class LongProjectCatalog {
       await this.writeRegistry({
         ...registry,
         schemaVersion: 2,
-        revision: registry.revision + 1,
         updatedAt: this.now(),
         projects: registry.projects.map((project) =>
           project.bookId === id ? { ...project, summary } : project
@@ -229,11 +227,7 @@ export class LongProjectCatalog {
           if (inspection.bookId !== project.bookId) {
             throw new Error("长篇项目标识与注册信息不一致。");
           }
-          if (
-            summary &&
-            (summary.projectRevision !== inspection.projectRevision ||
-              summary.updatedAt !== inspection.updatedAt)
-          ) {
+          if (summary && summary.updatedAt !== inspection.updatedAt) {
             // A project can be edited by another DeepWrite process. Refresh
             // that one stale summary without making normal list() calls parse
             // every large index.
@@ -279,7 +273,6 @@ export class LongProjectCatalog {
         registry = {
           ...registry,
           schemaVersion: 2,
-          revision: registry.revision + 1,
           updatedAt: this.now()
         };
         await this.writeRegistry(registry);
@@ -289,7 +282,6 @@ export class LongProjectCatalog {
         return updatedOrder || left.id.localeCompare(right.id);
       });
       return LongListBooksResultSchema.parse({
-        revision: registry.revision,
         updatedAt: registry.updatedAt,
         books,
         ...(diagnostics.length ? { diagnostics } : {})
@@ -318,7 +310,6 @@ export class LongProjectCatalog {
         }
         await this.writeRegistry({
           ...registry,
-          revision: registry.revision + 1,
           updatedAt: this.now(),
           projects
         });
@@ -369,7 +360,6 @@ export class LongProjectCatalog {
       };
       const pendingRegistry: LongProjectRegistry = {
         ...registry,
-        revision: registry.revision + 1,
         updatedAt: this.now(),
         projects: registry.projects.map((project) =>
           project.bookId === id ? pendingRegistration : project
@@ -427,7 +417,6 @@ export class LongProjectCatalog {
 
     await this.writeRegistry({
       ...registry,
-      revision: registry.revision + 1,
       updatedAt: this.now(),
       projects: registry.projects.filter(
         (project) => project.bookId !== registration.bookId
@@ -479,7 +468,6 @@ export class LongProjectCatalog {
       await this.writeRegistry({
         ...registry,
         schemaVersion: 2,
-        revision: registry.revision + 1,
         updatedAt: this.now(),
         projects: registry.projects.map((project) =>
           project.bookId === summary.id ? { ...project, summary } : project
@@ -501,7 +489,6 @@ export class LongProjectCatalog {
     await this.writeRegistry({
       ...registry,
       schemaVersion: 2,
-      revision: registry.revision + 1,
       updatedAt: this.now(),
       projects
     });
@@ -511,16 +498,20 @@ export class LongProjectCatalog {
     const primary = await readOptionalText(this.registryPath);
     if (primary !== undefined) {
       try {
-        return parseRegistry(JSON.parse(primary));
+        const parsed = parseReadableRegistry(JSON.parse(primary));
+        if (parsed.changed) {
+          await this.repairRegistryCopiesBestEffort(parsed.registry);
+        }
+        return parsed.registry;
       } catch {
         // Fall through to the last known-good backup.
       }
     }
     const backup = await readOptionalText(this.registryBackupPath);
     if (backup !== undefined) {
-      const parsed = parseRegistry(JSON.parse(backup));
-      await atomicWriteJson(this.registryPath, parsed).catch(() => undefined);
-      return parsed;
+      const parsed = parseReadableRegistry(JSON.parse(backup));
+      await this.repairRegistryCopiesBestEffort(parsed.registry);
+      return parsed.registry;
     }
     if (primary !== undefined) {
       const corruptPath = `${this.registryPath}.corrupt-${Date.now()}`;
@@ -528,7 +519,6 @@ export class LongProjectCatalog {
     }
     const empty: LongProjectRegistry = {
       schemaVersion: 2,
-      revision: 0,
       updatedAt: this.now(),
       projects: []
     };
@@ -536,20 +526,17 @@ export class LongProjectCatalog {
     return empty;
   }
 
+  private async repairRegistryCopiesBestEffort(
+    registry: LongProjectRegistry
+  ): Promise<void> {
+    await atomicWriteJson(this.registryPath, registry).catch(() => undefined);
+    await atomicWriteJson(this.registryBackupPath, registry).catch(
+      () => undefined
+    );
+  }
+
   private async writeRegistry(registry: LongProjectRegistry): Promise<void> {
     const parsed = parseRegistry(registry);
-    const current = await readOptionalText(this.registryPath);
-    const expectedRevision = parsed.revision - 1;
-    if (current === undefined) {
-      if (expectedRevision !== -1) {
-        throw new Error("长篇项目注册表 CAS 校验失败：当前版本缺失。");
-      }
-    } else {
-      const currentRegistry = parseRegistry(JSON.parse(current));
-      if (currentRegistry.revision !== expectedRevision) {
-        throw new Error("长篇项目注册表 CAS 校验失败：版本已被其他进程更新。");
-      }
-    }
     await atomicWriteJson(this.registryPath, parsed);
     await atomicWriteJson(this.registryBackupPath, parsed).catch(
       () => undefined
@@ -589,15 +576,23 @@ export class LongProjectCatalog {
   }
 }
 
+function parseReadableRegistry(value: unknown): {
+  registry: LongProjectRegistry;
+  changed: boolean;
+} {
+  const stripped = stripLegacyLongVersionMetadata(value);
+  return {
+    registry: parseRegistry(stripped.value),
+    changed: stripped.changed
+  };
+}
+
 function parseRegistry(value: unknown): LongProjectRegistry {
   if (
     !isRecord(value) ||
     (value.schemaVersion !== 1 && value.schemaVersion !== 2)
   ) {
     throw new Error("不支持的长篇项目注册表版本。");
-  }
-  if (!Number.isSafeInteger(value.revision) || (value.revision as number) < 0) {
-    throw new Error("长篇项目注册表版本号无效。");
   }
   if (
     typeof value.updatedAt !== "string" ||
@@ -682,7 +677,6 @@ function parseRegistry(value: unknown): LongProjectRegistry {
   }
   return {
     schemaVersion: value.schemaVersion,
-    revision: value.revision as number,
     updatedAt: value.updatedAt,
     projects
   };

@@ -181,6 +181,11 @@ export function useGeneralSettingsCoordinator(
     queueSave();
   }
 
+  function updateShowContextUsage(enabled: boolean): void {
+    applyLocalPatch({ showContextUsage: enabled });
+    queueSave();
+  }
+
   function updateWorkspacePaneLayout(layout: WorkspacePaneLayout): void {
     applyLocalPatch({ workspacePaneLayout: layout });
     queueSave();
@@ -211,6 +216,7 @@ export function useGeneralSettingsCoordinator(
     updateDefaultTextViewMode,
     updateLanguage,
     updatePermissionMode,
+    updateShowContextUsage,
     updateShowInMenuBar,
     updateWorkspacePaneLayout
   };

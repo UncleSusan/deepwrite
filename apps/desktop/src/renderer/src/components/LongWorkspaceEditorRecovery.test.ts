@@ -20,13 +20,10 @@ describe("long workspace editor crash recovery", () => {
     expect(implementationSource).toContain("fileId: state.file.id");
     expect(implementationSource).toContain("content: state.content");
     expect(implementationSource).toContain("savedContent: state.savedContent");
-    expect(implementationSource).toContain("baseRevision: state.file.revision");
-    expect(implementationSource).toContain(
-      "workspaceRevision: state.workspaceRevision"
-    );
-    expect(implementationSource).toContain(
-      "projectRevision: state.projectRevision"
-    );
+    expect(implementationSource).toContain("schemaVersion: 2");
+    expect(implementationSource).not.toContain("baseRevision");
+    expect(implementationSource).not.toContain("workspaceRevision");
+    expect(implementationSource).not.toContain("projectRevision");
     expect(implementationSource).toContain("timestamp: Date.now()");
     expect(implementationSource).toContain(
       "options.scheduleRecoveryWrite(key)"
@@ -60,12 +57,9 @@ describe("long workspace editor crash recovery", () => {
     );
   });
 
-  it("automatically restores only a recovery based on the current disk revision", () => {
+  it("restores local unsaved content without a document-version gate", () => {
     expect(implementationSource).toContain(
-      "recovery?.baseRevision === firstPage.file.revision"
-    );
-    expect(implementationSource).toContain(
-      "recoveryMatchesDisk && recovery.content !== content"
+      "recovery && recovery.content !== content ? recovery.content : content"
     );
     expect(implementationSource).toContain("content: recoveredContent");
     expect(implementationSource).toContain("savedContent: content");
@@ -73,21 +67,14 @@ describe("long workspace editor crash recovery", () => {
     expect(implementationSource).toContain("本机未保存内容");
   });
 
-  it("keeps a stale recovery without replacing disk content and offers explicit reconciliation", () => {
-    expect(implementationSource).toMatch(
-      /else if \(recovery\) \{[\s\S]*staleRecoveryByKey\.value[\s\S]*磁盘内容未被覆盖/
-    );
-    expect(implementationSource).toContain("发现旧版本恢复副本");
-    expect(implementationSource).toContain("复制副本");
-    expect(implementationSource).toContain("载入副本核对");
-    expect(implementationSource).toContain("磁盘文件尚未被修改");
-    expect(implementationSource).toContain("baseRevision: state.file.revision");
-    expect(implementationSource).toContain(
-      "baseWorkspaceRevision: state.workspaceRevision"
-    );
-    expect(implementationSource).toContain(
-      "baseProjectRevision: state.projectRevision"
-    );
+  it("keeps disk text as the saved baseline while editing the recovered copy", () => {
+    expect(implementationSource).toContain("content: recoveredContent");
+    expect(implementationSource).toContain("savedContent: content");
+    expect(implementationSource).toContain("file: firstPage.file");
+    expect(implementationSource).not.toContain("staleRecoveryByKey");
+    expect(implementationSource).not.toContain("发现旧版本恢复副本");
+    expect(implementationSource).toContain("fileId: state.file.id");
+    expect(implementationSource).toContain("content: submittedContent");
   });
 
   it("clears a recovery after a successful clean save or a manual revert to disk", () => {
@@ -110,7 +97,9 @@ describe("long workspace editor crash recovery", () => {
     expect(implementationSource).toContain(
       "raw.length > RECOVERY_MAX_RECORD_CHARACTERS"
     );
-    expect(implementationSource).toContain("value.schemaVersion !== 1");
+    expect(implementationSource).toContain(
+      "value.schemaVersion !== 1 && value.schemaVersion !== 2"
+    );
     expect(implementationSource).toContain(
       "now - value.timestamp > RECOVERY_MAX_AGE_MS"
     );
@@ -133,7 +122,7 @@ describe("long workspace editor crash recovery", () => {
     );
   });
 
-  it("never exposes stale text as editable when a revision reload fails", () => {
+  it("keeps retained text read-only when a document reload fails", () => {
     expect(implementationSource).toContain("const dirty =");
     expect(implementationSource).toContain("refreshingJustSavedDocument");
     expect(implementationSource).toContain(
@@ -150,7 +139,9 @@ describe("long workspace editor crash recovery", () => {
     expect(implementationSource).toMatch(
       /catch \(error: unknown\)[\s\S]*loaded: false,[\s\S]*loadError: message/
     );
-    expect(implementationSource).toContain("never keep it editable after");
+    expect(implementationSource).toContain(
+      "Preserve previously shown text while the failed read is retried."
+    );
     expect(implementationSource).toContain("!state.loaded");
     expect(implementationSource).toContain("重新读取");
     expect(implementationSource).toContain(
@@ -163,10 +154,11 @@ describe("long workspace editor crash recovery", () => {
     expect(implementationSource).toMatch(
       /const saved = await runExclusiveSave[\s\S]*return\s*\(?\s*!Object\.entries\(documentStates\.value\)\.some/
     );
-    expect(implementationSource).toContain("workspaceRevision: Math.max(");
     expect(implementationSource).toContain(
-      "Never regress to the older read baseline"
+      "const submittedContent = state.content"
     );
+    expect(implementationSource).toContain("savedContent: submittedContent");
+    expect(implementationSource).toContain("file: result.file");
     expect(
       documentSessionSource.match(/props\.bookId === bookId/gu)
     ).toHaveLength(2);

@@ -133,7 +133,9 @@ export function useConversationRuntimeRegistryCoordinator(
       selectedModelId: conversation.selectedModelId.value,
       thinkingLevel: conversation.thinkingLevel.value,
       temperature: conversation.temperature.value,
-      approvalMode: conversation.approvalMode.value
+      approvalMode: conversation.approvalMode.value,
+      agentTeamMode: conversation.agentTeamMode.value,
+      webSearchEnabled: conversation.webSearchEnabled.value
     };
   }
 
@@ -142,7 +144,8 @@ export function useConversationRuntimeRegistryCoordinator(
   ): AgentRunPreferences {
     return {
       temperature: conversation.temperature.value,
-      approvalMode: conversation.approvalMode.value
+      approvalMode: conversation.approvalMode.value,
+      agentTeamMode: conversation.agentTeamMode.value
     };
   }
 
@@ -174,7 +177,8 @@ export function useConversationRuntimeRegistryCoordinator(
     options.store.setSessionAgentModelSelection(
       {
         selectedModelId: source.selectedModelId.value,
-        thinkingLevel: source.thinkingLevel.value
+        thinkingLevel: source.thinkingLevel.value,
+        webSearchEnabled: source.webSearchEnabled.value
       },
       { source }
     );
@@ -361,7 +365,8 @@ export function useConversationRuntimeRegistryCoordinator(
         options.store.setSessionAgentModelSelection(
           {
             selectedModelId: representative.selectedModelId.value,
-            thinkingLevel: representative.thinkingLevel.value
+            thinkingLevel: representative.thinkingLevel.value,
+            webSearchEnabled: representative.webSearchEnabled.value
           },
           { persist: false }
         );

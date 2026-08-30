@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import conversationItemSource from "./ConversationMessageItem.vue?raw";
 import processingItemSource from "./ConversationProcessingItem.vue?raw";
 import editProposalSource from "./AgentEditProposalCard.vue?raw";
-import discardButtonSource from "./ApprovalDiscardButton.vue?raw";
 import ledgerFinalizationSource from "./LongLedgerFinalizationCard.vue?raw";
+import impactDetailsSource from "./LongProposalImpactDetails.vue?raw";
 import source from "./LongProposalReview.vue?raw";
 
 const conversationSource = `${conversationItemSource}\n${processingItemSource}`;
@@ -25,18 +25,11 @@ describe("LongProposalReview content file cards", () => {
     ).toHaveLength(2);
   });
 
-  it("renders discard beside navigation only for explicitly eligible edits", () => {
-    expect(source).toContain("discardableEventIds?: readonly string[]");
-    expect(source).toContain("function showDiscardButton");
-    expect(source).toContain("<ApprovalDiscardButton");
-    expect(discardButtonSource).toContain("舍弃本次修改");
-    expect(source).toContain("emit('discard', item.event.id)");
-    expect(conversationSource).toContain(
-      ':discardable-event-ids="item.canDiscard ? [item.item.event.id] : []"'
-    );
-    expect(conversationSource).toContain(
-      "@discard=\"emit('discardLongProposal', $event)\""
-    );
+  it("does not expose rollback or discard actions for accepted long proposals", () => {
+    expect(source).not.toContain("discardableEventIds");
+    expect(source).not.toContain("showDiscardButton");
+    expect(source).not.toContain("<ApprovalDiscardButton");
+    expect(source).not.toContain("emit('discard'");
   });
 
   it("supports inline rendering inside its originating conversation turn", () => {
@@ -75,7 +68,7 @@ describe("LongProposalReview content file cards", () => {
     expect(source).toContain("contentProposalDiffStats(item)");
     expect(source).toContain("已自动批准并保存到本地 Markdown。");
     expect(source).toContain("接受后将应用到对应 Markdown 并自动保存到本机。");
-    expect(source).toContain("重试接受并保存");
+    expect(source).not.toContain("重试接受并保存");
     expect(source).toContain("等待前序文件");
     expect(source).toContain("正在等待前序文件创建或写入完成，随后继续校验。");
   });
@@ -112,12 +105,30 @@ describe("LongProposalReview content file cards", () => {
     expect(source).toContain("结构变更已应用并保存到本机。");
   });
 
+  it("shows exact relationship and ledger effects before approval", () => {
+    expect(source).toContain("<LongProposalImpactDetails");
+    expect(impactDetailsSource).toContain("preview.relationshipChanges.length");
+    expect(impactDetailsSource).toContain("关联关系变化");
+    expect(impactDetailsSource).toContain(
+      "relationshipActionLabel(change.action)"
+    );
+    expect(impactDetailsSource).toContain(
+      "relationshipKindLabels[change.kind]"
+    );
+    expect(impactDetailsSource).toContain("preview.ledgerRecordEdits.length");
+    expect(impactDetailsSource).toContain("连续性账本记录影响");
+    expect(impactDetailsSource).toContain("edit.commitId");
+    expect(impactDetailsSource).toContain("edit.recordFile.id");
+    expect(impactDetailsSource).toContain("ledgerRecordEditCount(edit)");
+    expect(impactDetailsSource).toContain('"character-type": "人物类型"');
+  });
+
   it("does not present deterministic preview failures as retryable apply failures", () => {
     expect(source).toContain('item.errorPhase === "preview"');
     expect(source).toContain("校验未通过");
     expect(source).toContain("尚未应用");
     expect(source).toContain("item.errorRetryable === false");
-    expect(source).toContain("需重新生成提案");
+    expect(source).not.toContain("需重新生成提案");
   });
 
   it("does not render unverified continuity metadata or diffs", () => {

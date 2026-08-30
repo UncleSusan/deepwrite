@@ -1,5 +1,4 @@
 import {
-  EMPTY_LONG_MARKDOWN_REVISION,
   DEFAULT_LONG_CHARACTER_TYPES,
   createEmptyLongMarkdownFileReference,
   longCharacterCurrentStateFileId,
@@ -13,8 +12,10 @@ import {
   type LongCharacterId,
   type LongCharacterType,
   type LongFileId,
+  type LongWorkspaceImpactConfirmation,
   type LongWorkspaceIndexSnapshot,
   type LongWorkspaceFileReference,
+  type LongWorkspaceOperationBatch,
   type LongWorkspaceRoot,
   type LongVolumeId,
   type LongWorldbuildingItemId,
@@ -124,8 +125,26 @@ export interface LongWorkspaceSelection {
  */
 export interface LongStructureMutationCompletion {
   succeed(): void;
-  fail(message?: string): void;
+  fail(message?: string, changedImpact?: LongWorkspaceImpactConfirmation): void;
   appliedButRefreshFailed(message?: string): void;
+}
+
+export interface LongWorldbuildingSyncPreparedChange {
+  batch: LongWorkspaceOperationBatch;
+  confirmation: LongWorkspaceImpactConfirmation;
+  createdCategoryCount: number;
+  deletedCategoryCount: number;
+  writtenFileCount: number;
+}
+
+export interface LongWorldbuildingSyncRequest {
+  sourceBookId: string;
+  sourceTitle: string;
+  prepared?: LongWorldbuildingSyncPreparedChange;
+}
+
+export interface LongWorldbuildingSyncCompletion extends LongStructureMutationCompletion {
+  review(prepared: LongWorldbuildingSyncPreparedChange): void;
 }
 
 export type LongWorkspaceRendererApi = DeepWriteApi["long"];
@@ -238,10 +257,7 @@ export function latestCommittedContinuityChapter(
         (entry.chapterCardId === commit.chapterCardId &&
           entry.commitId !== null)
     );
-    const hasMarkdownProjection =
-      commit.mode === "text_files" ||
-      chapter?.foreshadowingChanges.revision !== EMPTY_LONG_MARKDOWN_REVISION;
-    if (chapter && hasMarkdownProjection && predicate(chapter)) {
+    if (chapter && predicate(chapter)) {
       return chapter;
     }
   }
@@ -762,8 +778,7 @@ export function createLongContinuitySelection(
             }
           ]
         : []),
-      ...(!importCheckpoint &&
-      entry.foreshadowingChanges.revision !== EMPTY_LONG_MARKDOWN_REVISION
+      ...(!importCheckpoint
         ? [
             {
               role: "foreshadowing-changes" as const,

@@ -1,5 +1,4 @@
 import type { AgentEditProposal } from "../../types/conversation";
-import { replaceLongBookSummary } from "../../types/longWorkspace";
 import {
   AcceptedEditDiscardConflictError,
   agentProposalSupportsDiscard,
@@ -11,10 +10,6 @@ import type {
   AgentEditReviewRequest,
   ProposalCoordinatorContext
 } from "../proposal-coordinator/types";
-import {
-  discardAcceptedLongFileEdit,
-  discardAcceptedLongOperationEdit
-} from "./long";
 import {
   discardAcceptedCatalogTextEdit,
   discardAcceptedShortStructureEdit
@@ -64,68 +59,6 @@ function conflictDependentProposals(
 export function createAcceptedEditDiscardCoordinator(
   context: ProposalCoordinatorContext
 ) {
-  async function discardLongAgentProposal(
-    proposal: AgentEditProposal
-  ): Promise<void> {
-    const api = context.api()?.long;
-    const target =
-      proposal.longWorldbuildingTarget ??
-      proposal.longCharacterTarget ??
-      proposal.longDraftTarget ??
-      proposal.longPlotDesignTarget;
-    if (!api || !target) throw new Error("长篇工作区服务当前不可用。");
-    if (context.longWorkspace.activeBookId.value === target.bookId) {
-      if (!(await context.longWorkspace.saveActiveEditorChanges())) {
-        throw new AcceptedEditDiscardConflictError(
-          "当前长篇编辑内容尚未保存，未舍弃本次修改。"
-        );
-      }
-    }
-    let summary;
-    if (proposal.longWorldbuildingTarget) {
-      summary = (
-        await discardAcceptedLongFileEdit(
-          api,
-          target.bookId,
-          proposal.longWorldbuildingTarget.file
-        )
-      ).summary;
-    } else if (proposal.longCharacterTarget) {
-      const file = proposal.longCharacterTarget.files[0];
-      if (!file || proposal.longCharacterTarget.files.length !== 1) {
-        throw new Error("人物档案修改缺少唯一目标文件。");
-      }
-      summary = (await discardAcceptedLongFileEdit(api, target.bookId, file))
-        .summary;
-    } else if (proposal.longDraftTarget) {
-      summary = (
-        await discardAcceptedLongFileEdit(
-          api,
-          target.bookId,
-          proposal.longDraftTarget.file
-        )
-      ).summary;
-    } else {
-      const snapshot = proposal.discardSnapshot;
-      if (!snapshot?.longUndoBatch) {
-        throw new Error("缺少剧情结构修改前的完整快照。");
-      }
-      summary = (
-        await discardAcceptedLongOperationEdit(
-          api,
-          target.bookId,
-          snapshot.longUndoBatch,
-          snapshot.appliedProjectRevision
-        )
-      ).summary;
-    }
-    context.longWorkspace.books.value = replaceLongBookSummary(
-      context.longWorkspace.books.value,
-      summary
-    );
-    await context.longWorkspace.refreshWorkspaceAfterProposal(target.bookId);
-  }
-
   async function discardProposal(
     conversation: AgentConversationController,
     request: Omit<AgentEditReviewRequest, "decision">
@@ -150,20 +83,11 @@ export function createAcceptedEditDiscardCoordinator(
       conversation,
       proposal,
       "discarding",
-      "正在校验当前版本并舍弃本次修改…"
+      "正在舍弃本次修改…"
     );
     context.editor.setWorkspaceAccepting(proposal.workspaceId, true);
     try {
-      if (
-        proposal.longWorldbuildingTarget ||
-        proposal.longCharacterTarget ||
-        proposal.longDraftTarget ||
-        proposal.longPlotDesignTarget
-      ) {
-        await discardLongAgentProposal(proposal);
-      } else if (
-        !(await discardAcceptedShortStructureEdit(context, proposal))
-      ) {
+      if (!(await discardAcceptedShortStructureEdit(context, proposal))) {
         await discardAcceptedCatalogTextEdit(context, proposal);
       }
       updateDiscardState(
@@ -195,14 +119,6 @@ export function createAcceptedEditDiscardCoordinator(
 
   return {
     discardAgentEdit: (request: Omit<AgentEditReviewRequest, "decision">) =>
-      discardProposal(context.conversations.active.value, request),
-    discardLongAgentEdit: (
-      request: Omit<AgentEditReviewRequest, "decision">
-    ) => {
-      const conversation = context.conversations.activeLong.value;
-      return conversation
-        ? discardProposal(conversation, request)
-        : Promise.resolve();
-    }
+      discardProposal(context.conversations.active.value, request)
   };
 }

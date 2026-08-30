@@ -1,4 +1,5 @@
 import type { ChatAssistantRuntimeContext } from "@deepwrite/contracts";
+import { renderDeepSeekWebSearchCapabilityPrompt } from "./deepseek-web-search";
 
 function renderProjectStructure(
   context: Extract<ChatAssistantRuntimeContext, { mode: "project" }>
@@ -9,7 +10,7 @@ function renderProjectStructure(
       `项目类型：长篇`,
       `项目名称：《${book.title}》`,
       `项目 ID：${book.id}`,
-      `类型：${book.genre}；状态：${book.status}；项目版本：${book.projectRevision}`,
+      `类型：${book.genre}；状态：${book.status}`,
       "阶段：世界观、人物、剧情设计、正文、连续性账本。",
       "【长篇结构导航（本轮权威快照；正文必须通过工具按需读取）】",
       JSON.stringify(book.navigation, null, 2)
@@ -66,11 +67,7 @@ export function buildChatAssistantSystemPrompt(
           context.projectPrompt.trim()
         ].join("\n");
   const webSearchCapability = webSearchEnabled
-    ? [
-        "【智能搜索能力】",
-        "本轮已启用 DeepSeek 服务端智能搜索工具 web_search。用户请求实时、近期或其它外部公开信息时，应按需调用该工具，并基于实际返回的搜索结果回答。",
-        "智能搜索是只读且按需使用的能力，不必为无需外部信息的问题强制搜索。只有实际获得搜索结果后才能声称已经搜索或引用实时信息；搜索失败时应如实说明。"
-      ].join("\n")
+    ? renderDeepSeekWebSearchCapabilityPrompt()
     : undefined;
   const networkBoundary = webSearchEnabled
     ? "不能访问文件系统路径、Shell、API Key、Token、Base URL 或请求路由；网络能力仅限本轮列出的 DeepSeek 服务端 web_search，不具备浏览器控制、任意 HTTP 请求或其它联网能力；不得要求工具绕过项目 ID 锁定。"

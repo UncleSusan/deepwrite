@@ -10,6 +10,7 @@ import {
 } from "vue";
 import {
   BUILT_IN_REASONING_LEVELS,
+  type AgentTeamRunMode,
   type AgentUserInputAnswer,
   type AgentUserInputRequestedPayload,
   type BuiltInReasoningLevel,
@@ -42,6 +43,10 @@ import ConversationComposer from "./ConversationComposer.vue";
 import ConversationMessageList from "./ConversationMessageList.vue";
 import ConversationTurnNavigator from "./ConversationTurnNavigator.vue";
 import { AGENT_ACTIVITY_CONTEXT_KEY } from "../composables/agentActivityContext";
+import {
+  WORKSPACE_WEB_SEARCH_DISABLED_REASON,
+  isWorkspaceWebSearchAvailable
+} from "../composables/agent-conversation/web-search";
 
 const props = withDefaults(
   defineProps<{
@@ -61,8 +66,10 @@ const props = withDefaults(
     models: ModelConfig[];
     selectedModelId: string;
     thinkingLevel: ThinkingLevel;
+    webSearchEnabled: boolean;
     temperature: number;
     approvalMode: AgentApprovalMode;
+    agentTeamMode: AgentTeamRunMode;
     contextTitle: string;
     bookTitle: string;
     stageLabel: string;
@@ -120,8 +127,10 @@ const emit = defineEmits<{
   toggleRight: [];
   selectModel: [modelId: string];
   selectThinking: [level: ThinkingLevel];
+  toggleWebSearch: [enabled: boolean];
   selectTemperature: [temperature: number];
   selectApproval: [mode: AgentApprovalMode];
+  selectAgentTeamMode: [mode: AgentTeamRunMode];
   reviewEdit: [
     payload: {
       runId: string;
@@ -135,7 +144,6 @@ const emit = defineEmits<{
   rejectLongProposal: [eventId: string];
   retryLongProposalPreview: [eventId: string];
   locateLongProposal: [eventId: string];
-  discardLongProposal: [eventId: string];
   submitUserInput: [answers: AgentUserInputAnswer[]];
 }>();
 
@@ -293,10 +301,7 @@ watch(
         )
         .join(","),
       props.longProposalItems
-        .map(
-          (item) =>
-            `${item.event.id}:${item.status}:${item.previewProjectRevision ?? ""}:${item.error ?? ""}`
-        )
+        .map((item) => `${item.event.id}:${item.status}:${item.error ?? ""}`)
         .join(",")
     ].join("|");
   },
@@ -404,6 +409,9 @@ const welcomeContent = computed(() =>
 );
 const selectedModel = computed(() =>
   props.models.find((model) => model.id === props.selectedModelId)
+);
+const webSearchAvailable = computed(() =>
+  isWorkspaceWebSearchAvailable(selectedModel.value)
 );
 const builtInThinkingLabels: Record<BuiltInReasoningLevel, string> = {
   minimal: "最低",
@@ -693,7 +701,6 @@ function selectHistoryConversation(item: ConversationHistoryItem): void {
         @reject-long-proposal="emit('rejectLongProposal', $event)"
         @retry-long-proposal-preview="emit('retryLongProposalPreview', $event)"
         @locate-long-proposal="emit('locateLongProposal', $event)"
-        @discard-long-proposal="emit('discardLongProposal', $event)"
       />
 
       <ConversationTurnNavigator
@@ -730,8 +737,14 @@ function selectHistoryConversation(item: ConversationHistoryItem): void {
       :selected-model-id="selectedModelId"
       :selected-model="selectedModel"
       :thinking-level="thinkingLevel"
+      :web-search-enabled="webSearchEnabled"
+      :web-search-available="webSearchAvailable"
+      :web-search-disabled-reason="WORKSPACE_WEB_SEARCH_DISABLED_REASON"
       :temperature="temperature"
       :approval-mode="approvalMode"
+      :agent-team-mode="agentTeamMode"
+      :agent-id="agentId"
+      :agent-workspace-type="agentWorkspaceType"
       :library-domain="libraryDomain"
       :available-skills="availableSkills"
       :available-materials="availableMaterials"
@@ -750,8 +763,10 @@ function selectHistoryConversation(item: ConversationHistoryItem): void {
       @locate-editor-reference="emit('locateEditorReference', $event)"
       @select-model="emit('selectModel', $event)"
       @select-thinking="emit('selectThinking', $event)"
+      @toggle-web-search="emit('toggleWebSearch', $event)"
       @select-temperature="emit('selectTemperature', $event)"
       @select-approval="emit('selectApproval', $event)"
+      @select-agent-team-mode="emit('selectAgentTeamMode', $event)"
     />
   </main>
 </template>

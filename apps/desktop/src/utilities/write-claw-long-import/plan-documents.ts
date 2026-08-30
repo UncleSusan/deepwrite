@@ -1,16 +1,8 @@
-import type {
-  LongFileRevision,
-  LongWorkspaceFileReference
-} from "@deepwrite/contracts";
+import type { LongWorkspaceFileReference } from "@deepwrite/contracts";
 import { contentSha256, safeUnicode, type WarningCollector } from "./normalize";
 import type { WriteClawLongImportDocument } from "./types";
 
 const MAX_DOCUMENT_BYTES = 32 * 1024 * 1024;
-
-export function fileRevision(content: string): LongFileRevision {
-  const bytes = Buffer.from(content, "utf8");
-  return `v2:${bytes.byteLength}:${contentSha256(bytes)}` as LongFileRevision;
-}
 
 export function storageKey(id: string): string {
   return contentSha256(id).slice(0, 32);
@@ -59,15 +51,13 @@ export function createDocumentBuilder(
       }
       ids.add(fileId);
       paths.add(pathKey);
-      const revision = fileRevision(content);
       documents.push({
         fileId,
         path,
         kind,
-        content,
-        revision
+        content
       });
-      return { id: fileId, path, revision, updatedAt };
+      return { id: fileId, path, updatedAt };
     }
   };
 }

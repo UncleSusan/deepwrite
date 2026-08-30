@@ -8,6 +8,7 @@ import {
   file,
   it,
   later,
+  previewLongWorkspaceOperations,
   workspace
 } from "./long-workspace-operations.test-support";
 
@@ -62,7 +63,6 @@ describe("long workspace ordered creates", () => {
     const created = applyLongWorkspaceOperations(
       parsed,
       LongWorkspaceOperationBatchSchema.parse({
-        baseRevision: parsed.revision,
         updatedAt: later,
         operations: [
           createStoryPlot("storyplot_new", "arc_letter", "新情节", 17)
@@ -92,7 +92,6 @@ describe("long workspace ordered creates", () => {
     const created = applyLongWorkspaceOperations(
       source,
       LongWorkspaceOperationBatchSchema.parse({
-        baseRevision: source.revision,
         updatedAt: later,
         operations: [
           createStoryPlot("storyplot_one", "arc_letter", "节一", 1),
@@ -140,7 +139,6 @@ describe("long workspace ordered creates", () => {
     const created = applyLongWorkspaceOperations(
       parsed,
       LongWorkspaceOperationBatchSchema.parse({
-        baseRevision: parsed.revision,
         updatedAt: later,
         operations: [createStoryPlot("storyplot_d", "arc_letter", "四", 1)]
       })
@@ -185,16 +183,15 @@ describe("long workspace ordered creates", () => {
       }
     );
     const parsed = LongWorkspaceIndexSnapshotSchema.parse(source);
-    const deleted = applyLongWorkspaceOperations(
-      parsed,
-      LongWorkspaceOperationBatchSchema.parse({
-        baseRevision: parsed.revision,
-        updatedAt: later,
-        operations: [
-          { type: "storyPlot.delete", id: "storyplot_b", cascade: false }
-        ]
-      })
-    );
+    const deleteBatch = LongWorkspaceOperationBatchSchema.parse({
+      updatedAt: later,
+      operations: [{ type: "storyPlot.delete", id: "storyplot_b" }]
+    });
+    const deletePreview = previewLongWorkspaceOperations(parsed, deleteBatch);
+    const deleted = applyLongWorkspaceOperations(parsed, {
+      ...deleteBatch,
+      expectedImpact: deletePreview.confirmation
+    });
 
     expect(
       [...deleted.snapshot.plot.storyPlots]
@@ -211,7 +208,6 @@ describe("long workspace ordered creates", () => {
     const first = applyLongWorkspaceOperations(
       source,
       LongWorkspaceOperationBatchSchema.parse({
-        baseRevision: source.revision,
         updatedAt: later,
         operations: [createStoryPlot("storyplot_one", "arc_letter", "节一", 1)]
       })
@@ -219,7 +215,6 @@ describe("long workspace ordered creates", () => {
     const second = applyLongWorkspaceOperations(
       first.snapshot,
       LongWorkspaceOperationBatchSchema.parse({
-        baseRevision: first.resultRevision,
         updatedAt: later,
         operations: [createStoryPlot("storyplot_two", "arc_letter", "节二", 1)]
       })
@@ -247,7 +242,6 @@ describe("long workspace ordered creates", () => {
     const created = applyLongWorkspaceOperations(
       parsed,
       LongWorkspaceOperationBatchSchema.parse({
-        baseRevision: parsed.revision,
         updatedAt: later,
         operations: [
           {

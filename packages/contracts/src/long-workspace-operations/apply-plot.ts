@@ -6,6 +6,7 @@ import {
   deleteStoryEvent,
   deleteStoryPlot
 } from "./cascade";
+import { cleanupProjectionForDeletedEntity } from "./ledger-cleanup";
 import {
   addFileCreateIntent,
   assertBeatIsMutable,
@@ -15,7 +16,6 @@ import {
   assertPlacementIsMutable,
   concreteChapterIdForBeat,
   ensureFilesAvailable,
-  eventParticipatesInCommittedFacts,
   findEntityIndex,
   insertBeforeId,
   markCreated,
@@ -50,12 +50,6 @@ export function applyPlotOperation(
       break;
     }
     case "event.update": {
-      if (eventParticipatesInCommittedFacts(workspace, operation.id)) {
-        operationError(
-          "committed_prefix_protected",
-          `Cannot update committed story event ${operation.id}.`
-        );
-      }
       const event =
         workspace.plot.storyEvents[
           findEntityIndex(
@@ -125,7 +119,7 @@ export function applyPlotOperation(
       break;
     }
     case "event.delete": {
-      deleteStoryEvent(state, operation.id, operation.cascade);
+      deleteStoryEvent(state, operation.id);
       break;
     }
     case "event.reorder": {
@@ -134,21 +128,6 @@ export function applyPlotOperation(
         operation.orderedIds,
         "Story event"
       );
-      const nextOrderById = new Map(
-        operation.orderedIds.map((id: string, index: number) => [id, index + 1])
-      );
-      workspace.plot.storyEvents.forEach((event) => {
-        const nextOrder = nextOrderById.get(event.id)!;
-        if (
-          nextOrder !== event.storyOrder &&
-          eventParticipatesInCommittedFacts(workspace, event.id)
-        ) {
-          operationError(
-            "committed_prefix_protected",
-            `Cannot reorder committed story event ${event.id}.`
-          );
-        }
-      });
       updateOrdersById(
         workspace.plot.storyEvents,
         operation.orderedIds,
@@ -248,18 +227,6 @@ export function applyPlotOperation(
             "Event connection"
           )
         ]!;
-      if (
-        eventParticipatesInCommittedFacts(
-          workspace,
-          connection.sourceEventId
-        ) ||
-        eventParticipatesInCommittedFacts(workspace, connection.targetEventId)
-      ) {
-        operationError(
-          "committed_prefix_protected",
-          `Cannot update connection ${connection.id} between committed events.`
-        );
-      }
       Object.assign(connection, operation.patch);
       markUpdated(state, connection.id);
       break;
@@ -271,18 +238,7 @@ export function applyPlotOperation(
         "Event connection"
       );
       const connection = workspace.plot.eventConnections[index]!;
-      if (
-        eventParticipatesInCommittedFacts(
-          workspace,
-          connection.sourceEventId
-        ) ||
-        eventParticipatesInCommittedFacts(workspace, connection.targetEventId)
-      ) {
-        operationError(
-          "committed_prefix_protected",
-          `Cannot delete connection ${connection.id} between committed events.`
-        );
-      }
+      cleanupProjectionForDeletedEntity(state, connection.id);
       workspace.plot.eventConnections.splice(index, 1);
       markDeleted(state, connection.id);
       break;
@@ -299,7 +255,7 @@ export function applyPlotOperation(
         operation.placement.commitId !== null
       ) {
         operationError(
-          "committed_prefix_protected",
+          "invalid_reference",
           "New narrative placements must start in planned state."
         );
       }
@@ -335,7 +291,7 @@ export function applyPlotOperation(
       break;
     }
     case "placement.delete": {
-      deleteNarrativePlacement(state, operation.id, operation.cascade);
+      deleteNarrativePlacement(state, operation.id);
       break;
     }
     case "placement.move": {

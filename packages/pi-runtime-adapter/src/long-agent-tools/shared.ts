@@ -24,23 +24,17 @@ export function preflightLongMutationProposal(
 ): AgentToolResult<LongAgentToolDetails> | undefined {
   if (batch.operations.length === 0) return undefined;
   try {
-    // The agent index snapshot does not necessarily carry file revisions that
-    // were refreshed by readDocument in the same tool call. Validate structure
-    // here and leave document-revision checks to the client's existing preview.
     previewLongWorkspaceOperations(index, { ...batch, documentWrites: [] });
     return undefined;
   } catch (error: unknown) {
     if (!(error instanceof LongWorkspaceOperationError)) throw error;
     const reasonLabels: Record<typeof error.code, string> = {
-      revision_conflict: "工作区版本已经变化",
       not_found: "目标条目不存在",
       already_exists: "目标条目已经存在",
       invalid_reference: "引用关系无效",
-      cascade_required: "需要明确级联处理",
-      cascade_impact_mismatch: "级联影响与声明不一致",
-      committed_prefix_protected: "已提交连续性前缀受保护",
+      impact_mismatch: "关联影响已经变化",
       invalid_order: "排序范围或顺序不完整",
-      invalid_document_write: "文档写入目标或修订无效",
+      invalid_document_write: "文档写入目标无效",
       invalid_result: "操作后的结构不满足长篇约束"
     };
     return textResult(
@@ -151,14 +145,4 @@ export function allocateStableId(
     if (!occupied.has(id)) return id;
   }
   throw new Error(`Unable to allocate a stable ${prefix} id.`);
-}
-
-export function nextContentRevision(
-  currentRevision: string,
-  content: string
-): string {
-  if (!/^(?:v1|v2):\d+:[0-9a-f]+$/u.test(currentRevision)) {
-    throw new Error("The current long document has an invalid revision.");
-  }
-  return `v2:${new TextEncoder().encode(content).byteLength}:${stableHash(content)}`;
 }

@@ -4,6 +4,7 @@ import {
   longStoryPlotFilePath,
   type LongChapterCardId,
   type LongCharacterId,
+  type LongWorkspaceImpactConfirmation,
   type LongWorkspaceIndexSnapshot,
   type LongWorkspaceOperation,
   type LongWorkspaceOperationBatch
@@ -95,6 +96,11 @@ export function useLongEditorStructureSelection(options: {
       batch: LongWorkspaceOperationBatch,
       completion: LongStructureMutationCompletion
     ): void;
+    (
+      event: "previewMutation",
+      batch: LongWorkspaceOperationBatch,
+      completion: (impact?: LongWorkspaceImpactConfirmation) => void
+    ): void;
   };
   currentWorldbuildingItems: ComputedRef<Array<{ id: string; title: string }>>;
   currentWorldbuildingListState: ComputedRef<{
@@ -119,6 +125,11 @@ export function useLongEditorStructureSelection(options: {
   activeStoryPlotId: Ref<string | null>;
   pendingStoryPlotId: Ref<string | null>;
   pendingStoryPlotDeleteId: Ref<string | null>;
+  pendingStoryPlotDeleteImpact: Ref<
+    LongWorkspaceImpactConfirmation | undefined
+  >;
+  pendingStoryPlotDeletePreviewPending: Ref<boolean>;
+  pendingStoryPlotDeletePending: Ref<boolean>;
   storyPlotActionMenuId: Ref<string | null>;
   pendingCharacterId: Ref<string | null>;
   pendingRole: Ref<LongWorkspaceFileRole | null>;
@@ -207,8 +218,12 @@ export function useLongEditorStructureSelection(options: {
   const activeStoryPlotId = ref<string | null>(null);
   const pendingStoryPlotId = ref<string | null>(null);
   const pendingStoryPlotDeleteId = ref<string | null>(null);
+  const pendingStoryPlotDeleteImpact = ref<LongWorkspaceImpactConfirmation>();
+  const pendingStoryPlotDeletePreviewPending = ref(false);
+  const pendingStoryPlotDeletePending = ref(false);
   const storyPlotActionMenuId = ref<string | null>(null);
   let storyPlotSelectionRequest = 0;
+  let storyPlotDeleteRequest = 0;
   const pendingCharacterId = ref<string | null>(null);
   const pendingRole = ref<LongWorkspaceFileRole | null>(null);
   const pendingFileId = ref<string | null>(null);
@@ -292,12 +307,10 @@ export function useLongEditorStructureSelection(options: {
     operations: LongWorkspaceOperation[],
     onSuccess?: () => void
   ): void {
-    const index = props.workspaceIndex;
-    if (!index || options.host.currentReadOnly.value) return;
+    if (!props.workspaceIndex || options.host.currentReadOnly.value) return;
     emit(
       "mutation",
       {
-        baseRevision: index.revision,
         updatedAt: new Date().toISOString(),
         operations,
         documentWrites: []
@@ -464,12 +477,10 @@ export function useLongEditorStructureSelection(options: {
     operations: LongWorkspaceOperation[],
     onSuccess?: () => void
   ): void {
-    const index = props.workspaceIndex;
-    if (!index || options.host.currentReadOnly.value) return;
+    if (!props.workspaceIndex || options.host.currentReadOnly.value) return;
     emit(
       "mutation",
       {
-        baseRevision: index.revision,
         updatedAt: new Date().toISOString(),
         operations,
         documentWrites: []
@@ -614,33 +625,89 @@ export function useLongEditorStructureSelection(options: {
     ]);
   }
 
+  function storyPlotDeleteBatch(
+    storyPlotId: string,
+    expectedImpact?: LongWorkspaceImpactConfirmation
+  ): LongWorkspaceOperationBatch {
+    return {
+      updatedAt: new Date().toISOString(),
+      operations: [{ type: "storyPlot.delete", id: storyPlotId }],
+      documentWrites: [],
+      ...(expectedImpact ? { expectedImpact } : {})
+    };
+  }
+
   function openStoryPlotDelete(storyPlotId: string): void {
+    if (
+      options.host.currentReadOnly.value ||
+      !options.currentStoryPlots.value.some(({ id }) => id === storyPlotId)
+    ) {
+      return;
+    }
+    const request = ++storyPlotDeleteRequest;
     pendingStoryPlotDeleteId.value = storyPlotId;
+    pendingStoryPlotDeleteImpact.value = undefined;
+    pendingStoryPlotDeletePending.value = false;
+    pendingStoryPlotDeletePreviewPending.value = true;
+    emit(
+      "previewMutation",
+      storyPlotDeleteBatch(storyPlotId),
+      (expectedImpact) => {
+        if (
+          request !== storyPlotDeleteRequest ||
+          pendingStoryPlotDeleteId.value !== storyPlotId
+        ) {
+          return;
+        }
+        pendingStoryPlotDeletePreviewPending.value = false;
+        pendingStoryPlotDeleteImpact.value = expectedImpact;
+      }
+    );
   }
 
   function cancelStoryPlotDelete(): void {
+    if (pendingStoryPlotDeletePending.value) return;
+    storyPlotDeleteRequest += 1;
     pendingStoryPlotDeleteId.value = null;
+    pendingStoryPlotDeleteImpact.value = undefined;
+    pendingStoryPlotDeletePreviewPending.value = false;
   }
 
   function confirmStoryPlotDelete(): void {
     const storyPlotId = pendingStoryPlotDeleteId.value;
-    if (!storyPlotId) return;
-    pendingStoryPlotDeleteId.value = null;
-    emitStoryPlotMutation(
-      [
-        {
-          type: "storyPlot.delete",
-          id: storyPlotId,
-          cascade: true
-        }
-      ],
-      () => {
+    const expectedImpact = pendingStoryPlotDeleteImpact.value;
+    if (
+      !storyPlotId ||
+      !expectedImpact ||
+      pendingStoryPlotDeletePreviewPending.value ||
+      pendingStoryPlotDeletePending.value
+    ) {
+      return;
+    }
+    pendingStoryPlotDeletePending.value = true;
+    emit("mutation", storyPlotDeleteBatch(storyPlotId, expectedImpact), {
+      succeed() {
+        pendingStoryPlotDeletePending.value = false;
+        cancelStoryPlotDelete();
         if (activeStoryPlotId.value === storyPlotId) {
           activeStoryPlotId.value = null;
           void ensureActiveStoryPlotSelection();
         }
+      },
+      fail(_message, changedImpact) {
+        pendingStoryPlotDeletePending.value = false;
+        if (changedImpact) {
+          pendingStoryPlotDeleteImpact.value = changedImpact;
+        }
+      },
+      appliedButRefreshFailed() {
+        pendingStoryPlotDeletePending.value = false;
+        cancelStoryPlotDelete();
+        if (activeStoryPlotId.value === storyPlotId) {
+          activeStoryPlotId.value = null;
+        }
       }
-    );
+    });
   }
 
   function reorderStoryPlot(
@@ -1130,6 +1197,9 @@ export function useLongEditorStructureSelection(options: {
     activeStoryPlotId,
     pendingStoryPlotId,
     pendingStoryPlotDeleteId,
+    pendingStoryPlotDeleteImpact,
+    pendingStoryPlotDeletePreviewPending,
+    pendingStoryPlotDeletePending,
     storyPlotActionMenuId,
     pendingCharacterId,
     pendingRole,

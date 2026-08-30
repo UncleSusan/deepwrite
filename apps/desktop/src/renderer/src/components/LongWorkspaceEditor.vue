@@ -1,22 +1,25 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
-  type LongLedgerCommitIndexEntry,
   type LongArcId,
   type LongChapterCardId,
   type LongCharacterId,
   type LongFileId,
-  type LongFileRevision,
+  type LongWorkspaceImpactConfirmation,
   type LongWorkspaceIndexSnapshot,
   type LongWorkspaceOperationBatch,
+  type LongWorkspaceRoot,
   type LongWriteDocumentResult,
   type TextViewMode
 } from "@deepwrite/contracts";
 import { LONG_EDITOR_LIST_MIN_WIDTH } from "../utils/longEditorPanePreferences";
+import { longDeletionDescription } from "../utils/longDeletionImpact";
+import { longImpactConfirmationDescription } from "../utils/longImpactConfirmation";
 import { countNonWhitespaceCharacters } from "../utils/boundedTextHistory";
 import { handleHorizontalOverflowWheel } from "../utils/horizontalOverflow";
 import {
   isEditableLongFile,
+  resolveLongWorkspaceApi,
   type LongForeshadowingFocus,
   type LongStructureMutationCompletion,
   type LongWorkspaceSelection
@@ -43,12 +46,14 @@ import {
   type LongVolumeOutlineDraft
 } from "../composables/useLongEditorDocumentSession";
 import { useLongEditorFindReplace } from "../composables/useLongEditorFindReplace";
+import { useLongEditorEntrySearch } from "../composables/useLongEditorEntrySearch";
 import { useLongEditorHistory } from "../composables/useLongEditorHistory";
 import { useLongEditorPaneResize } from "../composables/useLongEditorPaneResize";
 import {
-  useLongEditorRecovery,
-  type LongEditorRecoveryRecord
-} from "../composables/useLongEditorRecovery";
+  longEditorScrollMemoryKey,
+  useLongEditorScrollMemory
+} from "../composables/useLongEditorScrollMemory";
+import { useLongEditorRecovery } from "../composables/useLongEditorRecovery";
 import {
   useLongEditorStructureSelection,
   type LongEditorStructureHost,
@@ -60,7 +65,6 @@ const props = defineProps<{
   bookId: string;
   selection: LongWorkspaceSelection | null;
   workspaceIndex: LongWorkspaceIndexSnapshot | null;
-  latestCommit?: LongLedgerCommitIndexEntry | undefined;
   locked?: boolean;
   lockedReason?: string | undefined;
   rightPane?: boolean;
@@ -76,16 +80,15 @@ const emit = defineEmits<{
     context: {
       bookId: string;
       fileId: LongFileId;
-      fileRevision: LongFileRevision;
     } | null
   ];
-  rollback: [];
   selectCharacter: [
     characterId: LongCharacterId,
     done?: (accepted: boolean) => void
   ];
   selectPlotPoint: [plotPointId: LongArcId];
   selectChapterCard: [chapterCardId: LongChapterCardId];
+  selectEntrySearchResult: [fileId: string];
   renameCharacter: [
     input: { characterId: LongCharacterId; name: string },
     completion: (succeeded: boolean) => void
@@ -103,13 +106,25 @@ const emit = defineEmits<{
   createPlotPoint: [];
   createChapterCard: [];
   createVolume: [];
-  deleteStructure: [
+  previewDeleteStructure: [
     input: {
       kind: "character" | "volume" | "plotPoint" | "chapterCard";
       id: string;
       title: string;
     },
-    completion: (succeeded: boolean) => void
+    completion: (impact?: LongWorkspaceImpactConfirmation) => void
+  ];
+  deleteStructure: [
+    input: {
+      kind: "character" | "volume" | "plotPoint" | "chapterCard";
+      id: string;
+      title: string;
+      expectedImpact: LongWorkspaceImpactConfirmation;
+    },
+    completion: (
+      succeeded: boolean,
+      changedImpact?: LongWorkspaceImpactConfirmation
+    ) => void
   ];
   saveVolumeOutline: [
     input: { volumeId: string; outline: string },
@@ -127,6 +142,10 @@ const emit = defineEmits<{
     batch: LongWorkspaceOperationBatch,
     completion: LongStructureMutationCompletion
   ];
+  previewMutation: [
+    batch: LongWorkspaceOperationBatch,
+    completion: (impact?: LongWorkspaceImpactConfirmation) => void
+  ];
 }>();
 
 const documentStates = ref<Record<string, LongDocumentState>>({});
@@ -141,6 +160,10 @@ const { resetToDefault, setViewMode, viewMode } = useTextViewMode({
 });
 function setEditorInputElement(element: HTMLTextAreaElement | null): void {
   editorInput.value = element;
+}
+
+function setDocumentPreviewElement(element: HTMLElement | null): void {
+  documentPreview.value = element;
 }
 
 const currentIsBookLineWorkspace = computed(
@@ -332,35 +355,22 @@ const currentNavigationDeleteTarget =
         ({ id }) => id === selection.characterId
       );
       if (!character) return null;
-      const eventReferences = index.plot.storyEvents.filter((event) =>
-        event.characterIds.includes(character.id)
-      ).length;
-      const referenceCopy =
-        eventReferences > 0
-          ? `，并从 ${eventReferences} 个故事事件中移除人物引用`
-          : "";
       return {
         kind: "character",
         id: character.id,
         title: character.name,
         label: "人物",
-        description: `将永久删除该人物的核心档案和人物关系${referenceCopy}。`
+        description: longDeletionDescription(index, "character", character.id)
       };
     }
     if (currentIsBookLineWorkspace.value && currentBookLineVolume.value) {
       const volume = currentBookLineVolume.value;
-      const plotPointCount = index.plot.arcs.filter(
-        ({ volumeId }) => volumeId === volume.id
-      ).length;
-      const chapterCount = index.plot.chapterCards.filter(
-        ({ volumeId }) => volumeId === volume.id
-      ).length;
       return {
         kind: "volume",
         id: volume.id,
         title: volume.title,
         label: "分卷",
-        description: `将永久删除该分卷，以及其中 ${plotPointCount} 个剧情点、${chapterCount} 张章卡及对应正文文件和关联数据。`
+        description: longDeletionDescription(index, "volume", volume.id)
       };
     }
     if (currentIsPlotPointWorkspace.value && currentPlotPoint.value) {
@@ -370,8 +380,7 @@ const currentNavigationDeleteTarget =
         id: plotPoint.id,
         title: plotPoint.title,
         label: "剧情点",
-        description:
-          "将永久删除该剧情点、相关事件和伏笔关联；已关联章卡会保留并解除关联。"
+        description: longDeletionDescription(index, "plotPoint", plotPoint.id)
       };
     }
     if (currentIsChapterCardWorkspace.value && currentChapterCard.value) {
@@ -381,8 +390,11 @@ const currentNavigationDeleteTarget =
         id: chapterCard.id,
         title: chapterCard.title,
         label: "章卡",
-        description:
-          "将永久删除该章卡、章节正文、章末人物状态、下一章接续包，以及相关剧情落点和伏笔触点。"
+        description: longDeletionDescription(
+          index,
+          "chapterCard",
+          chapterCard.id
+        )
       };
     }
     return null;
@@ -491,12 +503,26 @@ const currentStoryPlot = computed(
     currentStoryPlots.value.find(({ id }) => id === activeStoryPlotId.value) ??
     null
 );
-const pendingStoryPlotDelete = computed(
-  () =>
-    currentStoryPlots.value.find(
-      ({ id }) => id === pendingStoryPlotDeleteId.value
-    ) ?? null
-);
+const pendingStoryPlotDelete = computed(() => {
+  const storyPlot = currentStoryPlots.value.find(
+    ({ id }) => id === pendingStoryPlotDeleteId.value
+  );
+  if (!storyPlot) return null;
+  const fallback =
+    "该故事情节及其正文文件将被删除，所属剧情点与连续性投影会同步更新。";
+  return {
+    ...storyPlot,
+    description: pendingStoryPlotDeleteImpact.value
+      ? longImpactConfirmationDescription(
+          pendingStoryPlotDeleteImpact.value,
+          fallback
+        )
+      : fallback,
+    previewPending: pendingStoryPlotDeletePreviewPending.value,
+    pending: pendingStoryPlotDeletePending.value,
+    canConfirm: Boolean(pendingStoryPlotDeleteImpact.value)
+  };
+});
 const isDocumentContentBusy = computed(() => {
   if (isDocumentSwitchPending.value) return true;
   if (currentIsStructuredText.value || currentIsForeshadowingView.value) {
@@ -537,16 +563,6 @@ const currentDirty = computed(() => {
     Boolean(currentState.value?.loaded) &&
     currentState.value?.content !== currentState.value?.savedContent
   );
-});
-const currentStaleRecovery = computed<LongEditorRecoveryRecord | null>(() => {
-  const selectedFile = currentSelectionFile.value;
-  return selectedFile
-    ? (staleRecoveryByKey.value[stateKey(selectedFile.file.id)] ?? null)
-    : null;
-});
-const currentStaleRecoveryPreview = computed(() => {
-  const content = currentStaleRecovery.value?.content ?? "";
-  return content.length > 600 ? `${content.slice(0, 600)}…` : content;
 });
 const currentIsWorldbuildingList = computed(
   () =>
@@ -924,8 +940,6 @@ const {
 });
 
 const {
-  staleRecoveryByKey,
-  removeStaleRecoveryState,
   clearRecoveryRecordForKey,
   readRecoveryRecord,
   persistRecoveryForKey,
@@ -943,6 +957,9 @@ const {
   activeStoryPlotId,
   pendingStoryPlotId,
   pendingStoryPlotDeleteId,
+  pendingStoryPlotDeleteImpact,
+  pendingStoryPlotDeletePreviewPending,
+  pendingStoryPlotDeletePending,
   storyPlotActionMenuId,
   pendingCharacterId,
   pendingFileId,
@@ -958,7 +975,6 @@ const {
   selectWorldbuildingItem,
   selectWorldbuildingOverview,
   addWorldbuildingItem,
-  emitWorldbuildingItemMutation,
   updateWorldbuildingItemContent,
   updateWorldbuildingItemTitle,
   selectBookLineOverview,
@@ -1010,13 +1026,9 @@ const {
   showEditorLoadError,
   loadWorkspaceDocument,
   loadSelectedDocument,
-  restoreStaleRecovery,
-  copyStaleRecovery,
   ensureDocumentsLoaded,
   saveCurrentDocument,
-  saveAllChanges,
-  synchronizeProjectRevisions,
-  synchronizeProjectRevisionsIfClean
+  saveAllChanges
 } = useLongEditorDocumentSession({
   props,
   emit,
@@ -1028,7 +1040,6 @@ const {
   currentDirty,
   currentIsStructuredText,
   currentIsWorldbuildingList,
-  currentStaleRecovery,
   viewMode,
   editorInput,
   activeWorldbuildingItemId,
@@ -1036,14 +1047,38 @@ const {
   activeBookLineContentTab,
   activePlotPointTab,
   activeStoryPlotId,
-  workspaceRevision: () => props.workspaceIndex?.revision,
   saveVolumeOutline,
   savePlotPointContent,
   readRecoveryRecord,
   clearRecoveryRecordForKey,
-  removeStaleRecoveryState,
-  persistRecoveryForKey,
-  staleRecoveryByKey
+  persistRecoveryForKey
+});
+const activeEditorScrollMemoryKey = computed(() =>
+  longEditorScrollMemoryKey({
+    bookId: props.bookId,
+    selectionKey: props.selection?.key ?? "",
+    fileId: currentSelectionFile.value?.file.id ?? "",
+    worldbuildingItemId:
+      props.selection?.worldbuildingItemId ??
+      activeWorldbuildingItemId.value ??
+      "",
+    bookLineVolumeId: activeBookLineVolumeId.value ?? "",
+    bookLineContentTab: activeBookLineContentTab.value,
+    plotPointId: props.selection?.plotPointId ?? "",
+    plotPointTab: activePlotPointTab.value,
+    storyPlotId: activeStoryPlotId.value ?? "",
+    chapterCardId: props.selection?.chapterCardId ?? ""
+  })
+);
+const {
+  handleScroll: handleEditorScroll,
+  rememberScroll: rememberCurrentEditorScroll,
+  restoreScroll: restoreCurrentEditorScroll
+} = useLongEditorScrollMemory({
+  documentKey: () => activeEditorScrollMemoryKey.value,
+  viewMode,
+  editorInput,
+  documentPreview
 });
 const characterCount = ref(
   countNonWhitespaceCharacters(currentVisibleContent.value)
@@ -1129,6 +1164,25 @@ const {
   handleEditorKeydown,
   handleWindowPointerDown
 } = findApi;
+const entrySearchScope = computed<LongWorkspaceRoot>(
+  () => props.selection?.root ?? "worldbuilding"
+);
+const entrySearch = useLongEditorEntrySearch({
+  bookId: () => props.bookId,
+  scope: entrySearchScope,
+  api: resolveLongWorkspaceApi,
+  navigate: (fileId) => emit("selectEntrySearchResult", fileId)
+});
+const {
+  query: entrySearchQuery,
+  results: entrySearchResults,
+  activeIndex: activeEntrySearchIndex,
+  pending: entrySearchPending,
+  resultLabel: entrySearchResultLabel,
+  handleInput: handleEntrySearchInput,
+  moveActive: moveActiveEntrySearchResult,
+  selectResult: selectEntrySearchResult
+} = entrySearch;
 
 const {
   worldbuildingDeleteDialog,
@@ -1153,13 +1207,28 @@ const {
   currentNavigationDeleteTarget,
   currentWorldbuildingItems,
   pendingWorldbuildingDeleteId,
-  emitWorldbuildingItemMutation,
+  emitPreviewMutation: (batch, completion) => {
+    emit("previewMutation", batch, completion);
+  },
+  emitMutation: (batch, completion) => {
+    emit("mutation", batch, completion);
+  },
   selectWorldbuildingItem,
   selectWorldbuildingOverview,
+  emitPreviewDeleteStructure: (input, completion) => {
+    emit("previewDeleteStructure", input, completion);
+  },
   emitDeleteStructure: (input, completion) => {
     emit("deleteStructure", input, completion);
   }
 });
+
+function forwardPreviewMutation(
+  batch: LongWorkspaceOperationBatch,
+  completion: (impact?: LongWorkspaceImpactConfirmation) => void
+): void {
+  emit("previewMutation", batch, completion);
+}
 
 Object.assign(structureHost, {
   currentReadOnly,
@@ -1192,13 +1261,11 @@ defineExpose({
   focusTarget,
   captureNavigationSelection,
   captureForeshadowingFocus,
-  ensureDocumentsLoaded,
-  synchronizeProjectRevisions,
-  synchronizeProjectRevisionsIfClean
+  ensureDocumentsLoaded
 });
 
 watch(
-  () => [props.bookId, props.workspaceIndex?.revision] as const,
+  () => [props.bookId, props.workspaceIndex] as const,
   () => {
     if (volumeDraftBookId !== props.bookId) {
       volumeDraftBookId = props.bookId;
@@ -1246,9 +1313,8 @@ watch(
       activeBookLineVolumeId.value = null;
     }
   },
-  // The workspace index is replaced atomically for every refresh. Tracking its
-  // monotonic revision avoids recursively subscribing to every plot entity and
-  // lets Vue batch the draft reconciliation outside the input event.
+  // The workspace index is replaced atomically for every refresh, which lets
+  // Vue batch draft reconciliation outside the input event.
   { immediate: true, flush: "post" }
 );
 
@@ -1310,8 +1376,10 @@ watch(
 
 onMounted(() => {
   window.addEventListener("pointerdown", handleWindowPointerDown, true);
+  void restoreCurrentEditorScroll();
 });
 onBeforeUnmount(() => {
+  rememberCurrentEditorScroll();
   window.removeEventListener("pointerdown", handleWindowPointerDown, true);
 });
 </script>
@@ -1754,33 +1822,25 @@ onBeforeUnmount(() => {
             :replacement-text="replacementText"
             :search-result-label="searchResultLabel"
             :current-read-only="currentReadOnly"
+            :entry-search-query="entrySearchQuery"
+            :entry-search-results="entrySearchResults"
+            :active-entry-search-index="activeEntrySearchIndex"
+            :entry-search-pending="entrySearchPending"
+            :entry-search-result-label="entrySearchResultLabel"
             @update:search-query="searchQuery = $event"
             @update:replacement-text="replacementText = $event"
+            @update:entry-search-query="entrySearchQuery = $event"
             @find-input="handleFindInput"
             @find-match="findMatch"
             @close="closeFindPanel"
             @replace-current="replaceCurrentMatch"
             @replace-all="replaceAllMatches"
+            @entry-search-input="handleEntrySearchInput"
+            @move-entry-search="moveActiveEntrySearchResult"
+            @select-entry-search="selectEntrySearchResult"
           />
         </div>
         <span class="long-toolbar-spacer" />
-        <div class="long-editor-toolbar-actions">
-          <button
-            v-if="
-              latestCommit?.reversible &&
-              (selection.root === 'draft' ||
-                selection.root === 'continuity_ledger')
-            "
-            class="long-editor-rollback-button"
-            type="button"
-            :title="`回滚提交 #${latestCommit.sequence}`"
-            :disabled="locked"
-            @click="emit('rollback')"
-          >
-            <AppIcon name="history" :size="14" />
-            <span>回滚最后提交</span>
-          </button>
-        </div>
       </div>
 
       <div
@@ -1792,40 +1852,6 @@ onBeforeUnmount(() => {
           'is-resizing-entry-list': resizingLongEditorPane === 'entry-list'
         }"
       >
-        <aside
-          v-if="currentStaleRecovery"
-          class="long-editor-recovery"
-          role="status"
-          aria-live="polite"
-        >
-          <details open>
-            <summary>发现旧版本恢复副本</summary>
-            <div class="long-editor-recovery-content">
-              <p>
-                磁盘文件已变化，因此没有自动覆盖。副本仍保存在本机，
-                你可以先复制，或明确载入后自行核对合并。
-              </p>
-              <small>
-                副本基线 {{ currentStaleRecovery.baseRevision }} ·
-                {{ new Date(currentStaleRecovery.timestamp).toLocaleString() }}
-              </small>
-              <pre>{{ currentStaleRecoveryPreview }}</pre>
-              <div class="long-editor-recovery-actions">
-                <button type="button" @click="copyStaleRecovery">
-                  复制副本
-                </button>
-                <button
-                  class="is-primary"
-                  type="button"
-                  :disabled="currentReadOnly"
-                  @click="restoreStaleRecovery"
-                >
-                  载入副本核对
-                </button>
-              </div>
-            </div>
-          </details>
-        </aside>
         <LongForeshadowingWorkspace
           v-if="currentIsForeshadowingView && workspaceIndex"
           ref="foreshadowingWorkspace"
@@ -1834,6 +1860,7 @@ onBeforeUnmount(() => {
           :volume-id="currentForeshadowingVolumeId"
           :plot-point-id="currentPlotPoint?.id"
           :disabled="locked"
+          @preview-mutation="forwardPreviewMutation"
           @mutation="forwardForeshadowingMutation"
         />
         <section
@@ -2036,13 +2063,22 @@ onBeforeUnmount(() => {
                       :replacement-text="replacementText"
                       :search-result-label="searchResultLabel"
                       :current-read-only="currentReadOnly"
+                      :entry-search-query="entrySearchQuery"
+                      :entry-search-results="entrySearchResults"
+                      :active-entry-search-index="activeEntrySearchIndex"
+                      :entry-search-pending="entrySearchPending"
+                      :entry-search-result-label="entrySearchResultLabel"
                       @update:search-query="searchQuery = $event"
                       @update:replacement-text="replacementText = $event"
+                      @update:entry-search-query="entrySearchQuery = $event"
                       @find-input="handleFindInput"
                       @find-match="findMatch"
                       @close="closeFindPanel"
                       @replace-current="replaceCurrentMatch"
                       @replace-all="replaceAllMatches"
+                      @entry-search-input="handleEntrySearchInput"
+                      @move-entry-search="moveActiveEntrySearchResult"
+                      @select-entry-search="selectEntrySearchResult"
                     />
                   </div>
                 </div>
@@ -2057,11 +2093,13 @@ onBeforeUnmount(() => {
                   @beforeinput="handleEditorBeforeInput"
                   @input="handleEditorInput"
                   @keydown="handleEditorKeydown"
+                  @scroll="handleEditorScroll"
                 />
                 <article
                   v-else
                   ref="documentPreview"
                   class="long-document-preview long-story-plot-editor"
+                  @scroll="handleEditorScroll"
                 >
                   <MarkdownContent
                     v-if="currentVisibleContent.trim()"
@@ -2128,6 +2166,8 @@ onBeforeUnmount(() => {
           @input="handleEditorInput"
           @keydown="handleEditorKeydown"
           @editor-element-change="setEditorInputElement"
+          @preview-element-change="setDocumentPreviewElement"
+          @editor-scroll="handleEditorScroll"
         />
         <div
           v-else-if="
@@ -2273,8 +2313,14 @@ onBeforeUnmount(() => {
               @beforeinput="handleEditorBeforeInput"
               @input="handleEditorInput"
               @keydown="handleEditorKeydown"
+              @scroll="handleEditorScroll"
             />
-            <article v-else ref="documentPreview" class="long-document-preview">
+            <article
+              v-else
+              ref="documentPreview"
+              class="long-document-preview"
+              @scroll="handleEditorScroll"
+            >
               <MarkdownContent
                 v-if="currentVisibleContent.trim()"
                 :content="currentVisibleContent"
@@ -2541,7 +2587,7 @@ onBeforeUnmount(() => {
                       ? "结构修改会直接保存到本机"
                       : "选择情节后可编辑正文"
                 : locked
-                  ? (lockedReason ?? "编辑暂时锁定 · 防止版本冲突")
+                  ? (lockedReason ?? "正在处理长篇修改，编辑暂时锁定")
                   : currentSaving
                     ? "正在原子保存本机文稿"
                     : currentReadOnly
@@ -2850,14 +2896,6 @@ onBeforeUnmount(() => {
   color: var(--text-tertiary);
 }
 
-.long-editor-toolbar-actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-}
-
-.long-editor-rollback-button,
 .long-editor-save-button {
   display: inline-flex;
   align-items: center;
@@ -2869,19 +2907,6 @@ onBeforeUnmount(() => {
   color: var(--accent-contrast, #ffffff);
   font-size: 0.714286rem;
   cursor: pointer;
-}
-
-.long-editor-rollback-button {
-  min-height: 27px;
-  padding-block: 3px;
-  border: 1px solid var(--theme-line);
-  background: var(--surface-main);
-  color: var(--text-secondary);
-}
-
-.long-editor-rollback-button:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
 }
 
 .long-editor-save-button:disabled {
@@ -2905,9 +2930,7 @@ onBeforeUnmount(() => {
 }
 
 .long-editor-document.is-entry-right-list
-  > :not(.long-entry-list-pane):not(.long-editor-recovery):not(
-    .long-editor-internal-resizer
-  ) {
+  > :not(.long-entry-list-pane):not(.long-editor-internal-resizer) {
   grid-row: 1;
   grid-column: 1;
   min-width: 0;
@@ -3133,96 +3156,6 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.long-editor-recovery {
-  position: absolute;
-  z-index: 3;
-  top: 12px;
-  right: 12px;
-  width: min(360px, calc(100% - 24px));
-  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--theme-line));
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--surface-raised) 96%, var(--accent-soft));
-  box-shadow: 0 12px 32px
-    color-mix(in srgb, var(--text-primary) 14%, transparent);
-  color: var(--text-primary);
-}
-
-.long-editor-recovery summary {
-  padding: 10px 12px;
-  color: var(--text-secondary);
-  font-size: 0.75rem;
-  font-weight: 640;
-  cursor: pointer;
-}
-
-.long-editor-recovery-content {
-  display: grid;
-  gap: 9px;
-  padding: 0 12px 12px;
-  border-top: 1px solid var(--theme-line-soft);
-}
-
-.long-editor-recovery-content p {
-  margin: 9px 0 0;
-  color: var(--text-secondary);
-  font-size: 0.714286rem;
-  line-height: 1.55;
-}
-
-.long-editor-recovery-content small {
-  color: var(--text-tertiary);
-  font-size: 0.642857rem;
-}
-
-.long-editor-recovery-content pre {
-  max-height: 112px;
-  margin: 0;
-  padding: 8px 9px;
-  overflow: auto;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 7px;
-  background: var(--surface-muted);
-  color: var(--text-secondary);
-  font-family: var(--code-font);
-  font-size: var(--code-font-size);
-  line-height: 1.5;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.long-editor-recovery-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.long-editor-recovery-actions button {
-  min-height: 28px;
-  padding: 5px 9px;
-  border: 1px solid var(--theme-line);
-  border-radius: 7px;
-  background: var(--surface-raised);
-  color: var(--text-secondary);
-  font-size: 0.678571rem;
-  cursor: pointer;
-}
-
-.long-editor-recovery-actions button:hover:not(:disabled) {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.long-editor-recovery-actions button.is-primary {
-  border-color: var(--neutral-solid);
-  background: var(--neutral-solid);
-  color: var(--accent-contrast, #ffffff);
-}
-
-.long-editor-recovery-actions button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 .long-editor-readonly {
   width: 100%;
   height: 100%;
@@ -3395,7 +3328,6 @@ onBeforeUnmount(() => {
     max-width: 34cqw;
   }
 
-  .long-editor-rollback-button span,
   .long-editor-footer > span:nth-child(2) {
     display: none;
   }
@@ -3623,8 +3555,7 @@ onBeforeUnmount(() => {
     grid-template-rows: minmax(0, 1fr) minmax(10rem, 34%);
   }
 
-  .long-editor-document.is-entry-right-list
-    > :not(.long-entry-list-pane):not(.long-editor-recovery) {
+  .long-editor-document.is-entry-right-list > :not(.long-entry-list-pane) {
     grid-row: 1;
     grid-column: 1;
   }

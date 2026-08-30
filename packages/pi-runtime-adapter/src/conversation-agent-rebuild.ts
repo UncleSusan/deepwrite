@@ -19,13 +19,16 @@ export function conversationAgentKey(input: AgentRunInput): string {
         ? `subagent-authoring:${subagentAuthoring.parentAgentId}`
         : input.learningImitationProfile
           ? `learning-imitation:${input.learningImitationProfile.id}`
-          : input.libraryAgentProfile && libraryWorkspace
-            ? `library:${input.libraryAgentProfile.domain}:${libraryWorkspace.libraryId}`
-            : input.scriptAgentProfile
-              ? `script:${input.scriptAgentProfile.id}`
-              : input.longAgentProfile && longWorkspace
-                ? `long:${input.longAgentProfile.id}:${longWorkspace.bookId}`
-                : (input.agentProfile?.id ?? "default")
+          : input.longBookAnalysisProfile &&
+              input.workspaceContext?.longBookAnalysis
+            ? `long-book-analysis:${input.longBookAnalysisProfile.id}:${input.workspaceContext.longBookAnalysis.phase}:${input.workspaceContext.longBookAnalysis.unitId}`
+            : input.libraryAgentProfile && libraryWorkspace
+              ? `library:${input.libraryAgentProfile.domain}:${libraryWorkspace.libraryId}`
+              : input.scriptAgentProfile
+                ? `script:${input.scriptAgentProfile.id}`
+                : input.longAgentProfile && longWorkspace
+                  ? `long:${input.longAgentProfile.id}:${longWorkspace.bookId}`
+                  : (input.agentProfile?.id ?? "default")
   }`;
 }
 

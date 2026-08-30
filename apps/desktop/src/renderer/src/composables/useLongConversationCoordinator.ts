@@ -3,6 +3,7 @@ import {
   MATERIAL_KINDS,
   SKILL_KINDS,
   longLinkedResourceIsEnabledForStage,
+  type AgentTeamRunMode,
   type CatalogIndexSnapshot,
   type CatalogSnapshot,
   type LongAgentProfile,
@@ -68,6 +69,7 @@ interface LongMessageSendTarget {
   draft: string;
   selectedModelId: string;
   thinkingLevel: ThinkingLevel;
+  webSearchEnabled: boolean;
   temperature: number;
   approvalMode: AgentRunSettings["approvalMode"];
   foreshadowingFocusSignature: string;
@@ -369,6 +371,19 @@ export function useLongConversationCoordinator(
     }
   );
 
+  const stopWebSearchSync = watch(
+    () => activeConversation.value?.webSearchEnabled.value ?? false,
+    () => {
+      if (disposed) return;
+      const conversation = activeConversation.value;
+      if (!conversation) return;
+      invalidateSendTarget();
+      options.runtime.synchronizeSessionModelSelection(conversation);
+      synchronizeActiveRunPreferences(conversation);
+    },
+    { flush: "sync" }
+  );
+
   function currentSemanticSignature(): string {
     return activeSemanticSignature.value;
   }
@@ -429,6 +444,7 @@ export function useLongConversationCoordinator(
       draft: conversation.draft.value,
       selectedModelId: conversation.selectedModelId.value,
       thinkingLevel: conversation.thinkingLevel.value,
+      webSearchEnabled: conversation.webSearchEnabled.value,
       temperature: conversation.temperature.value,
       approvalMode: options.settings.permissionMode(),
       foreshadowingFocusSignature: currentForeshadowingFocusSignature()
@@ -465,6 +481,7 @@ export function useLongConversationCoordinator(
       target.conversation.sessionId.value === target.sessionId &&
       target.conversation.selectedModelId.value === target.selectedModelId &&
       target.conversation.thinkingLevel.value === target.thinkingLevel &&
+      target.conversation.webSearchEnabled.value === target.webSearchEnabled &&
       target.conversation.temperature.value === target.temperature &&
       options.settings.permissionMode() === target.approvalMode &&
       currentForeshadowingFocusSignature() ===
@@ -811,6 +828,16 @@ export function useLongConversationCoordinator(
     synchronizeActiveRunPreferences(conversation);
   }
 
+  function selectWebSearch(enabled: boolean): void {
+    if (disposed || modelPreferenceBlocked()) return;
+    const conversation = activeConversation.value;
+    if (!conversation) return;
+    invalidateSendTarget();
+    conversation.selectWebSearchEnabled(enabled);
+    options.runtime.synchronizeSessionModelSelection(conversation);
+    synchronizeActiveRunPreferences(conversation);
+  }
+
   function selectTemperature(value: number): void {
     if (disposed || modelPreferenceBlocked()) return;
     const conversation = activeConversation.value;
@@ -827,6 +854,15 @@ export function useLongConversationCoordinator(
     invalidateSendTarget();
     options.settings.updatePermissionMode(mode);
     conversation.selectApprovalMode(mode);
+    synchronizeActiveRunPreferences(conversation);
+  }
+
+  function selectAgentTeamMode(mode: AgentTeamRunMode): void {
+    if (disposed || modelPreferenceBlocked()) return;
+    const conversation = activeConversation.value;
+    if (!conversation) return;
+    invalidateSendTarget();
+    conversation.selectAgentTeamMode(mode);
     synchronizeActiveRunPreferences(conversation);
   }
 
@@ -848,6 +884,7 @@ export function useLongConversationCoordinator(
     invalidateSendTarget();
     stopSemanticInvalidation();
     stopConversationError();
+    stopWebSearchSync();
     if (pending && conversation?.isBusy.value) {
       try {
         await conversation.stopGeneration();
@@ -867,11 +904,13 @@ export function useLongConversationCoordinator(
     dispose,
     drain,
     newConversation,
+    selectAgentTeamMode,
     selectApprovalMode,
     selectConversation,
     selectModel,
     selectTemperature,
     selectThinking,
+    selectWebSearch,
     resendLongMessage,
     sendLongMessage,
     sendPreflightPending: options.state.sendPreflightPending,

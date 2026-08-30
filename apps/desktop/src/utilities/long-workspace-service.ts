@@ -23,8 +23,6 @@ import {
   LongRenameBookInputSchema,
   LongRemoveBookInputSchema,
   LongRemoveBookResultSchema,
-  LongRollbackLastCommitInputSchema,
-  LongRollbackLastCommitResultSchema,
   LongSearchInputSchema,
   LongSearchResultSchema,
   LongUpdateBindingsInputSchema,
@@ -59,8 +57,6 @@ import {
   type LongRenameBookInput,
   type LongRemoveBookInput,
   type LongRemoveBookResult,
-  type LongRollbackLastCommitInput,
-  type LongRollbackLastCommitResult,
   type LongSearchInput,
   type LongSearchResult,
   type LongUpdateBindingsInput,
@@ -114,7 +110,6 @@ export interface LongWorkspaceServiceDiagnostic {
     | "write-document"
     | "write-chapter"
     | "commit-chapter"
-    | "rollback-last-commit"
     | "apply-operations";
   message: string;
   occurredAt: string;
@@ -227,13 +222,6 @@ export class LongWorkspaceService {
   ): Promise<LongApplyLegacySyncResult> {
     const parsed = LongApplyLegacySyncAtPathInputSchema.parse(input);
     const opened = await this.openProject(parsed);
-    const actualProjectRevision =
-      opened.book.projectRevision ?? opened.book.workspaceIndex.revision;
-    if (actualProjectRevision !== parsed.expectedProjectRevision) {
-      throw new Error(
-        `长篇项目版本冲突：期望 ${parsed.expectedProjectRevision}，实际 ${actualProjectRevision}。`
-      );
-    }
     const bookLineParts: string[] = [];
     let bookLineOffset = 0;
     while (true) {
@@ -258,7 +246,6 @@ export class LongWorkspaceService {
       return LongApplyLegacySyncResultSchema.parse({
         bookId: parsed.bookId,
         summary: opened.summary,
-        projectRevision: actualProjectRevision,
         imported: sync.imported,
         skipped: sync.skipped,
         warnings: sync.warnings
@@ -267,8 +254,7 @@ export class LongWorkspaceService {
     const applied = await this.store.applyWorkspaceOperations(
       opened.projectDirectory,
       {
-        batch: sync.batch,
-        expectedProjectRevision: parsed.expectedProjectRevision
+        batch: sync.batch
       }
     );
     await this.updateCatalogSummaryBestEffort(
@@ -279,7 +265,6 @@ export class LongWorkspaceService {
     return LongApplyLegacySyncResultSchema.parse({
       bookId: parsed.bookId,
       summary: applied.summary,
-      projectRevision: applied.projectRevision,
       imported: sync.imported,
       skipped: sync.skipped,
       warnings: sync.warnings
@@ -343,7 +328,6 @@ export class LongWorkspaceService {
     const parsed = LongUpdateBindingsInputSchema.parse(input);
     const opened = await this.openProject({ bookId: parsed.bookId });
     const updated = await this.store.updateBindings(opened.projectDirectory, {
-      expectedProjectRevision: parsed.expectedProjectRevision,
       linkedMaterialIdsByKind: {
         character: [...(parsed.linkedMaterialIdsByKind.character ?? [])],
         gimmick: [...(parsed.linkedMaterialIdsByKind.gimmick ?? [])],
@@ -371,7 +355,6 @@ export class LongWorkspaceService {
     const parsed = LongRenameBookInputSchema.parse(input);
     const opened = await this.openProject({ bookId: parsed.bookId });
     const updated = await this.store.renameBook(opened.projectDirectory, {
-      expectedProjectRevision: parsed.expectedProjectRevision,
       title: parsed.title
     });
     await this.updateCatalogSummaryBestEffort(
@@ -388,9 +371,7 @@ export class LongWorkspaceService {
     const opened = await this.openProject(input);
     return LongWorkspaceIndexResultSchema.parse({
       bookId: opened.book.id,
-      workspaceIndex: opened.book.workspaceIndex,
-      projectRevision:
-        opened.book.projectRevision ?? opened.book.workspaceIndex.revision
+      workspaceIndex: opened.book.workspaceIndex
     });
   }
 
@@ -407,16 +388,11 @@ export class LongWorkspaceService {
     const file = findWorkspaceFile(opened.book.workspaceIndex, read.fileId);
     return LongReadDocumentResultSchema.parse({
       bookId: parsed.bookId,
-      file: {
-        ...file,
-        revision: read.revision
-      },
+      file,
       content: read.content,
       offset: read.offset,
       totalCharacters: read.totalCharacters,
-      nextOffset: read.nextOffset,
-      workspaceRevision: read.workspaceRevision,
-      projectRevision: read.projectRevision
+      nextOffset: read.nextOffset
     });
   }
 
@@ -451,14 +427,10 @@ export class LongWorkspaceService {
     const candidates = searchFiles(opened.book.workspaceIndex).filter(
       (candidate) => parsed.scope === "all" || candidate.root === parsed.scope
     );
-    const workspaceRevision = opened.book.workspaceIndex.revision;
-    const projectRevision = opened.book.projectRevision ?? workspaceRevision;
     const cursorContext: SearchCursorContext = {
       bookId: parsed.bookId,
       query,
-      scope: parsed.scope,
-      workspaceRevision,
-      projectRevision
+      scope: parsed.scope
     };
     const resume = parseSearchCursor(parsed.cursor, cursorContext, candidates);
     if (candidates.length === 0) {
@@ -467,9 +439,7 @@ export class LongWorkspaceService {
         query,
         scope: parsed.scope,
         hits: [],
-        nextCursor: null,
-        workspaceRevision,
-        projectRevision
+        nextCursor: null
       });
     }
     const searched = await this.store.search(opened.projectDirectory, {
@@ -504,13 +474,10 @@ export class LongWorkspaceService {
           title: descriptor.title,
           start: match.offset,
           end: match.endOffset,
-          snippet: match.preview.slice(0, parsed.maxSnippetCharacters),
-          revision: match.revision
+          snippet: match.preview.slice(0, parsed.maxSnippetCharacters)
         };
       }),
-      nextCursor,
-      workspaceRevision: searched.workspaceRevision,
-      projectRevision: searched.projectRevision
+      nextCursor
     });
   }
 
@@ -521,10 +488,7 @@ export class LongWorkspaceService {
     const opened = await this.openProject(parsed);
     const written = await this.store.writeDocument(opened.projectDirectory, {
       fileId: parsed.fileId,
-      content: parsed.content,
-      expectedFileRevision: parsed.baseRevision,
-      expectedWorkspaceRevision: parsed.baseWorkspaceRevision,
-      expectedProjectRevision: parsed.baseProjectRevision
+      content: parsed.content
     });
     await this.updateCatalogSummaryBestEffort(
       parsed.bookId,
@@ -534,12 +498,7 @@ export class LongWorkspaceService {
     const file = findWorkspaceFile(written.book.workspaceIndex, written.fileId);
     return LongWriteDocumentResultSchema.parse({
       bookId: parsed.bookId,
-      file: {
-        ...file,
-        revision: written.fileRevision
-      },
-      workspaceRevision: written.workspaceRevision,
-      projectRevision: written.projectRevision,
+      file,
       summary: LongBookSummarySchema.parse(written.summary)
     });
   }
@@ -576,22 +535,6 @@ export class LongWorkspaceService {
     return result;
   }
 
-  async rollbackLastCommit(
-    input: LongRollbackLastCommitInput
-  ): Promise<LongRollbackLastCommitResult> {
-    const parsed = LongRollbackLastCommitInputSchema.parse(input);
-    const opened = await this.openProject(parsed);
-    const result = LongRollbackLastCommitResultSchema.parse(
-      await this.store.rollbackLastCommit(opened.projectDirectory, parsed)
-    );
-    await this.refreshCatalogSummaryBestEffort(
-      opened.projectDirectory,
-      parsed.bookId,
-      "rollback-last-commit"
-    );
-    return result;
-  }
-
   async previewOperations(
     input: LongPreviewOperationsInput
   ): Promise<LongPreviewOperationsResult> {
@@ -602,9 +545,7 @@ export class LongWorkspaceService {
       preview: await this.store.previewWorkspaceOperations(
         opened.projectDirectory,
         parsed.batch
-      ),
-      projectRevision:
-        opened.book.projectRevision ?? opened.book.workspaceIndex.revision
+      )
     });
   }
 
@@ -613,18 +554,10 @@ export class LongWorkspaceService {
   ): Promise<LongApplyOperationsResult> {
     const parsed = LongApplyOperationsInputSchema.parse(input);
     const opened = await this.openProject(parsed);
-    const actualProjectRevision =
-      opened.book.projectRevision ?? opened.book.workspaceIndex.revision;
-    if (actualProjectRevision !== parsed.baseProjectRevision) {
-      throw new Error(
-        `长篇项目版本冲突：期望 ${parsed.baseProjectRevision}，实际 ${actualProjectRevision}。`
-      );
-    }
     const applied = await this.store.applyWorkspaceOperations(
       opened.projectDirectory,
       {
-        batch: parsed.batch,
-        expectedProjectRevision: parsed.baseProjectRevision
+        batch: parsed.batch
       }
     );
     await this.updateCatalogSummaryBestEffort(
@@ -635,7 +568,6 @@ export class LongWorkspaceService {
     return LongApplyOperationsResultSchema.parse({
       bookId: parsed.bookId,
       operationResult: applied.operationResult,
-      projectRevision: applied.projectRevision,
       summary: applied.summary
     });
   }
@@ -928,17 +860,13 @@ interface SearchCursorContext {
   bookId: string;
   query: string;
   scope: LongSearchInput["scope"];
-  workspaceRevision: number;
-  projectRevision: number;
 }
 
 interface SearchCursorPayload extends LongProjectSearchResume {
-  v: 2;
+  v: 1;
   bookId: string;
   querySha256: string;
   scope: LongSearchInput["scope"];
-  workspaceRevision: number;
-  projectRevision: number;
 }
 
 const SEARCH_CURSOR_KEYS = new Set([
@@ -946,11 +874,8 @@ const SEARCH_CURSOR_KEYS = new Set([
   "bookId",
   "querySha256",
   "scope",
-  "workspaceRevision",
-  "projectRevision",
   "fileIndex",
   "fileId",
-  "fileRevision",
   "characterOffset"
 ]);
 
@@ -968,7 +893,7 @@ function parseSearchCursor(
   candidates: readonly IndexedSearchFile[]
 ): LongProjectSearchResume | undefined {
   if (value === undefined) return undefined;
-  if (!value.startsWith("v2.")) invalidSearchCursor();
+  if (!value.startsWith("v1.")) invalidSearchCursor();
   const token = value.slice(3);
   if (!token || !/^[A-Za-z0-9_-]+$/u.test(token)) invalidSearchCursor();
   let payload: unknown;
@@ -990,15 +915,12 @@ function parseSearchCursor(
   if (
     Object.keys(cursor).length !== SEARCH_CURSOR_KEYS.size ||
     Object.keys(cursor).some((key) => !SEARCH_CURSOR_KEYS.has(key)) ||
-    cursor.v !== 2 ||
+    cursor.v !== 1 ||
     typeof cursor.bookId !== "string" ||
     typeof cursor.querySha256 !== "string" ||
     typeof cursor.scope !== "string" ||
-    typeof cursor.workspaceRevision !== "number" ||
-    typeof cursor.projectRevision !== "number" ||
     typeof cursor.fileIndex !== "number" ||
     typeof cursor.fileId !== "string" ||
-    typeof cursor.fileRevision !== "string" ||
     typeof cursor.characterOffset !== "number"
   ) {
     invalidSearchCursor();
@@ -1008,19 +930,10 @@ function parseSearchCursor(
     parsed.bookId !== context.bookId ||
     parsed.querySha256 !== querySha256(context.query) ||
     parsed.scope !== context.scope ||
-    parsed.workspaceRevision !== context.workspaceRevision ||
-    parsed.projectRevision !== context.projectRevision ||
     !Number.isSafeInteger(parsed.fileIndex) ||
     parsed.fileIndex < 0 ||
     !Number.isSafeInteger(parsed.characterOffset) ||
     parsed.characterOffset < 0 ||
-    !Number.isSafeInteger(parsed.workspaceRevision) ||
-    parsed.workspaceRevision < 0 ||
-    !Number.isSafeInteger(parsed.projectRevision) ||
-    parsed.projectRevision < 0 ||
-    !/^(?:v1:\d+:[0-9a-f]{8}|v2:\d+:[0-9a-f]{64})$/u.test(
-      parsed.fileRevision
-    ) ||
     candidates[parsed.fileIndex]?.file.id !== parsed.fileId
   ) {
     invalidSearchCursor();
@@ -1028,7 +941,6 @@ function parseSearchCursor(
   return {
     fileIndex: parsed.fileIndex,
     fileId: parsed.fileId,
-    fileRevision: parsed.fileRevision,
     characterOffset: parsed.characterOffset
   };
 }
@@ -1038,18 +950,15 @@ function formatSearchCursor(
   context: SearchCursorContext
 ): string {
   const payload: SearchCursorPayload = {
-    v: 2,
+    v: 1,
     bookId: context.bookId,
     querySha256: querySha256(context.query),
     scope: context.scope,
-    workspaceRevision: context.workspaceRevision,
-    projectRevision: context.projectRevision,
     fileIndex: resume.fileIndex,
     fileId: resume.fileId,
-    fileRevision: resume.fileRevision,
     characterOffset: resume.characterOffset
   };
-  const cursor = `v2.${Buffer.from(JSON.stringify(payload), "utf8").toString("base64url")}`;
+  const cursor = `v1.${Buffer.from(JSON.stringify(payload), "utf8").toString("base64url")}`;
   if (cursor.length > 2_048) {
     throw new Error("长篇搜索游标超过安全长度。");
   }

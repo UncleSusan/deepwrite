@@ -2,6 +2,7 @@ import { z } from "zod";
 import { SHORT_WORKSPACE_FILE_MAX_CHARACTERS } from "../expert-draft";
 import { LongWorkspaceRuntimeContextSchema } from "../long-workspace-api";
 import { LearningImitationRuntimeContextSchema } from "../learning-imitation";
+import { LongBookAnalysisRuntimeContextSchema } from "../long-book-analysis";
 import { LibraryAgentWorkspaceSnapshotSchema } from "../library-agent";
 import { SubagentAuthoringRuntimeContextSchema } from "../subagent-authoring";
 import { ScriptWorkspaceSnapshotSchema } from "../script-workspace";
@@ -18,6 +19,9 @@ export const AgentWriteApprovalModeSchema = z.enum([
 export type AgentWriteApprovalMode = z.infer<
   typeof AgentWriteApprovalModeSchema
 >;
+
+export const AgentTeamRunModeSchema = z.enum(["normal", "team"]);
+export type AgentTeamRunMode = z.infer<typeof AgentTeamRunModeSchema>;
 
 export const AgentRuntimeRefSchema = z.object({
   provider: z.string().min(1),
@@ -143,6 +147,7 @@ export const WorkspaceRuntimeContextSchema = z
     longWorkspace: LongWorkspaceRuntimeContextSchema.optional(),
     libraryWorkspace: LibraryAgentWorkspaceSnapshotSchema.optional(),
     learningImitation: LearningImitationRuntimeContextSchema.optional(),
+    longBookAnalysis: LongBookAnalysisRuntimeContextSchema.optional(),
     subagentAuthoring: SubagentAuthoringRuntimeContextSchema.optional(),
     attachedSkills: z
       .array(AttachedSkillSnapshotSchema)
@@ -160,6 +165,7 @@ export const WorkspaceRuntimeContextSchema = z
       value.longWorkspace,
       value.libraryWorkspace,
       value.learningImitation,
+      value.longBookAnalysis,
       value.subagentAuthoring
     ].filter(Boolean).length;
     if (exclusiveContexts > 1) {

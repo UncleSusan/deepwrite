@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { createHash } from "node:crypto";
 import { Check } from "typebox/value";
 import {
   DEFAULT_LONG_AGENT_PROFILES,
@@ -44,15 +43,13 @@ import { toRuntimeEvents } from "./index";
 import type { AgentUserInputRequester } from "./runtime-types";
 
 const NOW = "2026-07-26T12:00:00.000Z";
-const REVISION = "v1:0:00000000";
 function file(id: string, path: string) {
-  return { id, path, revision: REVISION, updatedAt: NOW };
+  return { id, path, updatedAt: NOW };
 }
 
 function fixtureIndex(): LongWorkspaceIndexSnapshot {
   return LongWorkspaceIndexSnapshotSchema.parse({
     schemaVersion: 1,
-    revision: 7,
     bookId: "longbook_tools",
     updatedAt: NOW,
     bookLine: file(LONG_BOOK_LINE_FILE_ID, "long/plot/book-line.md"),
@@ -292,9 +289,7 @@ function storyPlotExecutor(index: LongWorkspaceIndexSnapshot) {
           content: STORY_PLOT_BODY,
           offset: command.payload.offset,
           totalCharacters: Array.from(STORY_PLOT_BODY).length,
-          nextOffset: null,
-          workspaceRevision: index.revision,
-          projectRevision: 11
+          nextOffset: null
         }
       };
     }
@@ -319,7 +314,6 @@ function expectNoPhysicalWorldbuildingMetadata(text: string) {
   expect(text).not.toContain("longbook_tools");
   expect(text).not.toContain("file_");
   expect(text).not.toContain("long/worldbuilding/");
-  expect(text).not.toContain(REVISION);
   expect(text).not.toContain("workspaceRevision");
   expect(text).not.toContain("projectRevision");
   expect(text).not.toContain("updatedAt");
@@ -361,8 +355,6 @@ function committedFixtureIndex(): LongWorkspaceIndexSnapshot {
       sequence: 1,
       chapterCardId: "chapter_one",
       committedAt: NOW,
-      reversible: true,
-      sourceRevision: 6,
       placementIds: [],
       foreshadowingBeatIds: [],
       recordFile: file(
@@ -392,8 +384,6 @@ function workspace(
     activeRoot,
     activeAgentId: agentId,
     ...(activeChapterCardId ? { activeChapterCardId } : {}),
-    workspaceRevision: index.revision,
-    projectRevision: 11,
     navigation: createLongWorkspaceNavigationSnapshot(index)
   };
 }
@@ -442,13 +432,12 @@ function collectIndexFiles(
 
 function documentExecutor(
   index: LongWorkspaceIndexSnapshot,
-  contents: Record<string, string> = {},
-  projectRevision = 11
+  contents: Record<string, string> = {}
 ): ReturnType<typeof vi.fn<LongCommandExecutor>> {
   const files = collectIndexFiles(index);
   return vi.fn<LongCommandExecutor>(async (command) => {
     if (command.type === "long.getWorkspaceIndex") {
-      return indexResult(index, projectRevision);
+      return indexResult(index);
     }
     if (command.type === "long.readDocument") {
       const file = files.get(command.payload.fileId);
@@ -465,9 +454,7 @@ function documentExecutor(
           content,
           offset: command.payload.offset,
           totalCharacters: Array.from(content).length,
-          nextOffset: null,
-          workspaceRevision: index.revision,
-          projectRevision
+          nextOffset: null
         }
       };
     }
@@ -490,8 +477,6 @@ function longTools(input: {
     input.activeChapterCardId
   );
   if (input.index) {
-    context.workspaceRevision = input.index.revision;
-    context.projectRevision = 11;
     context.navigation = createLongWorkspaceNavigationSnapshot(input.index);
   }
   return buildLongWorkspaceTools({
@@ -521,17 +506,13 @@ function longTools(input: {
   });
 }
 
-function indexResult(
-  index: LongWorkspaceIndexSnapshot = fixtureIndex(),
-  projectRevision = 11
-) {
+function indexResult(index: LongWorkspaceIndexSnapshot = fixtureIndex()) {
   return {
     status: "accepted" as const,
     requestId: "query-index",
     payload: {
       bookId: index.bookId,
-      workspaceIndex: index,
-      projectRevision
+      workspaceIndex: index
     }
   };
 }
@@ -544,11 +525,9 @@ export {
   LONG_CHARACTER_OVERVIEW_PATH,
   LongWorkspaceIndexSnapshotSchema,
   NOW,
-  REVISION,
   STORY_PLOT_BODY,
   buildLongWorkspaceTools,
   committedFixtureIndex,
-  createHash,
   createLongWorkspaceNavigationSnapshot,
   describe,
   documentExecutor,

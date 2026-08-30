@@ -1,4 +1,4 @@
-import { effectScope, nextTick, ref } from "vue";
+import { effectScope, isProxy, nextTick, ref } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import type { ModelConfig, ModelConfigInput } from "@deepwrite/contracts";
 import { useContextWindowUsage } from "./useContextWindowUsage";
@@ -92,6 +92,36 @@ describe("useContextWindowUsage", () => {
     await Promise.resolve();
     expect(state.contextWindow.value).toBe(800_000);
     expect(state.capacityStatus.value).toBe("resolved");
+    scope.stop();
+  });
+
+  it("passes a plain model snapshot across the preload boundary", async () => {
+    const selected = ref<ModelConfig | undefined>(model("reactive"));
+    const resolver = vi.fn(async (input: ModelConfigInput) => {
+      expect(isProxy(selected.value)).toBe(true);
+      expect(isProxy(input)).toBe(false);
+      expect(isProxy(input.thinkingLevelOptions)).toBe(false);
+      expect(isProxy(input.temperatureOptions)).toBe(false);
+      expect(input).not.toHaveProperty("hasApiKey");
+      return {
+        modelId: input.id,
+        contextWindow: 272_000,
+        maxTokens: 128_000
+      };
+    });
+    const scope = effectScope();
+    const state = scope.run(() =>
+      useContextWindowUsage({
+        messages: () => [],
+        selectedModel: () => selected.value,
+        resolveCapacity: resolver
+      })
+    )!;
+
+    await Promise.resolve();
+    expect(resolver).toHaveBeenCalledOnce();
+    expect(state.capacityStatus.value).toBe("resolved");
+    expect(state.contextWindow.value).toBe(272_000);
     scope.stop();
   });
 

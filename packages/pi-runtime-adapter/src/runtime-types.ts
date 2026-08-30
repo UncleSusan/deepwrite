@@ -10,6 +10,7 @@ import type {
   SessionUserInputResponsePayload,
   ChatAssistantRuntimeContext,
   LearningImitationAgentProfile,
+  LongBookAnalysisAgentProfile,
   LibraryAgentProfile,
   LongAgentProfile,
   ScriptWorkspaceAgentProfile,
@@ -49,6 +50,7 @@ export interface AgentRunInput {
   subagentRuntimeConfigs?: Readonly<Record<string, AgentProviderRuntimeConfig>>;
   libraryAgentProfile?: LibraryAgentProfile;
   learningImitationProfile?: LearningImitationAgentProfile;
+  longBookAnalysisProfile?: LongBookAnalysisAgentProfile;
   workspaceContext?: WorkspaceRuntimeContext;
   /**
    * Narrow Agent Utility -> Core query bridge for the active long-form book.
@@ -344,7 +346,6 @@ export type AgentRuntimeEvent =
         bookId: string;
         agentId: import("@deepwrite/contracts").LongAgentId;
         batch: import("@deepwrite/contracts").LongWorkspaceOperationBatch;
-        baseProjectRevision: number;
         summary: string;
         runtime: AgentRuntimeRef;
       };
@@ -358,7 +359,6 @@ export type AgentRuntimeEvent =
         bookId: string;
         agentId: import("@deepwrite/contracts").LongAgentId;
         batch: import("@deepwrite/contracts").LongWorkspaceOperationBatch;
-        baseProjectRevision: number;
         summary: string;
         files: import("@deepwrite/contracts").LongWorldbuildingFileChange[];
         runtime: AgentRuntimeRef;
@@ -373,7 +373,6 @@ export type AgentRuntimeEvent =
         bookId: string;
         agentId: import("@deepwrite/contracts").LongAgentId;
         batch: import("@deepwrite/contracts").LongWorkspaceOperationBatch;
-        baseProjectRevision: number;
         summary: string;
         files: import("@deepwrite/contracts").LongCharacterFileChange[];
         runtime: AgentRuntimeRef;
@@ -388,7 +387,6 @@ export type AgentRuntimeEvent =
         bookId: string;
         agentId: import("@deepwrite/contracts").LongAgentId;
         batch: import("@deepwrite/contracts").LongWorkspaceOperationBatch;
-        baseProjectRevision: number;
         summary: string;
         files: import("@deepwrite/contracts").LongContinuityFileChange[];
         runtime: AgentRuntimeRef;
@@ -403,7 +401,6 @@ export type AgentRuntimeEvent =
         bookId: string;
         agentId: import("@deepwrite/contracts").LongAgentId;
         batch: import("@deepwrite/contracts").LongWorkspaceOperationBatch;
-        baseProjectRevision: number;
         file: import("@deepwrite/contracts").LongChapterBodyChange;
         summary: string;
         runtime: AgentRuntimeRef;
@@ -477,6 +474,30 @@ export type AgentRuntimeEvent =
         toolCallId: string;
         stageId: import("@deepwrite/contracts").LearningImitationStageId;
         update: import("@deepwrite/contracts").LearningImitationWritePayload;
+        runtime: AgentRuntimeRef;
+      };
+    }
+  | {
+      type: "long_book_analysis.note_updated";
+      runId: string;
+      sessionId: string;
+      payload: {
+        toolCallId: string;
+        jobId: string;
+        unitId: string;
+        note: import("@deepwrite/contracts").LongBookAnalysisNoteWrite;
+        runtime: AgentRuntimeRef;
+      };
+    }
+  | {
+      type: "long_book_analysis.result_updated";
+      runId: string;
+      sessionId: string;
+      payload: {
+        toolCallId: string;
+        jobId: string;
+        unitId: string;
+        result: import("@deepwrite/contracts").LongBookAnalysisResult;
         runtime: AgentRuntimeRef;
       };
     }

@@ -19,6 +19,7 @@ export type * from "./learning-imitation";
 export type * from "./library-agent";
 export type * from "./long-agent-settings";
 export type * from "./long-agent-team";
+export type * from "./long-book-analysis";
 export type * from "./long-ledger";
 export type * from "./long-manuscript-export";
 export type * from "./long-workspace";
@@ -153,6 +154,19 @@ export {
   DEFAULT_LONG_AGENT_TEAM_SETTINGS,
   LongAgentTeamSettingsInputSchema
 } from "./long-agent-team";
+export {
+  LONG_BOOK_ANALYSIS_DEFAULT_CONTEXT_WINDOW,
+  LONG_BOOK_ANALYSIS_MAX_CHAPTER_CHARACTERS,
+  LONG_BOOK_ANALYSIS_MAX_NOTE_CHARACTERS,
+  LONG_BOOK_ANALYSIS_MAX_PRESETS,
+  LONG_BOOK_ANALYSIS_MAX_PROMPT_CHARACTERS,
+  LONG_BOOK_ANALYSIS_MAX_SELECTED_CHAPTERS,
+  LongBookAnalysisChapterSchema,
+  LongBookAnalysisPresetSchema,
+  LongBookAnalysisResultSchema,
+  LongBookAnalysisSettingsInputSchema,
+  LongBookAnalysisSourceSchema
+} from "./long-book-analysis";
 export { LongCommitChapterInputSchema } from "./long-ledger";
 export {
   LONG_BOOK_GENRES,
@@ -169,21 +183,22 @@ export {
   LongWorkspaceRuntimeContextSchema
 } from "./long-workspace-api";
 export {
+  LongWorkspaceImpactConfirmationSchema,
   LongWorkspaceOperationBatchSchema,
   applyLongWorkspaceOperations,
+  longWorkspaceImpactIsDestructive,
+  longWorkspaceOperationsRequireImpactConfirmation,
   previewLongWorkspaceOperations
 } from "./long-workspace-operations";
 export { MARKETPLACE_CONTENT_MAX_CHARACTERS } from "./marketplace";
 export {
   DEFAULT_LONG_AGENT_PROFILES,
   DEFAULT_LONG_CHARACTER_TYPES,
-  EMPTY_LONG_MARKDOWN_REVISION,
   LONG_AGENTS_MD_MAX_CHARACTERS,
   LONG_AGENT_IDS,
   LONG_BOOK_LINE_FILE_ID,
   LONG_CHARACTER_OVERVIEW_FILE_ID,
   LONG_CHARACTER_OVERVIEW_PATH,
-  LongFileRevisionSchema,
   LongWorkspaceIndexSnapshotSchema,
   LongWorldbuildingListCategorySchema,
   LongWorldbuildingTextCategorySchema,

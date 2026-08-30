@@ -45,12 +45,9 @@ describe("LongProjectStore resumable search", () => {
     });
     const body = created.book.workspaceIndex.chapters[0]!.body;
     const content = `${"a".repeat(8 * 1024 * 1024 + 1)}Needle`;
-    const written = await store.writeDocument(created.projectDirectory, {
+    await store.writeDocument(created.projectDirectory, {
       fileId: body.id,
-      content,
-      expectedFileRevision: body.revision,
-      expectedWorkspaceRevision: 0,
-      expectedProjectRevision: 0
+      content
     });
 
     let resume: LongProjectSearchResume | undefined;
@@ -73,7 +70,6 @@ describe("LongProjectStore resumable search", () => {
     expect(pageCount).toBeGreaterThan(1);
     expect(found).toMatchObject({
       fileId: body.id,
-      revision: written.fileRevision,
       offset: 8 * 1024 * 1024 + 1,
       endOffset: 8 * 1024 * 1024 + 7
     });
@@ -90,10 +86,7 @@ describe("LongProjectStore resumable search", () => {
     const body = created.book.workspaceIndex.chapters[0]!.body;
     await store.writeDocument(created.projectDirectory, {
       fileId: body.id,
-      content: "😀Cafe\u0301 之后",
-      expectedFileRevision: body.revision,
-      expectedWorkspaceRevision: 0,
-      expectedProjectRevision: 0
+      content: "😀Cafe\u0301 之后"
     });
 
     const page = await store.search(created.projectDirectory, {
@@ -122,10 +115,7 @@ describe("LongProjectStore resumable search", () => {
     const body = created.book.workspaceIndex.chapters[0]!.body;
     await store.writeDocument(created.projectDirectory, {
       fileId: body.id,
-      content: "hit ".repeat(250),
-      expectedFileRevision: body.revision,
-      expectedWorkspaceRevision: 0,
-      expectedProjectRevision: 0
+      content: "hit ".repeat(250)
     });
 
     const offsets: number[] = [];
@@ -150,7 +140,7 @@ describe("LongProjectStore resumable search", () => {
     );
   });
 
-  it("rejects a resume cursor after its current file changes", async () => {
+  it("resumes from its character offset after the current file changes", async () => {
     const root = await temporaryRoot("deepwrite-long-stale-search-");
     const store = new LongProjectStore({ now: () => FIXED_NOW });
     const created = await store.createBook(root, {
@@ -159,12 +149,9 @@ describe("LongProjectStore resumable search", () => {
       genre: "其他"
     });
     const body = created.book.workspaceIndex.chapters[0]!.body;
-    const written = await store.writeDocument(created.projectDirectory, {
+    await store.writeDocument(created.projectDirectory, {
       fileId: body.id,
-      content: "hit hit",
-      expectedFileRevision: body.revision,
-      expectedWorkspaceRevision: 0,
-      expectedProjectRevision: 0
+      content: "hit hit"
     });
     const firstPage = await store.search(created.projectDirectory, {
       query: "hit",
@@ -175,10 +162,7 @@ describe("LongProjectStore resumable search", () => {
 
     await store.writeDocument(created.projectDirectory, {
       fileId: body.id,
-      content: "hit changed",
-      expectedFileRevision: written.fileRevision,
-      expectedWorkspaceRevision: written.workspaceRevision,
-      expectedProjectRevision: written.projectRevision
+      content: "hit changed"
     });
 
     await expect(
@@ -188,12 +172,12 @@ describe("LongProjectStore resumable search", () => {
         maxResults: 1,
         resume: firstPage.nextResume!
       })
-    ).rejects.toThrow(/文件已发生变化/u);
+    ).resolves.toMatchObject({ matches: [] });
   });
 });
 
 describe("LongWorkspaceService opaque search cursor", () => {
-  it("paginates every hit in one file and binds the cursor to its query/revision", async () => {
+  it("paginates every hit in one file and binds the cursor to its query", async () => {
     const root = await temporaryRoot("deepwrite-long-service-search-");
     const service = new LongWorkspaceService({
       userDataPath: join(root, "user-data"),
@@ -204,19 +188,10 @@ describe("LongWorkspaceService opaque search cursor", () => {
       genre: "其他"
     });
     const chapter = created.book.workspaceIndex.chapters[0]!;
-    const initial = await service.readDocument({
-      bookId: created.book.id,
-      fileId: chapter.body.id,
-      offset: 0,
-      maxCharacters: 10
-    });
     await service.writeDocument({
       bookId: created.book.id,
       fileId: chapter.body.id,
-      content: "needle ".repeat(235),
-      baseRevision: initial.file.revision,
-      baseWorkspaceRevision: initial.workspaceRevision,
-      baseProjectRevision: initial.projectRevision
+      content: "needle ".repeat(235)
     });
 
     const offsets: number[] = [];
@@ -234,7 +209,7 @@ describe("LongWorkspaceService opaque search cursor", () => {
       offsets.push(...page.hits.map(({ start }) => start));
       cursor = page.nextCursor ?? undefined;
       firstCursor ??= cursor;
-      if (cursor) expect(cursor).toMatch(/^v2\.[A-Za-z0-9_-]+$/u);
+      if (cursor) expect(cursor).toMatch(/^v1\.[A-Za-z0-9_-]+$/u);
     } while (cursor);
 
     expect(offsets).toHaveLength(235);
@@ -253,19 +228,10 @@ describe("LongWorkspaceService opaque search cursor", () => {
       })
     ).rejects.toThrow(/游标/u);
 
-    const latestBody = await service.readDocument({
-      bookId: created.book.id,
-      fileId: chapter.body.id,
-      offset: 0,
-      maxCharacters: 10
-    });
     await service.writeDocument({
       bookId: created.book.id,
       fileId: chapter.body.id,
-      content: "结构版本发生变化",
-      baseRevision: latestBody.file.revision,
-      baseWorkspaceRevision: latestBody.workspaceRevision,
-      baseProjectRevision: latestBody.projectRevision
+      content: "内容发生变化"
     });
     await expect(
       service.search({
@@ -276,7 +242,7 @@ describe("LongWorkspaceService opaque search cursor", () => {
         limit: 10,
         maxSnippetCharacters: 80
       })
-    ).rejects.toThrow(/游标/u);
+    ).resolves.toMatchObject({ hits: [] });
   });
 
   it("resumes across more than 500 authorized files and finds a later hit", async () => {
@@ -351,31 +317,20 @@ describe("LongWorkspaceService opaque search cursor", () => {
     await service.applyOperations({
       bookId: created.book.id,
       batch: {
-        baseRevision: 0,
         updatedAt: FIXED_NOW,
         operations,
         documentWrites: []
-      },
-      baseProjectRevision: 0
+      }
     });
     const opened = await service.open({ bookId: created.book.id });
     const lastHistory =
       opened.book.workspaceIndex.chapters[0]!.characterContinuity.at(
         -1
       )!.history;
-    const initial = await service.readDocument({
-      bookId: created.book.id,
-      fileId: lastHistory.id,
-      offset: 0,
-      maxCharacters: 10
-    });
     await service.writeDocument({
       bookId: created.book.id,
       fileId: lastHistory.id,
-      content: "第 520 个角色文件中的 needle",
-      baseRevision: initial.file.revision,
-      baseWorkspaceRevision: initial.workspaceRevision,
-      baseProjectRevision: initial.projectRevision
+      content: "第 520 个角色文件中的 needle"
     });
 
     let cursor: string | undefined;

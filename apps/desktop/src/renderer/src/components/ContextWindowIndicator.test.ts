@@ -3,16 +3,18 @@ import { describe, expect, it } from "vitest";
 import rendererStyles from "virtual:deepwrite-renderer-styles";
 import conversationSource from "./AgentConversation.vue?raw";
 import composerSource from "./ConversationComposer.vue?raw";
+import thinkingSelectSource from "./ConversationThinkingSelect.vue?raw";
 import indicatorSource from "./ContextWindowIndicator.vue?raw";
 import chatAssistantComposerSource from "../features/chat-assistant/ChatAssistantComposer.vue?raw";
 
 describe("ContextWindowIndicator", () => {
   it("places the indicator after thinking and before temperature", () => {
-    const thinking = composerSource.indexOf('accessible-label="选择思考等级"');
+    const thinking = composerSource.indexOf("<ConversationThinkingSelect");
     const indicator = composerSource.indexOf("<ContextWindowIndicator");
     const temperature = composerSource.indexOf('accessible-label="选择温度"');
 
     expect(thinking).toBeGreaterThan(-1);
+    expect(thinkingSelectSource).toContain('accessible-label="选择思考等级"');
     expect(indicator).toBeGreaterThan(thinking);
     expect(temperature).toBeGreaterThan(indicator);
   });
@@ -20,6 +22,9 @@ describe("ContextWindowIndicator", () => {
   it("is limited to the shared creative composer", () => {
     expect(conversationSource).toContain("<ConversationComposer");
     expect(composerSource).toContain("<ContextWindowIndicator");
+    expect(composerSource).toContain(
+      'v-if="settingsStore.generalSettings.showContextUsage"'
+    );
     expect(chatAssistantComposerSource).not.toContain("ContextWindowIndicator");
   });
 
@@ -39,6 +44,9 @@ describe("ContextWindowIndicator", () => {
     expect(rendererStyles).toContain("var(--text-primary");
     expect(rendererStyles).toContain("var(--accent");
     expect(rendererStyles).toContain("flex: 0 0 auto;");
+    expect(rendererStyles).toContain("width: 14px;");
+    expect(rendererStyles).toContain("fill: none;");
+    expect(rendererStyles).not.toContain("stroke-dasharray: 2 3;");
     expect(rendererStyles).toContain("prefers-reduced-motion: reduce");
   });
 
@@ -48,5 +56,6 @@ describe("ContextWindowIndicator", () => {
     expect(indicatorSource).toContain("上下文上限不可用");
     expect(indicatorSource).toContain("tokens`");
     expect(indicatorSource).toContain(':stroke-dashoffset="dashOffset"');
+    expect(indicatorSource).toContain('<svg viewBox="0 0 16 16"');
   });
 });

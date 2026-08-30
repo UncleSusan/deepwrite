@@ -387,6 +387,16 @@ export function useLazyLongStructureTransactionsCoordinator(
     );
   }
 
+  function previewActiveLongStructureMutation(
+    ...args: Parameters<Coordinator["previewActiveLongStructureMutation"]>
+  ): ReturnType<Coordinator["previewActiveLongStructureMutation"]> {
+    return invoke(
+      (loaded) => loaded.previewActiveLongStructureMutation(...args),
+      captureMutationTargetGuard(),
+      () => args[1]()
+    );
+  }
+
   function handleLongWorldbuildingSync(
     ...args: Parameters<Coordinator["handleLongWorldbuildingSync"]>
   ): ReturnType<Coordinator["handleLongWorldbuildingSync"]> {
@@ -404,6 +414,16 @@ export function useLazyLongStructureTransactionsCoordinator(
       (loaded) => loaded.deleteActiveLongNavigationStructure(...args),
       captureActiveBookGuard(),
       () => args[1](false)
+    );
+  }
+
+  function previewActiveLongNavigationStructure(
+    ...args: Parameters<Coordinator["previewActiveLongNavigationStructure"]>
+  ): ReturnType<Coordinator["previewActiveLongNavigationStructure"]> {
+    return invoke(
+      (loaded) => loaded.previewActiveLongNavigationStructure(...args),
+      captureActiveBookGuard(),
+      () => args[1]()
     );
   }
 
@@ -545,7 +565,9 @@ export function useLazyLongStructureTransactionsCoordinator(
     createLongChapterCard,
     handleLongStructureMutation,
     handleActiveLongStructureMutation,
+    previewActiveLongStructureMutation,
     handleLongWorldbuildingSync,
+    previewActiveLongNavigationStructure,
     deleteActiveLongNavigationStructure,
     createLongCharacter,
     closeLongStructureDialog,

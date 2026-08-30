@@ -36,13 +36,11 @@ function fakeOpened(
 ): OpenLongProject {
   const index = {
     schemaVersion: 1 as const,
-    revision: 0,
     bookId: id,
     updatedAt: now,
     bookLine: {
       id: "file_long-book-line",
       path: "long/plot/book-line.md",
-      revision: "v1:0:00000000",
       updatedAt: now
     },
     featureSettings: {
@@ -104,16 +102,13 @@ function fakeOpened(
   };
   const book: LongBook = {
     ...common,
-    projectRevision: 0,
     workspaceIndex: index
   };
   const summary: LongBookSummary = {
     ...common,
     kind: "deepwrite.long-book",
-    projectRevision: 0,
     navigation: {
       schemaVersion: 1,
-      revision: 0,
       bookId: id,
       updatedAt: now,
       counts: {
@@ -170,7 +165,6 @@ async function createFixture(
       const inspected = await this.openBook(directory);
       return {
         bookId: inspected.summary.id,
-        projectRevision: inspected.summary.projectRevision,
         updatedAt: inspected.summary.updatedAt
       };
     }
@@ -233,7 +227,6 @@ describe("LongProjectCatalog", () => {
         const opened = await this.openBook(directory);
         return {
           bookId: opened.summary.id,
-          projectRevision: opened.summary.projectRevision,
           updatedAt: opened.summary.updatedAt
         };
       }
@@ -457,7 +450,6 @@ describe("LongProjectCatalog", () => {
           inspectCalls += 1;
           return {
             bookId: opened.summary.id,
-            projectRevision: opened.summary.projectRevision,
             updatedAt: opened.summary.updatedAt
           };
         }
@@ -468,7 +460,6 @@ describe("LongProjectCatalog", () => {
       catalog.registryPath,
       `${JSON.stringify({
         schemaVersion: 2,
-        revision: 1,
         updatedAt: now,
         projects: [
           {
@@ -519,6 +510,7 @@ describe("LongProjectCatalog", () => {
     };
     expect(migrated.schemaVersion).toBe(2);
     expect(migrated.projects[0]?.summary).toBeDefined();
+    expect(migrated).not.toHaveProperty("revision");
   });
 
   it("unregisters without deleting the project folder", async () => {

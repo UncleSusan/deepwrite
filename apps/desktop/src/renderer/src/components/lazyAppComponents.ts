@@ -8,6 +8,9 @@ export const AgentTeamSettingsPanel = defineAsyncComponent(
 export const LearningImitationDialog = defineAsyncComponent(
   () => import("./LearningImitationDialog.vue")
 );
+export const LongBookAnalysisPage = defineAsyncComponent(
+  () => import("../extras/long-book-analysis/LongBookAnalysisPage.vue")
+);
 export const LongWorkspaceModule = defineAsyncComponent(
   () => import("./LongWorkspaceModule.vue")
 );
@@ -110,9 +113,6 @@ export const LongContinuationImportDialog = defineAsyncComponent(
 );
 export const LongLegacySyncDialog = defineAsyncComponent(
   () => import("./LongLegacySyncDialog.vue")
-);
-export const LongRollbackDialog = defineAsyncComponent(
-  () => import("./LongRollbackDialog.vue")
 );
 export const LongStructureDialog = defineAsyncComponent(
   () => import("./LongStructureDialog.vue")

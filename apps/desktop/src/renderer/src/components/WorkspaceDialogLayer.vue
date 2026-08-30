@@ -25,7 +25,6 @@ import {
   LongBookRenameDialog,
   LongContinuationImportDialog,
   LongLegacySyncDialog,
-  LongRollbackDialog,
   LongStructureDialog,
   PlotStructureDialog,
   SaveConflictDialog,
@@ -162,17 +161,6 @@ const emit = defineEmits<WorkspaceDialogLayerEmits>();
       @confirm="emit('confirmLegacySync', $event)"
     />
 
-    <LongRollbackDialog
-      v-else-if="module.kind === 'long-rollback'"
-      open
-      :book-title="module.bookTitle"
-      :chapter-title="module.chapterTitle"
-      :commit-sequence="module.commitSequence"
-      :pending="module.pending"
-      @close="emit('closeLongRollback')"
-      @confirm="emit('confirmLongRollback')"
-    />
-
     <LongStructureDialog
       v-else-if="module.kind === 'long-structure'"
       open
@@ -184,6 +172,10 @@ const emit = defineEmits<WorkspaceDialogLayerEmits>();
       :snapshot="module.snapshot"
       :pending="module.pending"
       @close="emit('closeLongStructure')"
+      @preview-mutation="
+        (batch, completion) =>
+          emit('previewLongStructureMutation', batch, completion)
+      "
       @mutation="
         (batch, completion) => emit('longStructureMutation', batch, completion)
       "
@@ -238,6 +230,7 @@ const emit = defineEmits<WorkspaceDialogLayerEmits>();
       v-else-if="module.kind === 'delete-long-draft'"
       open
       :section-title="module.sectionTitle"
+      :description="module.description"
       :pending="module.pending"
       @close="emit('closeDeleteLongDraft')"
       @confirm="emit('confirmDeleteLongDraft')"
@@ -258,6 +251,7 @@ const emit = defineEmits<WorkspaceDialogLayerEmits>();
     <CreateLongVolumeDialog
       v-else-if="module.kind === 'create-long-volume'"
       open
+      :source="module.source"
       :pending="module.pending"
       @close="emit('closeCreateLongVolume')"
       @submit="emit('submitCreateLongVolume', $event)"

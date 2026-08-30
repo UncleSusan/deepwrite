@@ -26,7 +26,6 @@ import {
   longWorldbuildingFileId
 } from "@deepwrite/contracts";
 import { LongWorkspaceService } from "./long-workspace-service";
-import { createLongFileRevision } from "./long-project-store";
 
 describe("LongWorkspaceService", () => {
   it("renames a long book and refreshes its catalog summary", async () => {
@@ -43,7 +42,6 @@ describe("LongWorkspaceService", () => {
     });
     const renamed = await service.renameBook({
       bookId: created.book.id,
-      expectedProjectRevision: created.summary.projectRevision,
       title: "新名称"
     });
 
@@ -65,7 +63,6 @@ describe("LongWorkspaceService", () => {
     });
     const updated = await service.updateBindings({
       bookId: created.book.id,
-      expectedProjectRevision: created.summary.projectRevision,
       linkedMaterialIdsByKind: {
         plot: ["material-long-plot", "missing-material"]
       },
@@ -89,7 +86,7 @@ describe("LongWorkspaceService", () => {
     });
   });
 
-  it("creates, lists, opens, pages, searches and CAS-writes by book id", async () => {
+  it("creates, lists, opens, pages, searches and directly writes by book id", async () => {
     const root = await realpath(
       await mkdtemp(join(tmpdir(), "deepwrite-long-service-"))
     );
@@ -105,21 +102,11 @@ describe("LongWorkspaceService", () => {
     const opened = await service.open({ bookId: created.book.id });
     const chapter = opened.book.workspaceIndex.chapters[0]!;
 
-    const initial = await service.readDocument({
+    await service.writeDocument({
       bookId: opened.book.id,
       fileId: chapter.body.id,
-      offset: 0,
-      maxCharacters: 32
+      content: "她在雨夜收到一封无法烧毁的来信。"
     });
-    const written = await service.writeDocument({
-      bookId: opened.book.id,
-      fileId: chapter.body.id,
-      content: "她在雨夜收到一封无法烧毁的来信。",
-      baseRevision: initial.file.revision,
-      baseWorkspaceRevision: initial.workspaceRevision,
-      baseProjectRevision: initial.projectRevision
-    });
-    expect(written.projectRevision).toBe(1);
     expect(
       (
         await service.search({
@@ -202,9 +189,7 @@ describe("LongWorkspaceService", () => {
     );
     await service.applyOperations({
       bookId: created.book.id,
-      baseProjectRevision: created.summary.projectRevision,
       batch: {
-        baseRevision: created.book.workspaceIndex.revision,
         updatedAt,
         operations: [
           {
@@ -262,19 +247,10 @@ describe("LongWorkspaceService", () => {
       [history.id, "第一章：沈砚取得铜铃。"]
     ]);
     for (const file of continuityFiles) {
-      const before = await service.readDocument({
-        bookId: created.book.id,
-        fileId: file.id,
-        offset: 0,
-        maxCharacters: 100
-      });
       await service.writeDocument({
         bookId: created.book.id,
         fileId: file.id,
-        content: contents.get(file.id)!,
-        baseRevision: before.file.revision,
-        baseWorkspaceRevision: before.workspaceRevision,
-        baseProjectRevision: before.projectRevision
+        content: contents.get(file.id)!
       });
     }
 
@@ -320,20 +296,10 @@ describe("LongWorkspaceService", () => {
       genre: "悬疑"
     });
     const chapter = created.book.workspaceIndex.chapters[0]!;
-    const initial = await service.readDocument({
-      bookId: created.book.id,
-      fileId: chapter.card.id,
-      offset: 0,
-      maxCharacters: 100
-    });
-
     await service.writeDocument({
       bookId: created.book.id,
       fileId: chapter.card.id,
-      content: "雨夜来信揭开失踪案的第一条线索。",
-      baseRevision: initial.file.revision,
-      baseWorkspaceRevision: initial.workspaceRevision,
-      baseProjectRevision: initial.projectRevision
+      content: "雨夜来信揭开失踪案的第一条线索。"
     });
 
     await expect(
@@ -375,7 +341,6 @@ describe("LongWorkspaceService", () => {
     });
     const projectDirectory = join(root, created.book.id);
     const indexPath = join(projectDirectory, "long", "index.json");
-    const manifestPath = join(projectDirectory, "deepwrite.json");
     const rawIndex = JSON.parse(await readFile(indexPath, "utf8")) as {
       plot: { chapterCards: Array<Record<string, unknown>> };
       chapters: Array<Record<string, unknown>>;
@@ -393,15 +358,6 @@ describe("LongWorkspaceService", () => {
     await unlink(join(projectDirectory, cardFile.path));
     const indexContent = `${JSON.stringify(rawIndex, null, 2)}\n`;
     await writeFile(indexPath, indexContent, "utf8");
-    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
-      workspaceIndexFile: { revision: string };
-    };
-    manifest.workspaceIndexFile.revision = createLongFileRevision(indexContent);
-    await writeFile(
-      manifestPath,
-      `${JSON.stringify(manifest, null, 2)}\n`,
-      "utf8"
-    );
 
     const restarted = new LongWorkspaceService({
       userDataPath,
@@ -437,26 +393,16 @@ describe("LongWorkspaceService", () => {
       genre: "悬疑"
     });
     const chapter = created.book.workspaceIndex.chapters[0]!;
-    const initial = await service.readDocument({
-      bookId: created.book.id,
-      fileId: chapter.body.id,
-      offset: 0,
-      maxCharacters: 100
-    });
     service.catalog.updateSummary = async () => {
       throw new Error("simulated cache outage");
     };
 
-    const written = await service.writeDocument({
+    await service.writeDocument({
       bookId: created.book.id,
       fileId: chapter.body.id,
-      content: "权威工程写入成功，目录摘要暂时失败。",
-      baseRevision: initial.file.revision,
-      baseWorkspaceRevision: initial.workspaceRevision,
-      baseProjectRevision: initial.projectRevision
+      content: "权威工程写入成功，目录摘要暂时失败。"
     });
 
-    expect(written.projectRevision).toBe(1);
     await expect(
       service.readDocument({
         bookId: created.book.id,
@@ -490,7 +436,6 @@ describe("LongWorkspaceService", () => {
       genre: "其他"
     });
     const batch = {
-      baseRevision: created.book.workspaceIndex.revision,
       updatedAt: "2026-07-26T11:00:00.000Z",
       operations: [
         {
@@ -534,10 +479,11 @@ describe("LongWorkspaceService", () => {
     expect(preview.preview.impact.updatedEntityIds).toHaveLength(1);
     const applied = await service.applyOperations({
       bookId: created.book.id,
-      batch,
-      baseProjectRevision: 0
+      batch
     });
-    expect(applied.projectRevision).toBe(1);
+    expect(applied.operationResult.snapshot.plot.volumes[0]?.title).toBe(
+      "新卷名"
+    );
     const reopened = await service.open({ bookId: created.book.id });
     expect(reopened.book.workspaceIndex.plot.volumes[0]?.title).toBe("新卷名");
     const weather = reopened.book.workspaceIndex.worldbuilding.find(
@@ -590,9 +536,7 @@ describe("LongWorkspaceService", () => {
     const updatedAt = "2026-07-26T10:00:00.000Z";
     const applied = await service.applyOperations({
       bookId: created.book.id,
-      baseProjectRevision: created.summary.projectRevision,
       batch: {
-        baseRevision: created.book.workspaceIndex.revision,
         updatedAt,
         operations: [
           {
@@ -627,14 +571,10 @@ describe("LongWorkspaceService", () => {
     expect(empty.file.id).toBe(longStoryPlotBodyFileId(storyPlotId));
     expect(empty.content).toBe("");
 
-    const opened = await service.open({ bookId: created.book.id });
     await service.writeDocument({
       bookId: created.book.id,
       fileId: longStoryPlotBodyFileId(storyPlotId),
-      content: "世界突然变得透明。",
-      baseRevision: empty.file.revision,
-      baseWorkspaceRevision: opened.book.workspaceIndex.revision,
-      baseProjectRevision: opened.summary.projectRevision
+      content: "世界突然变得透明。"
     });
     await expect(
       service.readDocument({

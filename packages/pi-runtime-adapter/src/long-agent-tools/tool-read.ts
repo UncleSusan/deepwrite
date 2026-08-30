@@ -39,7 +39,7 @@ export function buildReadTool(ctx: LongToolContext): AgentTool {
       chapter_id: Type.Optional(chapterContextIdParameter)
     }),
     execute: async (_toolCallId, params, signal) => {
-      const { index, projectRevision } = await loadIndex(signal);
+      const index = await loadIndex(signal);
       const target = resolveLongTarget(index, {
         id: params.id,
         ...(params.document ? { document: params.document } : {}),
@@ -74,17 +74,10 @@ export function buildReadTool(ctx: LongToolContext): AgentTool {
           ].join("\n")
         );
       }
-      const live = await readWholeDocument(
-        target.file,
-        index.revision,
-        projectRevision,
-        signal
-      );
+      const live = await readWholeDocument(target.file, signal);
       fullyReadDocuments.set(live.file.id, {
         content: live.content,
-        file: live.file,
-        workspaceRevision: index.revision,
-        projectRevision
+        file: live.file
       });
       const publicId = target.publicId ?? target.id;
       const publicDocument = target.publicDocument ?? target.document;

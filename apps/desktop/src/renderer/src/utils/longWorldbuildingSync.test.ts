@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  EMPTY_LONG_MARKDOWN_REVISION,
   LONG_BOOK_LINE_FILE_ID,
   LONG_CHARACTER_OVERVIEW_FILE_ID,
   LONG_CHARACTER_OVERVIEW_PATH,
@@ -19,7 +18,6 @@ import {
 } from "@deepwrite/contracts";
 import {
   buildLongWorldbuildingSyncBatch,
-  createLongMarkdownFileRevision,
   filterPreservedWorldbuildingCategoryIds,
   filterSyncableWorldbuildingCategories
 } from "./longWorldbuildingSync";
@@ -28,13 +26,11 @@ const updatedAt = "2026-08-01T00:00:00.000Z";
 
 function emptyIndex(
   bookId: string,
-  worldbuilding: LongWorkspaceIndexSnapshot["worldbuilding"],
-  revision = 3
+  worldbuilding: LongWorkspaceIndexSnapshot["worldbuilding"]
 ): LongWorkspaceIndexSnapshot {
   return LongWorkspaceIndexSnapshotSchema.parse({
     schemaVersion: 1,
     bookId,
-    revision,
     updatedAt,
     bookLine: createEmptyLongMarkdownFileReference(
       LONG_BOOK_LINE_FILE_ID,
@@ -138,54 +134,47 @@ describe("longWorldbuildingSync", () => {
         )
       }
     ]);
-    const source = emptyIndex(
-      "longbook_source",
-      [
-        {
-          id: "world_rules",
-          title: "规则",
-          order: 1,
-          format: "text",
-          contentAuthority: "markdown",
-          file: {
-            id: longWorldbuildingFileId("world_rules"),
-            path: longWorldbuildingContentPath("world_rules"),
-            revision: EMPTY_LONG_MARKDOWN_REVISION,
-            updatedAt
-          }
-        },
-        {
-          id: "world_factions",
-          title: "势力",
-          order: 2,
-          format: "list",
-          contentAuthority: "files",
-          overview: {
-            id: longWorldbuildingOverviewFileId("world_factions"),
-            path: longWorldbuildingOverviewContentPath("world_factions"),
-            revision: EMPTY_LONG_MARKDOWN_REVISION,
-            updatedAt
-          },
-          items: [
-            {
-              id: "worlditem_one",
-              title: "归墟会",
-              order: 1,
-              file: {
-                id: longWorldbuildingItemFileId("worlditem_one"),
-                path: longWorldbuildingItemContentPath(
-                  "world_factions",
-                  "worlditem_one"
-                ),
-                revision: EMPTY_LONG_MARKDOWN_REVISION,
-                updatedAt
-              }
-            }
-          ]
+    const source = emptyIndex("longbook_source", [
+      {
+        id: "world_rules",
+        title: "规则",
+        order: 1,
+        format: "text",
+        contentAuthority: "markdown",
+        file: {
+          id: longWorldbuildingFileId("world_rules"),
+          path: longWorldbuildingContentPath("world_rules"),
+          updatedAt
         }
-      ],
-      9
-    );
+      },
+      {
+        id: "world_factions",
+        title: "势力",
+        order: 2,
+        format: "list",
+        contentAuthority: "files",
+        overview: {
+          id: longWorldbuildingOverviewFileId("world_factions"),
+          path: longWorldbuildingOverviewContentPath("world_factions"),
+          updatedAt
+        },
+        items: [
+          {
+            id: "worlditem_one",
+            title: "归墟会",
+            order: 1,
+            file: {
+              id: longWorldbuildingItemFileId("worlditem_one"),
+              path: longWorldbuildingItemContentPath(
+                "world_factions",
+                "worlditem_one"
+              ),
+              updatedAt
+            }
+          }
+        ]
+      }
+    ]);
 
     const contents = {
       [longWorldbuildingFileId("world_rules")]: "# 规则正文\n",
@@ -199,8 +188,7 @@ describe("longWorldbuildingSync", () => {
       source,
       contents,
       updatedAt,
-      createId: (prefix) => `${prefix}_sync${(sequence += 1)}`,
-      createFileRevision: createLongMarkdownFileRevision
+      createId: (prefix) => `${prefix}_sync${(sequence += 1)}`
     });
 
     expect(plan.deletedCategoryCount).toBe(1);
@@ -208,8 +196,7 @@ describe("longWorldbuildingSync", () => {
     expect(plan.writtenFileCount).toBe(2);
     expect(plan.batch.operations[0]).toMatchObject({
       type: "worldbuilding.delete",
-      id: "world_old",
-      cascade: true
+      id: "world_old"
     });
     expect(
       plan.batch.operations.filter(
@@ -231,7 +218,7 @@ describe("longWorldbuildingSync", () => {
     const preview = previewLongWorkspaceOperations(target, plan.batch);
     const result = applyLongWorkspaceOperations(target, {
       ...plan.batch,
-      expectedImpact: preview.impact
+      expectedImpact: preview.confirmation
     });
     expect(result.impact.deletedEntityIds).toContain("world_old");
     expect(result.impact.createdEntityIds).toEqual(

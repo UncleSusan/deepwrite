@@ -32,6 +32,7 @@ const props = defineProps<{
   sections: ResourceTreeSection[];
   selectedId: string;
   imitationRunning?: boolean;
+  longBookAnalysisRunning?: boolean;
   libraryEntryClipboardDomain?: "skill" | "material" | undefined;
   activePrimaryFeature:
     PrimaryFeatureId | "skill-marketplace" | "cloud-backup" | undefined;
@@ -292,7 +293,12 @@ const resourceDomainsByNodeId = computed(
     )
 );
 const moreFeatures: Array<{
-  id: "imitation" | "skill-marketplace" | "cloud-backup" | "runtime";
+  id:
+    | "imitation"
+    | "long-book-analysis"
+    | "skill-marketplace"
+    | "cloud-backup"
+    | "runtime";
   label: string;
   description: string;
   icon: IconName;
@@ -302,6 +308,12 @@ const moreFeatures: Array<{
     label: "短篇学习仿写",
     description: "学习范文并生成同类短篇",
     icon: "wand"
+  },
+  {
+    id: "long-book-analysis",
+    label: "长篇拆书分析",
+    description: "分批提炼长篇剧情、人物与文风",
+    icon: "book"
   },
   {
     id: "skill-marketplace",
@@ -324,10 +336,19 @@ const moreFeatures: Array<{
 ];
 
 function activateMoreFeature(
-  id: "imitation" | "skill-marketplace" | "cloud-backup" | "runtime"
+  id:
+    | "imitation"
+    | "long-book-analysis"
+    | "skill-marketplace"
+    | "cloud-backup"
+    | "runtime"
 ): void {
   if (id === "imitation") {
     emit("openDialog", "imitation");
+    return;
+  }
+  if (id === "long-book-analysis") {
+    emit("openDialog", "long-book-analysis");
     return;
   }
   if (id === "skill-marketplace") {
@@ -500,9 +521,17 @@ watch(
               <small>{{ feature.description }}</small>
             </span>
             <span
-              v-if="feature.id === 'imitation' && props.imitationRunning"
+              v-if="
+                (feature.id === 'imitation' && props.imitationRunning) ||
+                (feature.id === 'long-book-analysis' &&
+                  props.longBookAnalysisRunning)
+              "
               class="nav-background-status"
-              title="学习仿写正在后台运行"
+              :title="
+                feature.id === 'imitation'
+                  ? '学习仿写正在后台运行'
+                  : '长篇拆书正在后台运行'
+              "
             >
               <i aria-hidden="true" />后台中
             </span>

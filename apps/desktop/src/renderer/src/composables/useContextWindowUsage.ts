@@ -33,6 +33,20 @@ function capacityKey(model: ModelConfig | undefined): string {
   ].join("\u0000");
 }
 
+function toCapacityModelInput(model: ModelConfig): ModelConfigInput {
+  const { hasApiKey, ...identity } = model;
+  void hasApiKey;
+  return {
+    ...identity,
+    thinkingLevelOptions: [...model.thinkingLevelOptions],
+    temperatureOptions: [
+      model.temperatureOptions[0],
+      model.temperatureOptions[1],
+      model.temperatureOptions[2]
+    ]
+  };
+}
+
 function defaultCapacityResolver(
   model: ModelConfigInput
 ): Promise<ModelCapacityResult> {
@@ -71,7 +85,7 @@ export function useContextWindowUsage(options: UseContextWindowUsageOptions) {
     capacityStatus.value = "resolving";
     try {
       const result = await (options.resolveCapacity ?? defaultCapacityResolver)(
-        model
+        toCapacityModelInput(model)
       );
       if (sequence !== resolveSequence) return;
       if (

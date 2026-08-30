@@ -71,7 +71,7 @@ export function buildLedgerCommitTool(ctx: LongToolContext): AgentTool {
     }),
     executionMode: "sequential",
     execute: async (_toolCallId, params, signal) => {
-      const { index, projectRevision, activeChapterCardId, chapter } =
+      const { index, activeChapterCardId, chapter } =
         await loadActiveChapterMutationContext(signal, params.chapter_card_id);
       if (chapter.bodyStatus !== "written") {
         throw new Error(
@@ -114,12 +114,7 @@ export function buildLedgerCommitTool(ctx: LongToolContext): AgentTool {
         );
       }
 
-      const body = await readWholeDocument(
-        chapter.body,
-        index.revision,
-        projectRevision,
-        signal
-      );
+      const body = await readWholeDocument(chapter.body, signal);
       const targets: Array<{
         role: LongContinuityFileRole;
         characterId: string | null;
@@ -174,12 +169,7 @@ export function buildLedgerCommitTool(ctx: LongToolContext): AgentTool {
         file: LongWorkspaceFileReference;
       }> = [];
       for (const target of targets) {
-        const live = await readWholeDocument(
-          target.file,
-          index.revision,
-          projectRevision,
-          signal
-        );
+        const live = await readWholeDocument(target.file, signal);
         continuityFiles.push({
           role: target.role,
           characterId: target.characterId,
@@ -210,20 +200,13 @@ export function buildLedgerCommitTool(ctx: LongToolContext): AgentTool {
         mode: "text_files",
         bookId: workspace.bookId,
         chapterCardId: activeChapterCardId,
-        chapterFileRevisions: { body: body.file.revision },
-        continuityFileRevisions: continuityFiles.map(({ file }) => ({
-          fileId: file.id,
-          revision: file.revision
-        })),
         foreshadowingBeatDecisions: Object.fromEntries(
           params.foreshadowing_touchpoint_decisions.map((decision) => [
             decision.beat_id,
             { status: decision.status, note: decision.evidence.trim() }
           ])
         ),
-        commitMessage: summary,
-        baseWorkspaceRevision: index.revision,
-        baseProjectRevision: projectRevision
+        commitMessage: summary
       });
       const title =
         index.plot.chapterCards.find(({ id }) => id === activeChapterCardId)

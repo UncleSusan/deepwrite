@@ -23,7 +23,6 @@ import {
 } from "./useWorkspaceResourceTreeCoordinator";
 
 const NOW = "2026-08-14T08:00:00.000Z";
-const REVISION = "v1:0:00000000";
 
 function resourceSections(
   creationNodes: ResourceTreeNode[] = []
@@ -94,10 +93,8 @@ function bookSummary(id = "longbook_tree"): LongBookSummary {
     },
     createdAt: NOW,
     updatedAt: NOW,
-    projectRevision: 3,
     navigation: {
       schemaVersion: 1,
-      revision: 3,
       bookId: id,
       updatedAt: NOW,
       worldbuilding: [],
@@ -127,14 +124,12 @@ function workspaceIndex(
 ): LongWorkspaceIndexSnapshot {
   return LongWorkspaceIndexSnapshotSchema.parse({
     schemaVersion: 1,
-    revision: 3,
     bookId: "longbook_tree",
     updatedAt: NOW,
     featureSettings,
     bookLine: {
       id: LONG_BOOK_LINE_FILE_ID,
       path: "long/plot/book-line.md",
-      revision: REVISION,
       updatedAt: NOW
     },
     worldbuilding: [],

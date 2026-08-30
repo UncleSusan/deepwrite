@@ -18,6 +18,9 @@ function createDependencies(order: string[] = []) {
     learningImitation: {
       handleEvent: vi.fn(() => order.push("learning"))
     },
+    longBookAnalysis: {
+      handleEvent: vi.fn(() => order.push("long-book-analysis"))
+    },
     subagentAuthoring: {
       handleEvent: vi.fn(() => order.push("subagent"))
     },
@@ -65,6 +68,7 @@ describe("workspace system event routes", () => {
 
     expect(order).toEqual([
       "learning",
+      "long-book-analysis",
       "subagent",
       "long",
       "conversation",

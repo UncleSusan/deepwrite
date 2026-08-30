@@ -14,8 +14,7 @@ import {
 import { computed, shallowRef, type ComputedRef, type Ref } from "vue";
 import type {
   LongWorkspaceFileContext,
-  LongWorkspaceRefreshStatus,
-  LongWorkspaceRevisionSyncRequirement
+  LongWorkspaceRefreshStatus
 } from "../stores/longWorkspaceStore";
 import type { LongWorkspaceSelection } from "../types/longWorkspace";
 import { nextWritableLongChapterId } from "../types/longWorkspace";
@@ -27,22 +26,10 @@ import {
 } from "../utils/libraryAttachments";
 import { buildLongWorldbuildingDirectorySnapshot } from "../utils/longWorldbuildingAgentContext";
 
-type LongLedgerCommit = LongWorkspaceIndexSnapshot["ledger"]["commits"][number];
-
 type LongReadableAttachments = Pick<
   LibraryAttachmentBuildResult,
   "attachedSkills" | "attachedMaterials"
 >;
-
-interface LongConversationProposalStatus {
-  readonly status: string;
-}
-
-export interface LongWorkspacePresentationWorkflowPort {
-  readonly activeConversationProposalItems: Readonly<
-    Ref<readonly LongConversationProposalStatus[]>
-  >;
-}
 
 export interface LongWorkspacePresentationEditorPort {
   readonly selectedResourceId: Readonly<Ref<string>>;
@@ -68,12 +55,7 @@ export interface LongWorkspacePresentationCoordinatorOptions {
     fileContext: Readonly<Ref<LongWorkspaceFileContext | null>>;
     contextReady: Readonly<Ref<boolean>>;
     agentSettings: Readonly<Ref<LongAgentSettings>>;
-    rollbackCommitId: Readonly<Ref<string | null>>;
-    rollbackPending: Readonly<Ref<boolean>>;
     refreshStatus: Readonly<Ref<LongWorkspaceRefreshStatus | null>>;
-    revisionRequirement: Readonly<
-      Ref<LongWorkspaceRevisionSyncRequirement | null>
-    >;
     sendPreflightPending: Readonly<Ref<boolean>>;
     proposalApprovalPending: Readonly<Ref<boolean>>;
   };
@@ -103,9 +85,6 @@ export interface LongWorkspacePresentationCoordinator {
   activeLongChapterWriterEnabled: ComputedRef<boolean>;
   activeLongAgentProfile: ComputedRef<LongAgentProfile | null>;
   activeLongRuntimeContext: ComputedRef<LongWorkspaceRuntimeContext | null>;
-  latestLongLedgerCommit: ComputedRef<LongLedgerCommit | undefined>;
-  longRollbackCommit: ComputedRef<LongLedgerCommit | undefined>;
-  longRollbackChapterTitle: ComputedRef<string>;
   activeLongAgentRunScope: ComputedRef<string | null>;
   longEditorLocked: ComputedRef<boolean>;
   longEditorLockedReason: ComputedRef<string>;
@@ -134,7 +113,6 @@ export interface LongWorkspacePresentationCoordinator {
   agentRunScopeIsBusy(scope: string): boolean;
   agentRunScopeHasPendingEditReview(scope: string): boolean;
   documentHasWriteBarrier(document: WorkspaceDocument): boolean;
-  bindWorkflow(port: LongWorkspacePresentationWorkflowPort): void;
   bindEditor(port: LongWorkspacePresentationEditorPort): void;
 }
 
@@ -145,28 +123,15 @@ interface ConversationScopeState {
 
 /**
  * Owns long-workspace display derivations and the shared editor write barrier.
- * Workflow and generic editor sources bind in two phases because they are
- * assembled later in WorkspaceShell. Before binding, their presentation is
- * deliberately conservative and side-effect free.
+ * Generic editor sources bind after this coordinator is assembled in
+ * WorkspaceShell.
  */
 export function useLongWorkspacePresentationCoordinator(
   options: LongWorkspacePresentationCoordinatorOptions
 ): LongWorkspacePresentationCoordinator {
-  const workflowPort = shallowRef<LongWorkspacePresentationWorkflowPort | null>(
-    null
-  );
   const editorPort = shallowRef<LongWorkspacePresentationEditorPort | null>(
     null
   );
-
-  function bindWorkflow(port: LongWorkspacePresentationWorkflowPort): void {
-    if (workflowPort.value && workflowPort.value !== port) {
-      throw new Error(
-        "Long workspace presentation workflow port is already bound."
-      );
-    }
-    workflowPort.value = port;
-  }
 
   function bindEditor(port: LongWorkspacePresentationEditorPort): void {
     if (editorPort.value && editorPort.value !== port) {
@@ -196,15 +161,6 @@ export function useLongWorkspacePresentationCoordinator(
         ? nextWritableLongChapterId(index)
         : undefined
     };
-  });
-
-  const chapterTitleByCardId = computed(() => {
-    const result = new Map<string, string>();
-    for (const chapter of options.long.activeBookSummary.value?.navigation
-      .chapterCards ?? []) {
-      result.set(chapter.id, chapter.title);
-    }
-    return result;
   });
 
   const activeLongChapterWriterEnabled = computed(() => {
@@ -386,15 +342,12 @@ export function useLongWorkspacePresentationCoordinator(
         activeAgentId: profile.id,
         ...(fileContext
           ? {
-              activeFileId: fileContext.fileId,
-              activeFileRevision: fileContext.fileRevision
+              activeFileId: fileContext.fileId
             }
           : {}),
         ...(selection?.chapterCardId
           ? { activeChapterCardId: selection.chapterCardId }
           : {}),
-        workspaceRevision: workspaceIndex.revision,
-        projectRevision: summary.projectRevision,
         navigation: summary.navigation,
         worldbuildingDirectory: buildLongWorldbuildingDirectorySnapshot(
           workspaceIndex.worldbuilding
@@ -402,32 +355,6 @@ export function useLongWorkspacePresentationCoordinator(
       };
     }
   );
-
-  const ledgerPresentation = computed(() => {
-    const byId = new Map<string, LongLedgerCommit>();
-    let latest: LongLedgerCommit | undefined;
-    for (const commit of options.long.workspaceIndex.value?.ledger.commits ??
-      []) {
-      byId.set(commit.id, commit);
-      if (!latest || commit.sequence > latest.sequence) latest = commit;
-    }
-    return { byId, latest };
-  });
-
-  const latestLongLedgerCommit = computed(
-    () => ledgerPresentation.value.latest
-  );
-  const longRollbackCommit = computed(() => {
-    const commitId = options.long.rollbackCommitId.value;
-    return commitId ? ledgerPresentation.value.byId.get(commitId) : undefined;
-  });
-  const longRollbackChapterTitle = computed(() => {
-    const chapterId = longRollbackCommit.value?.chapterCardId;
-    return (
-      (chapterId ? chapterTitleByCardId.value.get(chapterId) : undefined) ??
-      "对应章节"
-    );
-  });
 
   const conversationStateByScope = computed(() => {
     // Reading both refs is intentional: their Maps retain identity and the
@@ -477,32 +404,20 @@ export function useLongWorkspacePresentationCoordinator(
   const longEditorLocked = computed(() => {
     const scope = activeLongAgentRunScope.value;
     const workspaceId = scope;
-    const proposalItems =
-      workflowPort.value?.activeConversationProposalItems.value ?? [];
     return (
-      options.long.rollbackPending.value ||
       Boolean(options.long.refreshStatus.value?.pending) ||
-      options.long.revisionRequirement.value !== null ||
       options.long.sendPreflightPending.value ||
       options.long.proposalApprovalPending.value ||
       Boolean(
         workspaceId &&
         options.edits.acceptingWorkspaceIds.value.has(workspaceId)
-      ) ||
-      Boolean(scope && agentRunScopeHasWriteBarrier(scope)) ||
-      proposalItems.some(({ status }) => status !== "accepted")
+      )
     );
   });
 
   const longEditorLockedReason = computed(() => {
-    if (options.long.rollbackPending.value) {
-      return "正在回滚连续性账本并同步最新版本，编辑暂时锁定";
-    }
-    if (options.long.revisionRequirement.value) {
-      return "账本已回滚，正在等待最新版本同步，编辑暂时锁定";
-    }
     if (options.long.refreshStatus.value?.pending) {
-      return "正在同步长篇工作区最新版本，编辑暂时锁定";
+      return "正在同步长篇工作区，编辑暂时锁定";
     }
     if (options.long.sendPreflightPending.value) {
       return "正在保存并准备发送，编辑暂时锁定";
@@ -517,11 +432,7 @@ export function useLongWorkspacePresentationCoordinator(
     ) {
       return "正在应用长篇提案，编辑暂时锁定";
     }
-    const scope = activeLongAgentRunScope.value;
-    if (scope && agentRunScopeIsBusy(scope)) {
-      return "长篇智能体运行中 · 暂停编辑以防止版本冲突";
-    }
-    return "请先接受或拒绝待审阅变更，再继续编辑";
+    return "正在应用长篇修改，编辑暂时锁定";
   });
 
   const editorLocked = computed(() => {
@@ -582,9 +493,6 @@ export function useLongWorkspacePresentationCoordinator(
     activeLongChapterWriterEnabled,
     activeLongAgentProfile,
     activeLongRuntimeContext,
-    latestLongLedgerCommit,
-    longRollbackCommit,
-    longRollbackChapterTitle,
     activeLongAgentRunScope,
     longEditorLocked,
     longEditorLockedReason,
@@ -599,7 +507,6 @@ export function useLongWorkspacePresentationCoordinator(
     agentRunScopeIsBusy,
     agentRunScopeHasPendingEditReview,
     documentHasWriteBarrier,
-    bindWorkflow,
     bindEditor
   };
 }

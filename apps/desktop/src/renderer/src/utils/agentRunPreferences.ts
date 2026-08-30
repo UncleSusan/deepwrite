@@ -1,6 +1,7 @@
 import {
   resolveScriptWorkspaceConversationLaneIdForStage,
   resolveShortWorkspaceConversationLaneIdForStage,
+  type AgentTeamRunMode,
   type ThinkingLevel
 } from "@deepwrite/contracts";
 import type { AgentApprovalMode } from "../types/conversation";
@@ -14,11 +15,13 @@ export const AGENT_MODEL_SELECTION_STORAGE_KEY =
 export interface AgentModelSelection {
   selectedModelId: string;
   thinkingLevel: ThinkingLevel;
+  webSearchEnabled?: boolean;
 }
 
 export interface AgentRunPreferences {
   temperature: number;
   approvalMode: AgentApprovalMode;
+  agentTeamMode?: AgentTeamRunMode;
 }
 
 export type AgentRunPreferencesByScope = Record<string, AgentRunPreferences>;
@@ -95,7 +98,10 @@ export function parseAgentModelSelection(
     }
     return {
       selectedModelId: value.selectedModelId,
-      thinkingLevel: value.thinkingLevel
+      thinkingLevel: value.thinkingLevel,
+      ...(typeof value.webSearchEnabled === "boolean"
+        ? { webSearchEnabled: value.webSearchEnabled }
+        : {})
     };
   } catch {
     return undefined;
@@ -112,15 +118,34 @@ function parseAgentRunPreference(
     value.temperature < 0 ||
     value.temperature > 2 ||
     (value.approvalMode !== "request-approval" &&
-      value.approvalMode !== "auto-approve")
+      value.approvalMode !== "auto-approve") ||
+    (value.agentTeamMode !== undefined &&
+      value.agentTeamMode !== "normal" &&
+      value.agentTeamMode !== "team")
   ) {
     return undefined;
   }
 
   return {
     temperature: value.temperature,
-    approvalMode: value.approvalMode
+    approvalMode: value.approvalMode,
+    agentTeamMode: value.agentTeamMode === "team" ? "team" : "normal"
   };
+}
+
+export function normalizeAgentRunPreferences(
+  value: unknown
+): AgentRunPreferencesByScope {
+  if (!isRecord(value)) return {};
+
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([scope, preference]) => {
+      const maximumScopeLength = scope.startsWith("library:") ? 540 : 517;
+      if (!scope.trim() || scope.length > maximumScopeLength) return [];
+      const parsed = parseAgentRunPreference(preference);
+      return parsed ? [[scope, parsed]] : [];
+    })
+  );
 }
 
 export function parseAgentRunPreferences(
@@ -129,17 +154,7 @@ export function parseAgentRunPreferences(
   if (!storedValue) return {};
 
   try {
-    const value: unknown = JSON.parse(storedValue);
-    if (!isRecord(value)) return {};
-
-    return Object.fromEntries(
-      Object.entries(value).flatMap(([scope, preference]) => {
-        const maximumScopeLength = scope.startsWith("library:") ? 540 : 517;
-        if (!scope.trim() || scope.length > maximumScopeLength) return [];
-        const parsed = parseAgentRunPreference(preference);
-        return parsed ? [[scope, parsed]] : [];
-      })
-    );
+    return normalizeAgentRunPreferences(JSON.parse(storedValue) as unknown);
   } catch {
     return {};
   }

@@ -1,5 +1,4 @@
 import {
-  EMPTY_LONG_MARKDOWN_REVISION,
   longChapterCharacterContinuityFilePath,
   longChapterCharacterCurrentStateFileId,
   longChapterCharacterHistoryFileId,
@@ -12,7 +11,6 @@ import {
   createChange,
   newLongFile,
   requireMeta,
-  writeEmptyFileChange,
   type LongCreateInput,
   type LongCreateResult
 } from "./create-support";
@@ -24,10 +22,6 @@ type ContinuityDocument =
   | "continuity_character_history";
 
 type CharacterContinuityDocument = "current_state" | "history";
-
-function isEmptyFile(file: LongWorkspaceFileReference): boolean {
-  return file.revision === EMPTY_LONG_MARKDOWN_REVISION;
-}
 
 function requireChapter(
   index: LongWorkspaceIndexSnapshot,
@@ -85,23 +79,7 @@ function createWorldReveals(input: LongCreateInput): LongCreateResult {
       "世界观揭露"
     );
   if (chapter.worldReveals) {
-    if (!isEmptyFile(chapter.worldReveals)) {
-      throw new Error("本章已有世界观揭露文件。");
-    }
-    return {
-      operations: [],
-      changes: [
-        writeEmptyFileChange(
-          targetFor(chapter.worldReveals),
-          chapter.worldReveals,
-          input.content,
-          input.timestamp
-        )
-      ],
-      createdId: chapterCardId,
-      label: `《${card.title}》世界观揭露`,
-      action: "write"
-    };
+    throw new Error("本章已有世界观揭露文件，请用 edit 写入或修改。");
   }
   const file = newLongFile(
     longChapterWorldRevealsFileId(chapterCardId),
@@ -156,31 +134,11 @@ function createCharacterContinuity(input: LongCreateInput): LongCreateResult {
     (entry) => entry.characterId === characterId
   );
   if (existing) {
-    const file =
-      document === "current_state" ? existing.currentState : existing.history;
-    if (!isEmptyFile(file)) {
-      throw new Error(
-        `本章已有该人物的${
-          document === "current_state" ? "当前状态" : "历史轨迹"
-        }文件，请用 edit 修改。`
-      );
-    }
-    return {
-      operations: [],
-      changes: [
-        writeEmptyFileChange(
-          targetFor(file, document),
-          file,
-          input.content,
-          input.timestamp
-        )
-      ],
-      createdId: chapterCardId,
-      label: `《${card.title}》中${character.name}的${
-        document === "current_state" ? "人物当前状态" : "人物历史轨迹"
-      }`,
-      action: "write"
-    };
+    throw new Error(
+      `本章已有该人物的连续性文件，请用 edit 写入或修改${
+        document === "current_state" ? "当前状态" : "历史轨迹"
+      }。`
+    );
   }
 
   const currentContent = document === "current_state" ? input.content : "";

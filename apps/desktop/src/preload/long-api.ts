@@ -24,8 +24,8 @@ import {
   LongRemoveBookInputSchema,
   LongRemoveBookResultSchema,
   LongRenameBookInputSchema,
-  LongRollbackLastCommitInputSchema,
-  LongRollbackLastCommitResultSchema,
+  LongSearchInputSchema,
+  LongSearchResultSchema,
   LongUpdateBindingsInputSchema,
   LongWorkspaceIndexResultSchema,
   LongWriteAgentsMdInputSchema,
@@ -61,8 +61,8 @@ import {
   type LongRemoveBookInput,
   type LongRemoveBookResult,
   type LongRenameBookInput,
-  type LongRollbackLastCommitInput,
-  type LongRollbackLastCommitResult,
+  type LongSearchInput,
+  type LongSearchResult,
   type LongUpdateBindingsInput,
   type LongWorkspaceIndexResult,
   type LongWriteAgentsMdInput,
@@ -375,22 +375,6 @@ export async function commitLongChapter(
   );
 }
 
-export async function rollbackLongCommit(
-  rawInput: LongRollbackLastCommitInput
-): Promise<LongRollbackLastCommitResult> {
-  const input = LongRollbackLastCommitInputSchema.parse(rawInput);
-  const id = browserId("cmd_long_rollback");
-  return LongRollbackLastCommitResultSchema.parse(
-    await invokeCommand<LongRollbackLastCommitResult>(
-      createEnvelope("long.rollbackLastCommit", input, {
-        id,
-        correlationId: id,
-        context: { resourceId: input.bookId }
-      })
-    )
-  );
-}
-
 export async function unregisterLongBook(
   rawInput: LongRemoveBookInput
 ): Promise<LongRemoveBookResult> {
@@ -423,6 +407,22 @@ export async function deleteLongBook(
   );
 }
 
+export async function searchLongDocuments(
+  rawInput: LongSearchInput
+): Promise<LongSearchResult> {
+  const input = LongSearchInputSchema.parse(rawInput);
+  const id = browserId("cmd_long_search");
+  return LongSearchResultSchema.parse(
+    await invokeCommand<LongSearchResult>(
+      createEnvelope("long.search", input, {
+        id,
+        correlationId: id,
+        context: { resourceId: input.bookId }
+      })
+    )
+  );
+}
+
 export const long: DeepWriteApi["long"] = {
   list: listLongBooks,
   create: createLongBook,
@@ -438,6 +438,7 @@ export const long: DeepWriteApi["long"] = {
   openExisting: openExistingLongBook,
   getWorkspaceIndex: getLongWorkspaceIndex,
   readDocument: readLongDocument,
+  search: searchLongDocuments,
   writeDocument: writeLongDocument,
   readAgentsMd: readLongAgentsMd,
   writeAgentsMd: writeLongAgentsMd,
@@ -445,7 +446,6 @@ export const long: DeepWriteApi["long"] = {
   applyOperations: applyLongOperations,
   writeChapter: writeLongChapter,
   commitChapter: commitLongChapter,
-  rollbackLastCommit: rollbackLongCommit,
   unregister: unregisterLongBook,
   delete: deleteLongBook
 };

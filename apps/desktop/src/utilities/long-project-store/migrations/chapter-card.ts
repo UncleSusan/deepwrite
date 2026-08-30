@@ -4,8 +4,8 @@ import {
   LongWorkspaceFileReferenceSchema,
   LongWorkspaceIndexSnapshotSchema,
   longChapterCardFileId,
-  type LongFileRevision,
-  type LongProjectManifest
+  type LongProjectManifest,
+  type LongWorkspaceFileReference
 } from "@deepwrite/contracts";
 import {
   commitLongProjectTransaction,
@@ -15,11 +15,6 @@ import {
   unknownRecord
 } from "../io";
 import { chapterPath } from "../paths";
-import {
-  createLongFileRevision,
-  longRevisionMatchesBytes,
-  longRevisionsMatchContent
-} from "../revisions";
 import {
   MANIFEST_PATH,
   MAX_DOCUMENT_BYTES,
@@ -69,12 +64,7 @@ export async function migrateLegacyChapterCardContent(input: {
   const nextChapterCards: unknown[] = [];
   const cardWrites: Array<{
     chapterCardId: string;
-    file: {
-      id: string;
-      path: string;
-      revision: LongFileRevision;
-      updatedAt: string;
-    };
+    file: LongWorkspaceFileReference;
     content: string;
     expectedSha256: string | null;
   }> = [];
@@ -148,23 +138,16 @@ export async function migrateLegacyChapterCardContent(input: {
         file: {
           id: longChapterCardFileId(card.id),
           path: chapterPath(card.id, "card.md"),
-          revision: createLongFileRevision(content),
           updatedAt
         },
         content,
         expectedSha256: null
       });
     } else if (cardFile && existingCardFile === null) {
-      if (!content && !longRevisionMatchesBytes(cardFile.revision, "")) {
-        throw new Error(
-          `章卡文件缺失且索引显示其中已有内容，无法自动恢复：${cardFile.id}`
-        );
-      }
       cardWrites.push({
         chapterCardId: card.id,
         file: {
           ...cardFile,
-          revision: createLongFileRevision(content),
           updatedAt
         },
         content,
@@ -181,7 +164,6 @@ export async function migrateLegacyChapterCardContent(input: {
           chapterCardId: card.id,
           file: {
             ...cardFile,
-            revision: createLongFileRevision(nextContent),
             updatedAt
           },
           content: nextContent,
@@ -219,7 +201,7 @@ export async function migrateLegacyChapterCardContent(input: {
         write.file.path,
         MAX_LEDGER_RECORD_BYTES
       );
-      write.file.revision = createLongFileRevision(existing.content);
+      write.file.updatedAt = existing.updatedAt;
       continue;
     } catch (error: unknown) {
       if (!isNodeError(error, "ENOENT")) throw error;
@@ -238,11 +220,7 @@ export async function migrateLegacyChapterCardContent(input: {
   });
   const indexContent = serializeJson(nextIndex);
   const nextManifest = LongProjectManifestSchema.parse({
-    ...input.manifest,
-    workspaceIndexFile: {
-      ...input.manifest.workspaceIndexFile,
-      revision: createLongFileRevision(indexContent)
-    }
+    ...input.manifest
   });
   await commitLongProjectTransaction({
     projectRoot: input.projectDirectory,
@@ -293,26 +271,11 @@ export async function migrateLegacyChapterBodyStatus(input: {
       chapter.body.path,
       MAX_DOCUMENT_BYTES
     );
-    if (
-      !longRevisionsMatchContent(
-        chapter.body.revision,
-        disk.revision,
-        disk.bytes
-      )
-    ) {
-      throw new Error(
-        `章节正文 revision 与实际文件不一致：${chapter.chapterCardId}。`
-      );
-    }
     chapter.bodyStatus = disk.content.trim() ? "written" : "empty";
   }
   const indexContent = serializeJson(parsed);
   const nextManifest = LongProjectManifestSchema.parse({
-    ...input.manifest,
-    workspaceIndexFile: {
-      ...input.manifest.workspaceIndexFile,
-      revision: createLongFileRevision(indexContent)
-    }
+    ...input.manifest
   });
   await commitLongProjectTransaction({
     projectRoot: input.projectDirectory,

@@ -5,7 +5,7 @@ describe("LongMigrationReportDialog", () => {
   it("reports the conservative committed-chapter migration policy", () => {
     expect(source).toContain("已提交章已恢复为迁移检查点");
     expect(source).toContain("只读、不可逆的连续性检查点");
-    expect(source).toContain("不会伪造成可回滚提交");
+    expect(source).toContain("不用于恢复历史前态");
   });
 
   it("states that the legacy source is never modified", () => {

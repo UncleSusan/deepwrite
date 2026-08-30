@@ -27,6 +27,8 @@ const emit = defineEmits<{
   input: [event: Event];
   keydown: [event: KeyboardEvent];
   editorElementChange: [element: HTMLTextAreaElement | null];
+  previewElementChange: [element: HTMLElement | null];
+  editorScroll: [event: Event];
 }>();
 
 const editorElement = ref<HTMLTextAreaElement | null>(null);
@@ -35,8 +37,14 @@ const previewElement = ref<HTMLElement | null>(null);
 watch(editorElement, (element) => emit("editorElementChange", element), {
   flush: "post"
 });
+watch(previewElement, (element) => emit("previewElementChange", element), {
+  flush: "post"
+});
 
-onBeforeUnmount(() => emit("editorElementChange", null));
+onBeforeUnmount(() => {
+  emit("editorElementChange", null);
+  emit("previewElementChange", null);
+});
 
 function updateTitle(event: Event): void {
   const input = event.currentTarget;
@@ -96,8 +104,14 @@ function updateTitle(event: Event): void {
       @beforeinput="emit('beforeinput', $event)"
       @input="emit('input', $event)"
       @keydown="emit('keydown', $event)"
+      @scroll="emit('editorScroll', $event)"
     />
-    <article v-else ref="previewElement" class="long-document-preview">
+    <article
+      v-else
+      ref="previewElement"
+      class="long-document-preview"
+      @scroll="emit('editorScroll', $event)"
+    >
       <MarkdownContent
         v-if="content.trim()"
         :content="content"

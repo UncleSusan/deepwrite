@@ -7,7 +7,6 @@ import {
   MAX_MARKDOWN_BYTES,
   createEmptyLongMarkdownFileReference,
   createFixture,
-  createLongFileRevision,
   describe,
   expect,
   firstChapterFiles,
@@ -25,13 +24,11 @@ import {
 } from "./long-project-store.test-support";
 
 describe("LongProjectStore: documents-and-structure", () => {
-  it("updates only long-book bindings with project-revision CAS", async () => {
+  it("updates only long-book bindings and lets the latest edit win", async () => {
     const { projectStore, created } = await createFixture("bindings");
-    const originalWorkspaceRevision = created.book.workspaceIndex.revision;
     const updated = await projectStore.updateBindings(
       created.projectDirectory,
       {
-        expectedProjectRevision: created.summary.projectRevision,
         linkedMaterialIdsByKind: {
           character: [],
           gimmick: [],
@@ -55,12 +52,6 @@ describe("LongProjectStore: documents-and-structure", () => {
       }
     );
 
-    expect(updated.summary.projectRevision).toBe(
-      created.summary.projectRevision + 1
-    );
-    expect(updated.book.workspaceIndex.revision).toBe(
-      originalWorkspaceRevision + 1
-    );
     expect(updated.book.linkedMaterialIdsByKind.plot).toEqual([
       "material-long-plot",
       "missing-material"
@@ -75,39 +66,33 @@ describe("LongProjectStore: documents-and-structure", () => {
       },
       skills: { "skill-long-style": ["draft"] }
     });
-    await expect(
-      projectStore.updateBindings(created.projectDirectory, {
-        expectedProjectRevision: created.summary.projectRevision,
-        linkedMaterialIdsByKind: updated.book.linkedMaterialIdsByKind,
-        linkedSkillIdsByKind: updated.book.linkedSkillIdsByKind
-      })
-    ).rejects.toThrow(/project revision 冲突/u);
+    const latest = await projectStore.updateBindings(created.projectDirectory, {
+      linkedMaterialIdsByKind: {
+        ...updated.book.linkedMaterialIdsByKind,
+        plot: ["material-latest"]
+      },
+      linkedSkillIdsByKind: updated.book.linkedSkillIdsByKind
+    });
+    expect(latest.book.linkedMaterialIdsByKind.plot).toEqual([
+      "material-latest"
+    ]);
   });
 
   it("renames a long book without renaming its project directory", async () => {
     const { projectStore, created } = await createFixture("rename-book");
-    const originalWorkspaceRevision = created.book.workspaceIndex.revision;
     const updated = await projectStore.renameBook(created.projectDirectory, {
-      expectedProjectRevision: created.summary.projectRevision,
       title: "新的长篇名称"
     });
 
     expect(updated.summary.title).toBe("新的长篇名称");
-    expect(updated.summary.projectRevision).toBe(
-      created.summary.projectRevision + 1
-    );
-    expect(updated.book.workspaceIndex.revision).toBe(
-      originalWorkspaceRevision + 1
-    );
     await expect(
       projectStore.openBook(created.projectDirectory)
     ).resolves.toMatchObject({ summary: { title: "新的长篇名称" } });
     await expect(
       projectStore.renameBook(created.projectDirectory, {
-        expectedProjectRevision: created.summary.projectRevision,
-        title: "过期修改"
+        title: "最终名称"
       })
-    ).rejects.toThrow(/project revision 冲突/u);
+    ).resolves.toMatchObject({ summary: { title: "最终名称" } });
   });
 
   it("rejects an oversized chapter before mutating manifest, index, or files", async () => {
@@ -130,19 +115,14 @@ describe("LongProjectStore: documents-and-structure", () => {
       projectStore.writeChapter(created.projectDirectory, {
         chapterCardId: created.book.workspaceIndex.plot.chapterCards[0]!.id,
         body: {
-          content: oversizedBody,
-          baseRevision: files.body.revision
+          content: oversizedBody
         },
         characterState: {
-          content: "角色状态",
-          baseRevision: files.characterState.revision
+          content: "角色状态"
         },
         handoff: {
-          content: "交接摘要",
-          baseRevision: files.handoff.revision
-        },
-        baseWorkspaceRevision: 0,
-        baseProjectRevision: 0
+          content: "交接摘要"
+        }
       })
     ).rejects.toThrow(/UTF-8 字节限制/u);
 
@@ -163,12 +143,9 @@ describe("LongProjectStore: documents-and-structure", () => {
     const body = firstChapterFiles(created.book).body;
     const bodyPath = join(created.projectDirectory, body.path);
     const nearLimit = "界".repeat(Math.floor((MAX_MARKDOWN_BYTES - 3) / 3));
-    const written = await projectStore.writeDocument(created.projectDirectory, {
+    await projectStore.writeDocument(created.projectDirectory, {
       fileId: body.id,
-      content: nearLimit,
-      expectedFileRevision: body.revision,
-      expectedWorkspaceRevision: 0,
-      expectedProjectRevision: 0
+      content: nearLimit
     });
     const indexPath = join(created.projectDirectory, LONG_WORKSPACE_INDEX_PATH);
     const manifestPath = join(created.projectDirectory, "deepwrite.json");
@@ -177,12 +154,9 @@ describe("LongProjectStore: documents-and-structure", () => {
         projectTransactionContentSha256(await readFile(path))
       )
     );
-    const appended = `${nearLimit}界界`;
-
     await expect(
       projectStore.applyWorkspaceOperations(created.projectDirectory, {
         batch: {
-          baseRevision: 1,
           updatedAt: FIXED_NOW,
           operations: [
             {
@@ -196,15 +170,12 @@ describe("LongProjectStore: documents-and-structure", () => {
               proposalId: "proposal_oversized_append",
               fileId: body.id,
               mode: "append",
-              expectedRevision: written.fileRevision,
-              nextRevision: createLongFileRevision(appended),
               updatedAt: FIXED_NOW,
               content: "界界",
               reason: "验证最终 UTF-8 字节边界"
             }
           ]
-        },
-        expectedProjectRevision: 1
+        }
       })
     ).rejects.toThrow(/UTF-8 字节限制/u);
 
@@ -216,7 +187,7 @@ describe("LongProjectStore: documents-and-structure", () => {
     expect(after).toEqual(before);
   }, 30_000);
 
-  it("rejects a manifest-sized binding update before either revision changes", async () => {
+  it("rejects a manifest-sized binding update before either file changes", async () => {
     const { projectStore, created } = await createFixture("binding-byte-limit");
     const manifestPath = join(created.projectDirectory, "deepwrite.json");
     const indexPath = join(created.projectDirectory, LONG_WORKSPACE_INDEX_PATH);
@@ -232,7 +203,6 @@ describe("LongProjectStore: documents-and-structure", () => {
 
     await expect(
       projectStore.updateBindings(created.projectDirectory, {
-        expectedProjectRevision: 0,
         linkedMaterialIdsByKind: {
           character: [],
           gimmick: [],
@@ -262,14 +232,10 @@ describe("LongProjectStore: documents-and-structure", () => {
     const body = firstChapterFiles(created.book).body;
     const written = await projectStore.writeDocument(created.projectDirectory, {
       fileId: body.id,
-      content: "甲乙关键词丙丁\n第二行关键词",
-      expectedFileRevision: body.revision,
-      expectedWorkspaceRevision: created.book.workspaceIndex.revision,
-      expectedProjectRevision: created.book.projectRevision!
+      content: "甲乙关键词丙丁\n第二行关键词"
     });
 
-    expect(written.workspaceRevision).toBe(1);
-    expect(written.projectRevision).toBe(1);
+    expect(written.fileId).toBe(body.id);
     const page = await projectStore.readDocument(created.projectDirectory, {
       fileId: body.id,
       offset: 2,
@@ -309,10 +275,7 @@ describe("LongProjectStore: documents-and-structure", () => {
     const content = "😀".repeat(70_000);
     await projectStore.writeDocument(created.projectDirectory, {
       fileId: body.id,
-      content,
-      expectedFileRevision: body.revision,
-      expectedWorkspaceRevision: created.book.workspaceIndex.revision,
-      expectedProjectRevision: created.book.projectRevision!
+      content
     });
 
     await expect(
@@ -328,15 +291,7 @@ describe("LongProjectStore: documents-and-structure", () => {
 
     await projectStore.writeDocument(created.projectDirectory, {
       fileId: body.id,
-      content: "甲😀乙😀丙",
-      expectedFileRevision: (
-        await projectStore.readDocument(created.projectDirectory, {
-          fileId: body.id,
-          limit: 1
-        })
-      ).revision,
-      expectedWorkspaceRevision: 1,
-      expectedProjectRevision: 1
+      content: "甲😀乙😀丙"
     });
     await expect(
       projectStore.readDocument(created.projectDirectory, {
@@ -369,7 +324,6 @@ describe("LongProjectStore: documents-and-structure", () => {
       "missing-character-overview"
     );
     const indexPath = join(created.projectDirectory, LONG_WORKSPACE_INDEX_PATH);
-    const manifestPath = join(created.projectDirectory, "deepwrite.json");
     const index = JSON.parse(await readFile(indexPath, "utf8")) as {
       characterOverview?: unknown;
     };
@@ -378,15 +332,6 @@ describe("LongProjectStore: documents-and-structure", () => {
     delete index.characterOverview;
     const indexContent = `${JSON.stringify(index, null, 2)}\n`;
     await writeFile(indexPath, indexContent, "utf8");
-    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
-      workspaceIndexFile: { revision: string };
-    };
-    manifest.workspaceIndexFile.revision = createLongFileRevision(indexContent);
-    await writeFile(
-      manifestPath,
-      `${JSON.stringify(manifest, null, 2)}\n`,
-      "utf8"
-    );
 
     const opened = await projectStore.openBook(created.projectDirectory);
     expect(opened.book.workspaceIndex.characterOverview).toMatchObject({
@@ -405,22 +350,12 @@ describe("LongProjectStore: documents-and-structure", () => {
       "missing-character-types"
     );
     const indexPath = join(created.projectDirectory, LONG_WORKSPACE_INDEX_PATH);
-    const manifestPath = join(created.projectDirectory, "deepwrite.json");
     const index = JSON.parse(await readFile(indexPath, "utf8")) as {
       characterTypes?: unknown;
     };
     delete index.characterTypes;
     const indexContent = `${JSON.stringify(index, null, 2)}\n`;
     await writeFile(indexPath, indexContent, "utf8");
-    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
-      workspaceIndexFile: { revision: string };
-    };
-    manifest.workspaceIndexFile.revision = createLongFileRevision(indexContent);
-    await writeFile(
-      manifestPath,
-      `${JSON.stringify(manifest, null, 2)}\n`,
-      "utf8"
-    );
 
     const opened = await projectStore.openBook(created.projectDirectory);
     expect(
@@ -437,7 +372,7 @@ describe("LongProjectStore: documents-and-structure", () => {
     expect(writtenBack.characterTypes).toHaveLength(4);
   });
 
-  it("stores every list worldbuilding item in its own versioned Markdown file", async () => {
+  it("stores every list worldbuilding item in its own Markdown file", async () => {
     const { projectStore, created } = await createFixture("world-list");
     const category = created.book.workspaceIndex.worldbuilding[0]!;
     expect(category.format).toBe("list");
@@ -462,7 +397,6 @@ describe("LongProjectStore: documents-and-structure", () => {
       created.projectDirectory,
       {
         batch: {
-          baseRevision: 0,
           updatedAt,
           operations: [
             {
@@ -477,8 +411,7 @@ describe("LongProjectStore: documents-and-structure", () => {
             }
           ],
           documentWrites: []
-        },
-        expectedProjectRevision: 0
+        }
       }
     );
     const item = createdItem.book.workspaceIndex.worldbuilding[0]!;
@@ -487,12 +420,9 @@ describe("LongProjectStore: documents-and-structure", () => {
     await expect(
       projectStore.writeDocument(created.projectDirectory, {
         fileId: item.items[0]!.file.id,
-        content: "每次施法都会遗忘一段记忆。",
-        expectedFileRevision: item.items[0]!.file.revision,
-        expectedWorkspaceRevision: 1,
-        expectedProjectRevision: 1
+        content: "每次施法都会遗忘一段记忆。"
       })
-    ).resolves.toMatchObject({ workspaceRevision: 2 });
+    ).resolves.toMatchObject({ fileId: item.items[0]!.file.id });
   });
 
   it("converts worldbuilding list/text formats transactionally without dropping existing content", async () => {
@@ -507,39 +437,30 @@ describe("LongProjectStore: documents-and-structure", () => {
       longWorldbuildingItemContentPath(category.id, itemId),
       FIXED_NOW
     );
-    const withItem = await projectStore.applyWorkspaceOperations(
-      created.projectDirectory,
-      {
-        batch: {
-          baseRevision: 0,
-          updatedAt: FIXED_NOW,
-          operations: [
-            {
-              type: "worldbuildingItem.create",
-              categoryId: category.id,
-              item: {
-                id: itemId,
-                title: "潮汐历法",
-                order: 1,
-                file: itemFile
-              }
+    await projectStore.applyWorkspaceOperations(created.projectDirectory, {
+      batch: {
+        updatedAt: FIXED_NOW,
+        operations: [
+          {
+            type: "worldbuildingItem.create",
+            categoryId: category.id,
+            item: {
+              id: itemId,
+              title: "潮汐历法",
+              order: 1,
+              file: itemFile
             }
-          ],
-          documentWrites: []
-        },
-        expectedProjectRevision: 0
+          }
+        ],
+        documentWrites: []
       }
-    );
-    const written = await projectStore.writeDocument(created.projectDirectory, {
+    });
+    await projectStore.writeDocument(created.projectDirectory, {
       fileId: itemFile.id,
-      content: "每逢双月，海岸时间会比内陆慢一刻。",
-      expectedFileRevision: itemFile.revision,
-      expectedWorkspaceRevision: withItem.book.workspaceIndex.revision,
-      expectedProjectRevision: withItem.projectRevision
+      content: "每逢双月，海岸时间会比内陆慢一刻。"
     });
 
     const conversionBatch = {
-      baseRevision: written.workspaceRevision,
       updatedAt: FIXED_NOW,
       operations: [
         {
@@ -566,7 +487,7 @@ describe("LongProjectStore: documents-and-structure", () => {
       expect.objectContaining({
         format: "text",
         file: expect.objectContaining({
-          revision: conversionPreview.documentWrites[0]!.nextRevision
+          id: conversionPreview.documentWrites[0]!.fileId
         })
       })
     );
@@ -574,8 +495,10 @@ describe("LongProjectStore: documents-and-structure", () => {
     const convertedToText = await projectStore.applyWorkspaceOperations(
       created.projectDirectory,
       {
-        batch: conversionBatch,
-        expectedProjectRevision: written.projectRevision
+        batch: {
+          ...conversionBatch,
+          expectedImpact: conversionPreview.confirmation
+        }
       }
     );
     const textCategory = convertedToText.book.workspaceIndex.worldbuilding[0]!;
@@ -596,22 +519,28 @@ describe("LongProjectStore: documents-and-structure", () => {
       "text"
     );
 
+    const backBatch = {
+      updatedAt: FIXED_NOW,
+      operations: [
+        {
+          type: "worldbuilding.update" as const,
+          id: category.id,
+          patch: { format: "list" as const }
+        }
+      ],
+      documentWrites: []
+    };
+    const backPreview = await projectStore.previewWorkspaceOperations(
+      created.projectDirectory,
+      backBatch
+    );
     const convertedBack = await projectStore.applyWorkspaceOperations(
       created.projectDirectory,
       {
         batch: {
-          baseRevision: convertedToText.book.workspaceIndex.revision,
-          updatedAt: FIXED_NOW,
-          operations: [
-            {
-              type: "worldbuilding.update",
-              id: category.id,
-              patch: { format: "list" }
-            }
-          ],
-          documentWrites: []
-        },
-        expectedProjectRevision: convertedToText.projectRevision
+          ...backBatch,
+          expectedImpact: backPreview.confirmation
+        }
       }
     );
     const listCategory = convertedBack.book.workspaceIndex.worldbuilding[0]!;

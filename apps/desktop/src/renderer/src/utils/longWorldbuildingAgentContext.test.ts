@@ -16,7 +16,6 @@ function file(id: string, path: string) {
   return {
     id,
     path,
-    revision: "v1:3:1234abcd",
     updatedAt: UPDATED_AT
   };
 }
@@ -34,9 +33,7 @@ function page(
     content: visible,
     offset: input.offset,
     totalCharacters,
-    nextOffset: end < totalCharacters ? end : null,
-    workspaceRevision: 3,
-    projectRevision: 5
+    nextOffset: end < totalCharacters ? end : null
   };
 }
 

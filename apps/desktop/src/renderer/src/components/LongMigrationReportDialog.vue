@@ -90,7 +90,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             </h3>
             <p v-if="committedChapterPolicy === 'legacy-checkpoints'">
               旧版已提交前缀及其判定已恢复为只读、不可逆的连续性检查点；缺少精确
-              before/after 的旧记录不会伪造成可回滚提交。
+              before/after 的旧记录仅作迁移证据，不用于恢复历史前态。
             </p>
             <p v-else>
               当前来源没有完整的旧版提交链；正文与全部迁移证据已保留，可在核验后按当前账本规则提交。

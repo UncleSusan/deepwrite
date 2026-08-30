@@ -5,6 +5,7 @@ import type {
   CharacterStructureMutation,
   LongCharacterFileChange,
   LongChapterBodyChange,
+  LongWorkspaceImpactConfirmation,
   LongWorkspaceOperationBatch,
   LongWorldbuildingFileChange,
   ShortWorkspaceStageId
@@ -59,8 +60,10 @@ export interface AgentEditProposal {
   summary: string;
   status:
     "pending" | "accepting" | "accepted" | "rejected" | "conflict" | "error";
-  baseRevision: string;
-  proposedRevision: string;
+  /** Short-form/editor checksum. Long-form proposals do not use revisions. */
+  baseRevision?: string;
+  /** Short-form/editor checksum. Long-form proposals use generation + predecessor. */
+  proposedRevision?: string;
   proposedText?: string | undefined;
   toolCallIds: string[];
   additions: number;
@@ -76,7 +79,6 @@ export interface AgentEditProposal {
     beforeTitle?: string;
     beforeDescription?: string;
     appliedProjectRevision?: number;
-    longUndoBatch?: LongWorkspaceOperationBatch;
   };
   /** Presentation and retry state for restoring an accepted edit. */
   discardState?: {
@@ -95,29 +97,25 @@ export interface AgentEditProposal {
   longWorldbuildingTarget?: {
     bookId: string;
     batch: LongWorkspaceOperationBatch;
-    baseProjectRevision: number;
-    appliedProjectRevision?: number;
     file: LongWorldbuildingFileChange;
+    expectedImpact?: LongWorkspaceImpactConfirmation;
   };
   longCharacterTarget?: {
     bookId: string;
     batch: LongWorkspaceOperationBatch;
-    baseProjectRevision: number;
-    appliedProjectRevision?: number;
     files: LongCharacterFileChange[];
+    expectedImpact?: LongWorkspaceImpactConfirmation;
   };
   longPlotDesignTarget?: {
     bookId: string;
     batch: LongWorkspaceOperationBatch;
-    baseProjectRevision: number;
-    appliedProjectRevision?: number;
+    expectedImpact?: LongWorkspaceImpactConfirmation;
   };
   longDraftTarget?: {
     bookId: string;
     batch: LongWorkspaceOperationBatch;
-    baseProjectRevision: number;
-    appliedProjectRevision?: number;
     file: LongChapterBodyChange;
+    expectedImpact?: LongWorkspaceImpactConfirmation;
   };
   draftSectionCreationTarget?: {
     sections: Array<{

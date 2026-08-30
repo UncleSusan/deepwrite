@@ -211,8 +211,16 @@ describe("conversation persistence adapter", () => {
     await expect(
       adapter.load(RUN_PREFERENCES_PERSISTENCE_KEY)
     ).resolves.toEqual({
-      general: { temperature: 0.8, approvalMode: "auto-approve" },
-      "book:one": { temperature: 1.1, approvalMode: "auto-approve" }
+      general: {
+        temperature: 0.8,
+        approvalMode: "auto-approve",
+        agentTeamMode: "normal"
+      },
+      "book:one": {
+        temperature: 1.1,
+        approvalMode: "auto-approve",
+        agentTeamMode: "normal"
+      }
     });
     expect(storage.length).toBe(0);
   });

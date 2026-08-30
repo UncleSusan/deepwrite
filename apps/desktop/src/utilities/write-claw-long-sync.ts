@@ -8,7 +8,6 @@ import {
   type LongWorkspaceOperation,
   type LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
-import { createLongFileRevision } from "./long-project-store";
 import { readWriteClawLongSource } from "./write-claw-long-archive";
 import {
   createWriteClawLongImportPlan,
@@ -212,8 +211,6 @@ export async function buildWriteClawLongSync(
       fileId,
       content,
       mode: "create",
-      expectedRevision: null,
-      nextRevision: createLongFileRevision(content),
       updatedAt: input.updatedAt,
       reason: "同步旧版本长篇"
     });
@@ -303,8 +300,6 @@ export async function buildWriteClawLongSync(
           fileId: input.target.bookLine.id,
           content,
           mode: "replace",
-          expectedRevision: input.target.bookLine.revision,
-          nextRevision: createLongFileRevision(content),
           updatedAt: input.updatedAt,
           reason: "追加旧版本全书大纲"
         });
@@ -420,12 +415,8 @@ export async function buildWriteClawLongSync(
       const sourceFiles = filesByChapter.get(chapter.id);
       if (!sourceFiles)
         throw new Error(`旧版本同步缺少章卡文件：${chapter.id}`);
-      const emptyRevision = createLongFileRevision("");
-      const emptyFile = <T extends { revision: string; updatedAt: string }>(
-        file: T
-      ): T => ({
+      const emptyFile = <T extends { updatedAt: string }>(file: T): T => ({
         ...file,
-        revision: emptyRevision,
         updatedAt: input.updatedAt
       });
       const files = {
@@ -461,7 +452,6 @@ export async function buildWriteClawLongSync(
   }
   return {
     batch: LongWorkspaceOperationBatchSchema.parse({
-      baseRevision: input.target.revision,
       updatedAt: input.updatedAt,
       operations,
       documentWrites

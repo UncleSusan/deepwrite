@@ -1,171 +1,30 @@
 import {
   LongFileIdSchema,
-  LongLedgerCommitRecordSchema,
   LONG_WORKSPACE_INDEX_PATH,
-  type LongLedgerCommitRecord,
   type LongProjectManifest,
   type LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
-import {
-  assertLongLedgerRecordMatchesIndex,
-  assertLongLedgerRecordChain
-} from "../long-portable-bundle";
+import { assertLongLedgerRecordMatchesIndex } from "../long-portable-bundle";
+import { parseLongLedgerCommitRecord } from "../long-version-metadata";
 import type { WriteClawLongImportPlan } from "../write-claw-long-import";
-import type { ProjectTransactionFileOperation } from "../project-transaction";
-import { loadIndexedFile } from "./cache";
-import { encodeUtf8Strict, parseJson, serializeJson } from "./io";
+import { encodeUtf8Strict, parseJson } from "./io";
 import {
   indexedFileSlots,
   isCompatibleRolePath,
   portablePathKey
 } from "./paths";
-import { longRevisionMatchesBytes } from "./revisions";
 import {
-  LongProjectConflictError,
   MANIFEST_PATH,
   MAX_DOCUMENT_BYTES,
   MIGRATION_EVIDENCE_WORLD_ID_PREFIX,
-  type IndexedFileSlot,
-  type LoadedIndexedFile,
-  type LoadedLongProject
+  type IndexedFileSlot
 } from "./types";
 
-export function assertProjectRevisions(
-  loaded: LoadedLongProject,
-  expectedWorkspaceRevision: number,
-  expectedProjectRevision: number
-): void {
-  if (expectedProjectRevision !== loaded.manifest.revision) {
-    throw new LongProjectConflictError(
-      "project",
-      expectedProjectRevision,
-      loaded.manifest.revision
-    );
-  }
-  if (expectedWorkspaceRevision !== loaded.index.revision) {
-    throw new LongProjectConflictError(
-      "workspace",
-      expectedWorkspaceRevision,
-      loaded.index.revision
-    );
-  }
-}
-
-export async function assertPinnedSetIntegrity(
-  loaded: LoadedLongProject
-): Promise<ProjectTransactionFileOperation[]> {
-  const checks = new Map<string, ProjectTransactionFileOperation>();
-  const continuityFileContents = new Map<string, string>();
-  const addCheck = (file: LoadedIndexedFile): void => {
-    checks.set(file.reference.path, {
-      action: "check",
-      path: file.reference.path,
-      expectedSha256: file.disk.sha256
-    });
-  };
-  const records: LongLedgerCommitRecord[] = [];
-  for (const entry of loaded.index.ledger.commits) {
-    const recordFile = await loadIndexedFile(loaded, entry.recordFile.id);
-    if (recordFile.kind !== "json") {
-      throw new Error(`连续性账本记录文件类型无效：${entry.id}。`);
-    }
-    const record = LongLedgerCommitRecordSchema.parse(
-      parseJson(recordFile.disk.content, `长篇连续性账本记录 ${entry.id}`)
-    );
-    assertLongLedgerRecordMatchesIndex(
-      loaded.index,
-      entry,
-      record,
-      recordFile.disk.content
-    );
-    records.push(record);
-    addCheck(recordFile);
-  }
-  for (const chapter of loaded.index.chapters) {
-    if (chapter.commitId === null) continue;
-    for (const reference of [
-      chapter.body,
-      chapter.card,
-      chapter.characterState,
-      chapter.handoff,
-      chapter.foreshadowingChanges,
-      ...(chapter.worldReveals ? [chapter.worldReveals] : []),
-      ...chapter.characterContinuity.flatMap((entry) => [
-        entry.currentState,
-        entry.history
-      ])
-    ]) {
-      const file = await loadIndexedFile(loaded, reference.id);
-      addCheck(file);
-      if (file.kind === "markdown") {
-        continuityFileContents.set(reference.id, file.disk.content);
-      }
-    }
-  }
-  assertLongLedgerRecordChain(
-    loaded.index,
-    records,
-    loaded.index.revision,
-    continuityFileContents
-  );
-  if (loaded.index.ledger.commits.some(({ mode }) => mode === "structured")) {
-    for (const entry of loaded.index.characterFiles) {
-      for (const reference of [entry.relationships]) {
-        addCheck(await loadIndexedFile(loaded, reference.id));
-      }
-    }
-  }
-  return [...checks.values()];
-}
-
-export function mergeIntegrityChecks(
-  checks: readonly ProjectTransactionFileOperation[],
-  mutatingPaths: ReadonlySet<string>
-): ProjectTransactionFileOperation[] {
-  const merged = new Map<string, ProjectTransactionFileOperation>();
-  for (const check of checks) {
-    if (check.action !== "check" || mutatingPaths.has(check.path)) continue;
-    const previous = merged.get(check.path);
-    if (
-      previous?.action === "check" &&
-      previous.expectedSha256 !== check.expectedSha256
-    ) {
-      throw new Error(`长篇锁定文件在事务准备期间发生变化：${check.path}`);
-    }
-    merged.set(check.path, check);
-  }
-  return [...merged.values()];
-}
-
 export function assertMutableChapterDocument(
-  index: LongWorkspaceIndexSnapshot,
-  fileId: string
+  _index: LongWorkspaceIndexSnapshot,
+  _fileId: string
 ): void {
-  const committedChapter = index.chapters.find(
-    (chapter) =>
-      chapter.commitId !== null &&
-      (chapter.body.id === fileId ||
-        chapter.card.id === fileId ||
-        chapter.characterState.id === fileId ||
-        chapter.handoff.id === fileId ||
-        chapter.foreshadowingChanges.id === fileId ||
-        chapter.worldReveals?.id === fileId ||
-        chapter.characterContinuity.some(
-          (entry) =>
-            entry.currentState.id === fileId || entry.history.id === fileId
-        ))
-  );
-  if (committedChapter) {
-    if (
-      committedChapter.body.id === fileId ||
-      committedChapter.card.id === fileId
-    ) {
-      return;
-    }
-    throw new Error(
-      "已提交章节仅正文和章卡支持精修；连续性资料不可直接编辑，请先回滚最后一次连续性提交。"
-    );
-  }
+  // Committed chapters and continuity notes remain ordinary editable files.
 }
 
 export function assertDirectlyMutableDocument(
@@ -209,20 +68,10 @@ export function validateImportPlan(
 ): void {
   if (
     manifest.id !== index.bookId ||
-    manifest.revision !== index.revision ||
     manifest.updatedAt !== index.updatedAt ||
     manifest.workspaceIndexFile.updatedAt !== index.updatedAt
   ) {
     throw new Error("Write Claw 长篇导入计划的 manifest 与索引不一致。");
-  }
-  const indexContent = serializeJson(index);
-  if (
-    !longRevisionMatchesBytes(
-      manifest.workspaceIndexFile.revision,
-      indexContent
-    )
-  ) {
-    throw new Error("Write Claw 长篇导入计划的索引 revision 无效。");
   }
   if (
     (plan.committedChapterPolicy === "written-uncommitted" &&
@@ -230,8 +79,7 @@ export function validateImportPlan(
         index.ledger.committedThroughChapterId !== null ||
         index.chapters.some(({ commitId }) => commitId !== null))) ||
     (plan.committedChapterPolicy === "legacy-checkpoints" &&
-      (index.ledger.commits.length === 0 ||
-        index.ledger.commits.some(({ reversible }) => reversible)))
+      index.ledger.commits.length === 0)
   ) {
     throw new Error("Write Claw 导入的迁移检查点策略与账本索引不一致。");
   }
@@ -257,16 +105,11 @@ export function validateImportPlan(
     if (bytes.byteLength > MAX_DOCUMENT_BYTES) {
       throw new Error(`Write Claw 导入文档超过 32 MiB：${document.path}`);
     }
-    if (
-      document.kind !== slot.kind ||
-      document.path !== slot.reference.path ||
-      !longRevisionMatchesBytes(document.revision, bytes) ||
-      !longRevisionMatchesBytes(slot.reference.revision, bytes)
-    ) {
+    if (document.kind !== slot.kind || document.path !== slot.reference.path) {
       throw new Error(`Write Claw 导入文档与索引不一致：${fileId}。`);
     }
     if (document.kind === "json") {
-      const record = LongLedgerCommitRecordSchema.parse(
+      const record = parseLongLedgerCommitRecord(
         parseJson(document.content, "Write Claw 迁移检查点")
       );
       const entry = index.ledger.commits.find(

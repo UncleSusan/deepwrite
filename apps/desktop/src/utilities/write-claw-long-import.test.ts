@@ -366,8 +366,7 @@ describe("Write Claw long-form import", () => {
         committedThroughChapterId: plan.index.plot.chapterCards[0]!.id,
         commits: [
           expect.objectContaining({
-            chapterCardId: plan.index.plot.chapterCards[0]!.id,
-            reversible: false
+            chapterCardId: plan.index.plot.chapterCards[0]!.id
           })
         ]
       });
@@ -417,7 +416,7 @@ describe("Write Claw long-form import", () => {
       );
       expect(chapterState.content).toContain("旧版伏笔节拍执行判定");
       expect(chapterState.content).toContain("旧状态=committed");
-      expect(plan.warnings.join("\n")).toContain("不可逆的迁移检查点");
+      expect(plan.warnings.join("\n")).toContain("迁移审计检查点");
     }
   );
 
@@ -516,9 +515,8 @@ describe("Write Claw long-form import", () => {
       { importedAt: FIXED_NOW }
     );
     expect(plan.committedChapterPolicy).toBe("legacy-checkpoints");
-    expect(plan.index.ledger.commits).toEqual([
-      expect.objectContaining({ reversible: false })
-    ]);
+    expect(plan.index.ledger.commits).toHaveLength(1);
+    expect(plan.index.ledger.commits[0]).not.toHaveProperty("reversible");
     expect(plan.warnings.join("\n")).toContain("未知时间占位");
   });
 

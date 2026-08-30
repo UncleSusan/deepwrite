@@ -1,0 +1,115 @@
+.long-book-analysis-page {
+  --analysis-gap: 16px;
+  height: 100%;
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 24px clamp(16px, 3vw, 38px) 48px;
+  background: var(--surface-main);
+  color: var(--text-primary);
+}
+
+.long-book-analysis-page .analysis-page-header,
+.long-book-analysis-page .analysis-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.long-book-analysis-page .analysis-page-header {
+  max-width: 1280px;
+  margin: 0 auto 18px;
+}
+
+.long-book-analysis-page .analysis-page-header h1,
+.long-book-analysis-page .analysis-card-heading h2,
+.long-book-analysis-page .analysis-eyebrow {
+  margin: 0;
+}
+
+.long-book-analysis-page .analysis-page-header p,
+.long-book-analysis-page .analysis-card-heading > span {
+  color: var(--text-secondary);
+}
+
+.long-book-analysis-page .analysis-page-actions,
+.long-book-analysis-page .analysis-run-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.long-book-analysis-page button,
+.long-book-analysis-page input,
+.long-book-analysis-page textarea {
+  font: inherit;
+}
+
+.long-book-analysis-page button {
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 9px;
+  padding: 8px 11px;
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.long-book-analysis-page button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.long-book-analysis-page .analysis-primary-button {
+  border-color: var(--text-primary);
+  background: var(--text-primary);
+  color: var(--surface-main);
+}
+
+.long-book-analysis-page .analysis-danger-button {
+  color: var(--danger, #c64b4b);
+}
+
+.long-book-analysis-page .analysis-content {
+  display: grid;
+  gap: var(--analysis-gap);
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.long-book-analysis-page .analysis-card {
+  box-sizing: border-box;
+  border: 1px solid var(--theme-line);
+  border-radius: 16px;
+  padding: 16px;
+  background: var(--surface-raised);
+}
+
+.long-book-analysis-page .analysis-card-heading {
+  margin-bottom: 14px;
+}
+
+.long-book-analysis-page .analysis-card-heading h2 {
+  margin-top: 3px;
+  font-size: 18px;
+}
+
+.long-book-analysis-page .analysis-eyebrow {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.long-book-analysis-page .analysis-diagnostics {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+}
+
+.long-book-analysis-page .analysis-diagnostics p {
+  margin: 3px 0;
+}

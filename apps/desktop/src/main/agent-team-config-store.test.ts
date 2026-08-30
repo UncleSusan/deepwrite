@@ -131,9 +131,45 @@ describe("AgentTeamConfigStore", () => {
           {
             id: "team_original",
             name: "默认团队",
-            shortSettings: DEFAULT_AGENT_TEAM_SETTINGS,
-            scriptSettings: DEFAULT_SCRIPT_AGENT_TEAM_SETTINGS,
-            longSettings: DEFAULT_LONG_AGENT_TEAM_SETTINGS
+            shortSettings: {
+              workspaceType: "short",
+              teams: [
+                "character_design",
+                "plot_design",
+                "expert_draft_coordinator"
+              ].map((parentAgentId) => ({ parentAgentId, subagents: [] }))
+            },
+            scriptSettings: {
+              workspaceType: "script",
+              teams: [
+                "character_design",
+                "plot_design",
+                "expert_draft_coordinator"
+              ].map((parentAgentId) => ({ parentAgentId, subagents: [] }))
+            },
+            longSettings: {
+              workspaceType: "long",
+              teams: [
+                "setting",
+                "plot_design",
+                "draft",
+                "continuity_ledger"
+              ].map((parentAgentId) => ({
+                parentAgentId,
+                subagents:
+                  parentAgentId === "setting"
+                    ? [
+                        {
+                          id: "legacy_setting_helper",
+                          name: "旧版设定助手",
+                          description: "迁移旧设定",
+                          systemPrompt: "整理设定。",
+                          enabled: true
+                        }
+                      ]
+                    : []
+              }))
+            }
           }
         ]
       })
@@ -149,6 +185,12 @@ describe("AgentTeamConfigStore", () => {
       short: profileOfType(snapshot, "short").id,
       script: profileOfType(snapshot, "script").id,
       long: profileOfType(snapshot, "long").id
+    });
+    expect(
+      profileOfType(snapshot, "long").settings.teams[0]?.subagents[0]
+    ).toMatchObject({
+      id: "legacy_setting_helper",
+      modelMode: "inherit"
     });
   });
 

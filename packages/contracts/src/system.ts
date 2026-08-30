@@ -26,6 +26,8 @@ import {
   AgentToolCallStreamEventEnvelopeSchema,
   AgentToolRequestedEventEnvelopeSchema,
   LearningImitationResultUpdatedEventEnvelopeSchema,
+  LongBookAnalysisNoteUpdatedEventEnvelopeSchema,
+  LongBookAnalysisResultUpdatedEventEnvelopeSchema,
   LongChapterWriteProposalEventEnvelopeSchema,
   LongCharacterFileProposalEventEnvelopeSchema,
   LongContinuityFileProposalEventEnvelopeSchema,
@@ -55,6 +57,8 @@ import {
   type SubagentCompletedEventEnvelope,
   type SubagentStartedEventEnvelope,
   type LearningImitationResultUpdatedEventEnvelope,
+  type LongBookAnalysisNoteUpdatedEventEnvelope,
+  type LongBookAnalysisResultUpdatedEventEnvelope,
   type LongChapterWriteProposalEventEnvelope,
   type LongCharacterFileProposalEventEnvelope,
   type LongContinuityFileProposalEventEnvelope,
@@ -81,6 +85,12 @@ import {
   LearningImitationSettingsResetCommandEnvelopeSchema,
   LearningImitationSettingsSaveCommandEnvelopeSchema
 } from "./learning-imitation";
+import {
+  LongBookAnalysisChooseSourceCommandEnvelopeSchema,
+  LongBookAnalysisSettingsListCommandEnvelopeSchema,
+  LongBookAnalysisSettingsResetCommandEnvelopeSchema,
+  LongBookAnalysisSettingsSaveCommandEnvelopeSchema
+} from "./long-book-analysis";
 import {
   AgentModelCapacityCommandEnvelopeSchema,
   AgentModelTestCommandEnvelopeSchema,
@@ -204,7 +214,6 @@ import {
   LongPreviewOperationsCommandEnvelopeSchema,
   LongReadDocumentCommandEnvelopeSchema,
   LongReadAgentsMdCommandEnvelopeSchema,
-  LongRollbackLastCommitCommandEnvelopeSchema,
   LongSearchCommandEnvelopeSchema,
   LongUnregisterBookCommandEnvelopeSchema,
   LongUpdateBindingsCommandEnvelopeSchema,
@@ -316,7 +325,6 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   LongApplyOperationsCommandEnvelopeSchema,
   LongWriteChapterCommandEnvelopeSchema,
   LongCommitChapterCommandEnvelopeSchema,
-  LongRollbackLastCommitCommandEnvelopeSchema,
   SessionPromptCommandEnvelopeSchema,
   SessionAbortCommandEnvelopeSchema,
   SessionUserInputResponseCommandEnvelopeSchema,
@@ -345,6 +353,10 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   LearningImitationSettingsListCommandEnvelopeSchema,
   LearningImitationSettingsSaveCommandEnvelopeSchema,
   LearningImitationSettingsResetCommandEnvelopeSchema,
+  LongBookAnalysisChooseSourceCommandEnvelopeSchema,
+  LongBookAnalysisSettingsListCommandEnvelopeSchema,
+  LongBookAnalysisSettingsSaveCommandEnvelopeSchema,
+  LongBookAnalysisSettingsResetCommandEnvelopeSchema,
   AgentTeamsListCommandEnvelopeSchema,
   AgentTeamsCreateCommandEnvelopeSchema,
   AgentTeamsRenameCommandEnvelopeSchema,
@@ -444,6 +456,8 @@ export const SystemEventEnvelopeSchema = z.discriminatedUnion("type", [
   SubagentActivityEventEnvelopeSchema,
   SubagentCompletedEventEnvelopeSchema,
   LearningImitationResultUpdatedEventEnvelopeSchema,
+  LongBookAnalysisNoteUpdatedEventEnvelopeSchema,
+  LongBookAnalysisResultUpdatedEventEnvelopeSchema,
   SubagentAuthoringDraftUpdatedEventEnvelopeSchema,
   LongMutationProposalEventEnvelopeSchema,
   LongWorldbuildingFileProposalEventEnvelopeSchema,
@@ -488,6 +502,8 @@ export type SystemEventEnvelope =
   | SubagentActivityEventEnvelope
   | SubagentCompletedEventEnvelope
   | LearningImitationResultUpdatedEventEnvelope
+  | LongBookAnalysisNoteUpdatedEventEnvelope
+  | LongBookAnalysisResultUpdatedEventEnvelope
   | SubagentAuthoringDraftUpdatedEventEnvelope
   | LongMutationProposalEventEnvelope
   | LongWorldbuildingFileProposalEventEnvelope

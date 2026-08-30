@@ -92,17 +92,15 @@ function summaryFixture(): LongBookSummary {
 }
 
 const updatedAt = "2026-08-14T08:00:00.000Z";
-const revision = "v1:0:00000000";
 
 function file(id: string, path: string) {
-  return { id, path, revision, updatedAt };
+  return { id, path, updatedAt };
 }
 
 function indexFixture(): LongWorkspaceIndexSnapshot {
   const summary = summaryFixture();
   return {
     schemaVersion: 1,
-    revision: 4,
     bookId: summary.id,
     updatedAt,
     featureSettings: {
@@ -252,6 +250,7 @@ describe("long workspace resource-tree projection", () => {
     ]);
 
     const draft = roots.find(({ label }) => label === "正文");
+    expect(draft?.longTreeCollection).toEqual({ kind: "volume" });
     expect(draft?.children?.map(({ label }) => label)).toEqual([
       "第一卷",
       "第二卷"
@@ -383,6 +382,9 @@ describe("long workspace resource-tree projection", () => {
       kind: "chapter-card",
       parentId: "volume_one"
     });
+
+    const draft = roots.find(({ label }) => label === "正文");
+    expect(draft?.longTreeCollection).toEqual({ kind: "volume" });
 
     const continuity = roots.find(({ label }) => label === "连续性账本");
     const pendingChapter = continuity?.children?.[0]?.children?.[0];

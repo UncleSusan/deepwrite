@@ -12,6 +12,7 @@ export * from "./learning-imitation";
 export * from "./library-agent";
 export * from "./long-agent-settings";
 export * from "./long-agent-team";
+export * from "./long-book-analysis";
 export * from "./long-ledger";
 export * from "./long-manuscript-export";
 export * from "./long-workspace";

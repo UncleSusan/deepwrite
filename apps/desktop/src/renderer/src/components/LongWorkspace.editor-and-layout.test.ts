@@ -58,16 +58,13 @@ describe("long-form renderer vertical slice: editor-and-layout", () => {
     );
   });
 
-  it("lazy-loads selected files and saves Markdown with all CAS revisions", () => {
+  it("lazy-loads selected files and saves Markdown directly", () => {
     expect(editorSessionSource).toContain("api.readDocument({");
     expect(editorSessionSource).toContain("api.writeDocument({");
-    expect(editorSessionSource).toContain("baseRevision: state.file.revision");
-    expect(editorSessionSource).toContain(
-      "baseWorkspaceRevision: state.workspaceRevision"
-    );
-    expect(editorSessionSource).toContain(
-      "baseProjectRevision: state.projectRevision"
-    );
+    expect(editorSessionSource).toContain("content: submittedContent");
+    expect(editorSessionSource).not.toContain("baseRevision");
+    expect(editorSessionSource).not.toContain("baseWorkspaceRevision");
+    expect(editorSessionSource).not.toContain("baseProjectRevision");
     expect(editorSource).toContain("currentReadOnly");
     expect(longWorkspaceTypeSource).toContain('label: "正文"');
     expect(longWorkspaceTypeSource).toContain('label: "章末状态"');
@@ -110,8 +107,10 @@ describe("long-form renderer vertical slice: editor-and-layout", () => {
     );
   });
 
-  it("reconciles structural drafts from the workspace revision without a deep synchronous watcher", () => {
-    expect(editorSource).toContain("props.workspaceIndex?.revision");
+  it("reconciles structural drafts when the workspace snapshot is replaced", () => {
+    expect(editorSource).toContain(
+      "() => [props.bookId, props.workspaceIndex] as const"
+    );
     expect(editorSource).toContain('flush: "post"');
     expect(editorSource).not.toContain(
       "props.workspaceIndex?.plot.volumes,\n      props.workspaceIndex?.plot.arcs"
@@ -220,6 +219,27 @@ describe("long-form renderer vertical slice: editor-and-layout", () => {
     );
   });
 
+  it("persists the previewed impact for story-plot and worldbuilding-item deletion", () => {
+    expect(editorStructureSource).toContain(
+      'emit(\n      "previewMutation",\n      storyPlotDeleteBatch(storyPlotId)'
+    );
+    expect(editorStructureSource).toContain(
+      "storyPlotDeleteBatch(storyPlotId, expectedImpact)"
+    );
+    expect(editorStructureSource).toContain(
+      "pendingStoryPlotDeleteImpact.value = changedImpact"
+    );
+    expect(editorDeleteSource).toContain(
+      "options.emitPreviewMutation(\n      worldbuildingDeleteBatch(categoryId, itemId)"
+    );
+    expect(editorDeleteSource).toContain(
+      "worldbuildingDeleteBatch(categoryId, target.id, target.expectedImpact)"
+    );
+    expect(editorDeleteSource).toContain(
+      "worldbuildingDeleteImpact.value = changedImpact"
+    );
+  });
+
   it("keeps the long editor surface stable while documents refresh or switch", () => {
     expect(editorSessionSource).toContain("const showEditorLoading = computed");
     expect(editorSessionSource).toContain(
@@ -260,26 +280,14 @@ describe("long-form renderer vertical slice: editor-and-layout", () => {
     expect(editorSource).not.toContain("currentState.file.revision");
   });
 
-  it("refreshes clean long-editor CAS baselines on window focus without touching dirty drafts", () => {
-    expect(editorSessionSource).toContain(
-      "function synchronizeProjectRevisionsIfClean("
-    );
-    expect(editorSessionSource).toContain(
-      "if (bookId !== props.bookId) return true"
-    );
-    expect(editorSessionSource).toContain("key.startsWith(prefix)");
-    expect(editorSessionSource).toContain(
-      "state.loaded && state.content !== state.savedContent"
-    );
-    expect(editorSource).toContain("synchronizeProjectRevisionsIfClean");
+  it("refreshes the latest workspace snapshot on window focus without locking the editor", () => {
     expect(longWorkspaceRefreshSource).toContain(
       "async function refreshOnWindowFocus("
     );
-    expect(longWorkspaceRefreshSource).toContain(
-      "editor.value?.synchronizeProjectRevisionsIfClean("
-    );
-    expect(longWorkspaceRefreshSource).toContain("当前有未保存内容");
     expect(longWorkspaceRefreshSource).toContain("publishPending: false");
+    expect(longWorkspaceRefreshSource).not.toContain(
+      "synchronizeProjectRevisionsIfClean"
+    );
   });
 
   it("mounts the long workspace without routing it through short/script state", () => {

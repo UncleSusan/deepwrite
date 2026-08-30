@@ -2,10 +2,8 @@ import { ref } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import { createShortWorkspaceContentRevision } from "@deepwrite/contracts";
 import type { AgentEditProposal } from "../../types/conversation";
-import type { LongWorkspaceRendererApi } from "../../types/longWorkspace";
 import { AcceptedEditDiscardConflictError } from "../../utils/acceptedEditDiscard";
 import type { ProposalCoordinatorContext } from "../proposal-coordinator/types";
-import { discardAcceptedLongFileEdit } from "./long";
 import { discardAcceptedCatalogTextEdit } from "./short";
 
 function acceptedProposal(): AgentEditProposal {
@@ -64,29 +62,6 @@ function shortContext(options: { dirty?: boolean; content?: string } = {}) {
   return { context, applyAcceptedDocumentLocally };
 }
 
-function longApi(options: { content?: string; revision?: string } = {}) {
-  const readDocument = vi.fn(async () => ({
-    bookId: "long-book-1",
-    file: {
-      id: "long-file-1",
-      revision: options.revision ?? "revision-after"
-    },
-    workspaceRevision: 7,
-    projectRevision: 11,
-    offset: 0,
-    content: options.content ?? "修改后",
-    nextOffset: null
-  }));
-  const writeDocument = vi.fn(async () => ({
-    summary: { id: "long-book-1" }
-  }));
-  return {
-    api: { readDocument, writeDocument } as unknown as LongWorkspaceRendererApi,
-    readDocument,
-    writeDocument
-  };
-}
-
 describe("accepted edit discard operations", () => {
   it("restores the short document snapshot when the accepted content is current", async () => {
     const { context, applyAcceptedDocumentLocally } = shortContext();
@@ -112,52 +87,5 @@ describe("accepted edit discard operations", () => {
     ).rejects.toBeInstanceOf(AcceptedEditDiscardConflictError);
     expect(later.applyAcceptedDocumentLocally).not.toHaveBeenCalled();
     expect(dirty.applyAcceptedDocumentLocally).not.toHaveBeenCalled();
-  });
-
-  it("restores a long document only when its accepted revision is still current", async () => {
-    const { api, writeDocument } = longApi();
-
-    await discardAcceptedLongFileEdit(api, "long-book-1", {
-      fileId: "long-file-1",
-      operation: "edit",
-      beforeText: "修改前",
-      afterText: "修改后",
-      nextRevision: "revision-after"
-    });
-
-    expect(writeDocument).toHaveBeenCalledWith({
-      bookId: "long-book-1",
-      fileId: "long-file-1",
-      content: "修改前",
-      baseRevision: "revision-after",
-      baseWorkspaceRevision: 7,
-      baseProjectRevision: 11
-    });
-  });
-
-  it("rejects long creation and later document revisions without writing", async () => {
-    const later = longApi({ revision: "revision-later" });
-    const creation = longApi();
-
-    await expect(
-      discardAcceptedLongFileEdit(later.api, "long-book-1", {
-        fileId: "long-file-1",
-        operation: "edit",
-        beforeText: "修改前",
-        afterText: "修改后",
-        nextRevision: "revision-after"
-      })
-    ).rejects.toBeInstanceOf(AcceptedEditDiscardConflictError);
-    await expect(
-      discardAcceptedLongFileEdit(creation.api, "long-book-1", {
-        fileId: "long-file-1",
-        operation: "create",
-        beforeText: "",
-        afterText: "修改后",
-        nextRevision: "revision-after"
-      })
-    ).rejects.toBeInstanceOf(AcceptedEditDiscardConflictError);
-    expect(later.writeDocument).not.toHaveBeenCalled();
-    expect(creation.writeDocument).not.toHaveBeenCalled();
   });
 });

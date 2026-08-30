@@ -5,7 +5,6 @@ import {
   LongChapterCardIdSchema,
   LongCharacterIdSchema,
   LongFileIdSchema,
-  LongFileRevisionSchema,
   LongProjectRelativePathSchema
 } from "../long-workspace";
 import { LongWorkspaceOperationBatchSchema } from "../long-workspace-operations";
@@ -24,8 +23,7 @@ const LongProposalBasePayloadSchema = z.object({
 
 export const LongMutationProposalPayloadSchema =
   LongProposalBasePayloadSchema.extend({
-    batch: LongWorkspaceOperationBatchSchema,
-    baseProjectRevision: z.number().int().nonnegative()
+    batch: LongWorkspaceOperationBatchSchema
   });
 export type LongMutationProposalPayload = z.infer<
   typeof LongMutationProposalPayloadSchema
@@ -40,9 +38,7 @@ export const LongWorldbuildingFileChangeSchema = z
     title: z.string().trim().min(1).max(256),
     operation: z.enum(["create", "write", "edit"]),
     beforeText: z.string().max(1_000_000),
-    afterText: z.string().max(1_000_000),
-    beforeRevision: LongFileRevisionSchema.nullable(),
-    nextRevision: LongFileRevisionSchema
+    afterText: z.string().max(1_000_000)
   })
   .strict();
 export type LongWorldbuildingFileChange = z.infer<
@@ -52,7 +48,6 @@ export type LongWorldbuildingFileChange = z.infer<
 export const LongWorldbuildingFileProposalPayloadSchema =
   LongProposalBasePayloadSchema.extend({
     batch: LongWorkspaceOperationBatchSchema,
-    baseProjectRevision: z.number().int().nonnegative(),
     files: z.array(LongWorldbuildingFileChangeSchema).min(1).max(100)
   }).superRefine((value, context) => {
     const fileIds = new Set(value.files.map(({ fileId }) => fileId));
@@ -73,13 +68,6 @@ export const LongWorldbuildingFileProposalPayloadSchema =
           path: ["files", index, "fileId"],
           message:
             "Worldbuilding write and edit changes must have a document write proposal."
-        });
-      }
-      if (file.operation === "create" && file.beforeRevision !== null) {
-        context.addIssue({
-          code: "custom",
-          path: ["files", index, "beforeRevision"],
-          message: "Created worldbuilding files cannot have a prior revision."
         });
       }
     }
@@ -118,9 +106,7 @@ export const LongCharacterFileChangeSchema = z
     title: z.string().trim().min(1).max(256),
     operation: z.enum(["create", "write", "edit"]),
     beforeText: z.string().max(1_000_000),
-    afterText: z.string().max(1_000_000),
-    beforeRevision: LongFileRevisionSchema.nullable(),
-    nextRevision: LongFileRevisionSchema
+    afterText: z.string().max(1_000_000)
   })
   .strict()
   .superRefine((value, context) => {
@@ -151,7 +137,6 @@ export type LongCharacterFileChange = z.infer<
 export const LongCharacterFileProposalPayloadSchema =
   LongProposalBasePayloadSchema.extend({
     batch: LongWorkspaceOperationBatchSchema,
-    baseProjectRevision: z.number().int().nonnegative(),
     files: z.array(LongCharacterFileChangeSchema).min(1).max(100)
   }).superRefine((value, context) => {
     const fileIds = new Set(value.files.map(({ fileId }) => fileId));
@@ -172,13 +157,6 @@ export const LongCharacterFileProposalPayloadSchema =
           path: ["files", index, "fileId"],
           message:
             "Character write and edit changes must have a document write proposal."
-        });
-      }
-      if (file.operation === "create" && file.beforeRevision !== null) {
-        context.addIssue({
-          code: "custom",
-          path: ["files", index, "beforeRevision"],
-          message: "Created character files cannot have a prior revision."
         });
       }
     }
@@ -210,9 +188,7 @@ export const LongContinuityFileChangeSchema = z
     title: z.string().trim().min(1).max(256),
     operation: z.enum(["create", "write", "edit"]),
     beforeText: z.string().max(1_000_000),
-    afterText: z.string().max(1_000_000),
-    beforeRevision: LongFileRevisionSchema.nullable(),
-    nextRevision: LongFileRevisionSchema
+    afterText: z.string().max(1_000_000)
   })
   .strict()
   .superRefine((file, context) => {
@@ -226,14 +202,6 @@ export const LongContinuityFileChangeSchema = z
         message: "Only character continuity roles may carry a character id."
       });
     }
-    if ((file.operation === "create") !== (file.beforeRevision === null)) {
-      context.addIssue({
-        code: "custom",
-        path: ["beforeRevision"],
-        message:
-          "Created continuity files require a null prior revision; writes and edits require one."
-      });
-    }
   });
 export type LongContinuityFileChange = z.infer<
   typeof LongContinuityFileChangeSchema
@@ -242,7 +210,6 @@ export type LongContinuityFileChange = z.infer<
 export const LongContinuityFileProposalPayloadSchema =
   LongProposalBasePayloadSchema.extend({
     batch: LongWorkspaceOperationBatchSchema,
-    baseProjectRevision: z.number().int().nonnegative(),
     files: z.array(LongContinuityFileChangeSchema).min(1).max(1_024)
   }).superRefine((value, context) => {
     const fileIds = new Set(value.files.map(({ fileId }) => fileId));
@@ -260,7 +227,6 @@ export const LongContinuityFileProposalPayloadSchema =
         role: LongContinuityFileRole;
         characterId: string | null;
         filePath: string;
-        revision: string;
       }
     >();
     const addCreatedTarget = (
@@ -270,7 +236,6 @@ export const LongContinuityFileProposalPayloadSchema =
         characterId: string | null;
         fileId: string;
         filePath: string;
-        revision: string;
       },
       operationIndex: number
     ): void => {
@@ -293,8 +258,7 @@ export const LongContinuityFileProposalPayloadSchema =
             role: "world_reveals",
             characterId: null,
             fileId: operation.file.id,
-            filePath: operation.file.path,
-            revision: operation.file.revision
+            filePath: operation.file.path
           },
           operationIndex
         );
@@ -307,8 +271,7 @@ export const LongContinuityFileProposalPayloadSchema =
             role: "character_current_state",
             characterId: operation.characterId,
             fileId: operation.currentState.id,
-            filePath: operation.currentState.path,
-            revision: operation.currentState.revision
+            filePath: operation.currentState.path
           },
           operationIndex
         );
@@ -318,8 +281,7 @@ export const LongContinuityFileProposalPayloadSchema =
             role: "character_history",
             characterId: operation.characterId,
             fileId: operation.history.id,
-            filePath: operation.history.path,
-            revision: operation.history.revision
+            filePath: operation.history.path
           },
           operationIndex
         );
@@ -346,21 +308,14 @@ export const LongContinuityFileProposalPayloadSchema =
       );
       const modeMatches =
         file.operation === "create"
-          ? write?.mode === "create" && write.expectedRevision === null
-          : write?.mode !== "create" &&
-            write?.expectedRevision === file.beforeRevision;
+          ? write?.mode === "create"
+          : write?.mode !== "create";
       const createdTarget = createdTargets.get(file.fileId);
-      if (
-        !write ||
-        !modeMatches ||
-        write.content !== file.afterText ||
-        write.nextRevision !== file.nextRevision
-      ) {
+      if (!write || !modeMatches || write.content !== file.afterText) {
         context.addIssue({
           code: "custom",
           path: ["files", index, "fileId"],
-          message:
-            "Each continuity file change must match its document write and revisions."
+          message: "Each continuity file change must match its document write."
         });
       }
       if (file.operation === "create") {
@@ -370,7 +325,6 @@ export const LongContinuityFileProposalPayloadSchema =
           createdTarget.role !== file.role ||
           createdTarget.characterId !== file.characterId ||
           createdTarget.filePath !== file.filePath ||
-          createdTarget.revision !== file.nextRevision ||
           file.beforeText !== ""
         ) {
           context.addIssue({
@@ -412,9 +366,7 @@ export const LongChapterBodyChangeSchema = z
     filePath: LongProjectRelativePathSchema,
     operation: z.enum(["create", "write", "edit"]),
     beforeText: z.string().max(10_000_000),
-    afterText: z.string().max(10_000_000),
-    beforeRevision: LongFileRevisionSchema,
-    nextRevision: LongFileRevisionSchema
+    afterText: z.string().max(10_000_000)
   })
   .strict();
 export type LongChapterBodyChange = z.infer<typeof LongChapterBodyChangeSchema>;
@@ -422,7 +374,6 @@ export type LongChapterBodyChange = z.infer<typeof LongChapterBodyChangeSchema>;
 export const LongChapterWriteProposalPayloadSchema =
   LongProposalBasePayloadSchema.extend({
     batch: LongWorkspaceOperationBatchSchema,
-    baseProjectRevision: z.number().int().nonnegative(),
     file: LongChapterBodyChangeSchema
   }).superRefine((value, context) => {
     const documentWrite = value.batch.documentWrites.find(
@@ -433,8 +384,6 @@ export const LongChapterWriteProposalPayloadSchema =
       value.batch.documentWrites.length !== 1 ||
       !documentWrite ||
       documentWrite.mode !== "replace" ||
-      documentWrite.expectedRevision !== value.file.beforeRevision ||
-      documentWrite.nextRevision !== value.file.nextRevision ||
       documentWrite.content !== value.file.afterText
     ) {
       context.addIssue({

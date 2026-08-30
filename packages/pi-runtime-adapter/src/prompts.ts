@@ -10,7 +10,12 @@ import {
 } from "./prompts-long";
 import type { UserMessage } from "@earendil-works/pi-ai";
 import { buildChatAssistantSystemPrompt } from "./chat-assistant";
+import {
+  renderDeepSeekWebSearchCapabilityPrompt,
+  renderDeepSeekWebSearchNetworkBoundary
+} from "./deepseek-web-search";
 import { buildRawUserText, imageContentBlocks } from "./prompts-user-message";
+import { renderLongBookAnalysisSystemPrompt } from "./long-book-analysis/prompt";
 import { buildWritingSystemPrompt } from "./prompts-writing";
 import type { AgentRunInput } from "./runtime-types";
 import { renderSubagentAuthoringSystemPrompt } from "./subagent-authoring-tools";
@@ -32,20 +37,23 @@ export function buildDeepWriteSystemPrompt(): string {
   ].join("\n");
 }
 
-/** @internal Exported for workspace-type prompt regression tests. */
-export function buildEffectiveSystemPrompt(
+function appendWorkspaceWebSearchPrompt(
+  prompt: string,
+  webSearchEnabled: boolean
+): string {
+  if (!webSearchEnabled) return prompt;
+  return [
+    prompt,
+    "",
+    renderDeepSeekWebSearchCapabilityPrompt(),
+    renderDeepSeekWebSearchNetworkBoundary()
+  ].join("\n");
+}
+
+function buildWorkspaceAgentSystemPrompt(
   basePrompt: string,
   input: AgentRunInput
 ): string {
-  if (input.mode === "chat-assistant") {
-    if (!input.chatAssistantRuntimeContext) {
-      throw new Error("Chat assistant runtime context is unavailable.");
-    }
-    return buildChatAssistantSystemPrompt(
-      input.chatAssistantRuntimeContext,
-      input.webSearchEnabled === true
-    );
-  }
   const subagentAuthoring = input.workspaceContext?.subagentAuthoring;
   if (subagentAuthoring) {
     return [
@@ -76,6 +84,22 @@ export function buildEffectiveSystemPrompt(
       "",
       "【DeepWrite 学习仿写工具边界】",
       writeBoundary
+    ].join("\n");
+  }
+  const longBookAnalysisProfile = input.longBookAnalysisProfile;
+  const longBookAnalysisContext = input.workspaceContext?.longBookAnalysis;
+  if (longBookAnalysisProfile && longBookAnalysisContext) {
+    return [
+      basePrompt,
+      "",
+      `【当前长篇拆书智能体：${longBookAnalysisProfile.name} / ${longBookAnalysisProfile.id}】`,
+      renderLongBookAnalysisSystemPrompt(
+        longBookAnalysisProfile,
+        longBookAnalysisContext
+      ).trim(),
+      "",
+      "【DeepWrite 长篇拆书工具边界】",
+      "只能使用本轮列出的章节或中间笔记 list/read/search 工具，以及当前阶段唯一允许的 write_analysis_note 或 write_analysis_result。写入工具只更新本次任务的内存笔记或结果预览，不会修改源文件，也不会直接写入资料库。"
     ].join("\n");
   }
   const libraryProfile = input.libraryAgentProfile;
@@ -109,6 +133,26 @@ export function buildEffectiveSystemPrompt(
   return buildWritingSystemPrompt(basePrompt, input);
 }
 
+/** @internal Exported for workspace-type prompt regression tests. */
+export function buildEffectiveSystemPrompt(
+  basePrompt: string,
+  input: AgentRunInput
+): string {
+  if (input.mode === "chat-assistant") {
+    if (!input.chatAssistantRuntimeContext) {
+      throw new Error("Chat assistant runtime context is unavailable.");
+    }
+    return buildChatAssistantSystemPrompt(
+      input.chatAssistantRuntimeContext,
+      input.webSearchEnabled === true
+    );
+  }
+  return appendWorkspaceWebSearchPrompt(
+    buildWorkspaceAgentSystemPrompt(basePrompt, input),
+    input.webSearchEnabled === true
+  );
+}
+
 /** @internal Exported for prompt-boundary regression tests. */
 export function buildRuntimeUserPrompt(input: AgentRunInput): string {
   const active = input.workspaceContext?.activeResource;
@@ -129,6 +173,7 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
   // and no implementation-level ids are exposed.
   const isLongRun = Boolean(longWorkspace && longProfile);
   const learningContext = input.workspaceContext?.learningImitation;
+  const longBookAnalysisContext = input.workspaceContext?.longBookAnalysis;
   const writingStageReadAccess = scriptWorkspace
     ? resolveScriptWorkspaceStageReadAccess(scriptWorkspace.activeStageId)
     : shortWorkspace
@@ -253,9 +298,14 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
           ? `当前智能体: ${input.libraryAgentProfile.label} (${input.libraryAgentProfile.domain})`
           : input.learningImitationProfile
             ? `当前智能体: ${input.learningImitationProfile.label} (${input.learningImitationProfile.id})`
-            : "",
+            : input.longBookAnalysisProfile
+              ? `当前智能体: ${input.longBookAnalysisProfile.name} (${input.longBookAnalysisProfile.id})`
+              : "",
     learningContext
       ? `学习阶段: ${learningContext.stageId}；样本文档: ${learningContext.documents.length} 篇`
+      : "",
+    longBookAnalysisContext
+      ? `拆书阶段: ${longBookAnalysisContext.phase}；选择范围: 第 ${longBookAnalysisContext.selectionStart}-${longBookAnalysisContext.selectionEnd} 章`
       : "",
     libraryContext
       ? `当前资料库: 《${libraryContext.title}》 (${libraryContext.domain} / ${libraryContext.kind}；短篇、剧本、长篇共用)`
@@ -285,7 +335,9 @@ export function buildRuntimeUserPrompt(input: AgentRunInput): string {
       ? `当前资源: ${active.title} (${active.domain}${active.format ? ` / ${active.format}` : ""})`
       : learningContext
         ? "当前资源: 学习仿写样本文档（正文请通过工具按需读取）"
-        : "当前资源: 未提供",
+        : longBookAnalysisContext
+          ? "当前资源: 长篇拆书输入（章节正文或中间笔记请通过工具按需读取）"
+          : "当前资源: 未提供",
     active && !isLongRun ? `资源路径: ${active.path.join(" / ")}` : "",
     active &&
     !writingWorkspace &&

@@ -465,6 +465,9 @@ function createDeferredApi(): {
       readDocument: vi.fn(async () => {
         throw new Error("Long workspace is not used by conversation tests.");
       }),
+      search: vi.fn(async () => {
+        throw new Error("Long workspace is not used by conversation tests.");
+      }),
       writeDocument: vi.fn(async () => {
         throw new Error("Long workspace is not used by conversation tests.");
       }),
@@ -484,9 +487,6 @@ function createDeferredApi(): {
         throw new Error("Long workspace is not used by conversation tests.");
       }),
       commitChapter: vi.fn(async () => {
-        throw new Error("Long workspace is not used by conversation tests.");
-      }),
-      rollbackLastCommit: vi.fn(async () => {
         throw new Error("Long workspace is not used by conversation tests.");
       }),
       unregister: vi.fn(async () => {
@@ -714,6 +714,30 @@ function createDeferredApi(): {
         );
       }
     },
+    longBookAnalysis: {
+      async chooseSource() {
+        throw new Error(
+          "Long book analysis is not used by conversation tests."
+        );
+      },
+      presets: {
+        async list() {
+          throw new Error(
+            "Long book analysis is not used by conversation tests."
+          );
+        },
+        async save() {
+          throw new Error(
+            "Long book analysis is not used by conversation tests."
+          );
+        },
+        async reset() {
+          throw new Error(
+            "Long book analysis is not used by conversation tests."
+          );
+        }
+      }
+    },
     workspaceDirectory: {
       async list() {
         return { path: null };
@@ -756,6 +780,7 @@ function createDeferredApi(): {
             autoSave: false,
             language: "auto" as const,
             showInMenuBar: true,
+            showContextUsage: true,
             workspacePaneLayout: "agent-editor" as const,
             defaultTextViewMode: "edit" as const
           }

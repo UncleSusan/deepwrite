@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import type { EditorEntrySearchResult } from "../types/editorEntrySearch";
 import AppIcon from "./AppIcon.vue";
+import EditorEntrySearchRow from "./EditorEntrySearchRow.vue";
 
 defineProps<{
   findPanelMode: "find" | "replace";
@@ -7,16 +9,25 @@ defineProps<{
   replacementText: string;
   searchResultLabel: string;
   currentReadOnly: boolean;
+  entrySearchQuery: string;
+  entrySearchResults: readonly EditorEntrySearchResult[];
+  activeEntrySearchIndex: number;
+  entrySearchPending: boolean;
+  entrySearchResultLabel: string;
 }>();
 
 const emit = defineEmits<{
   "update:searchQuery": [value: string];
   "update:replacementText": [value: string];
+  "update:entrySearchQuery": [value: string];
   findInput: [];
   findMatch: [direction: 1 | -1];
   close: [];
   replaceCurrent: [];
   replaceAll: [];
+  entrySearchInput: [];
+  moveEntrySearch: [direction: 1 | -1];
+  selectEntrySearch: [index?: number];
 }>();
 
 const findPanelElement = defineModel<HTMLElement | null>("findPanelElement", {
@@ -120,6 +131,17 @@ const findInput = defineModel<HTMLInputElement | null>("findInput", {
         全部
       </button>
     </div>
+    <EditorEntrySearchRow
+      :query="entrySearchQuery"
+      :results="entrySearchResults"
+      :active-index="activeEntrySearchIndex"
+      :pending="entrySearchPending"
+      :result-label="entrySearchResultLabel"
+      @update:query="emit('update:entrySearchQuery', $event)"
+      @input="emit('entrySearchInput')"
+      @move="emit('moveEntrySearch', $event)"
+      @select="emit('selectEntrySearch', $event)"
+    />
   </div>
 </template>
 

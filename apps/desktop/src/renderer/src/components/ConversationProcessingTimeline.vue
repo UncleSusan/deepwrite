@@ -41,7 +41,6 @@ const emit = defineEmits<{
   rejectLongProposal: [eventId: string];
   retryLongProposalPreview: [eventId: string];
   locateLongProposal: [eventId: string];
-  discardLongProposal: [eventId: string];
 }>();
 </script>
 
@@ -74,7 +73,6 @@ const emit = defineEmits<{
       @reject-long-proposal="emit('rejectLongProposal', $event)"
       @retry-long-proposal-preview="emit('retryLongProposalPreview', $event)"
       @locate-long-proposal="emit('locateLongProposal', $event)"
-      @discard-long-proposal="emit('discardLongProposal', $event)"
     />
   </div>
 
@@ -102,7 +100,6 @@ const emit = defineEmits<{
         @reject-long-proposal="emit('rejectLongProposal', $event)"
         @retry-long-proposal-preview="emit('retryLongProposalPreview', $event)"
         @locate-long-proposal="emit('locateLongProposal', $event)"
-        @discard-long-proposal="emit('discardLongProposal', $event)"
       />
       <SubagentRunList
         v-if="message.subagentRuns?.length"

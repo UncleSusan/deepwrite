@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
 import type { AgentProviderRuntimeConfig } from "@deepwrite/contracts";
-import { buildProviderRuntime } from "./provider-runtime";
+import {
+  buildProviderRuntime,
+  buildWorkspaceProviderRuntimes
+} from "./provider-runtime";
 import { appendDeepSeekWebSearchTool } from "./deepseek-web-search";
 
 function config(
@@ -35,13 +38,9 @@ const localTool: AgentTool = {
   })
 };
 
-async function captureProviderPayload(
-  runtimeConfig: AgentProviderRuntimeConfig,
-  webSearchEnabled: boolean
+async function captureStreamPayload(
+  runtime: ReturnType<typeof buildProviderRuntime>
 ): Promise<{ payload: Record<string, unknown>; upstreamCalls: number }> {
-  const { model, streamFn } = buildProviderRuntime(runtimeConfig, 0.7, "off", {
-    webSearchEnabled
-  });
   let payload: Record<string, unknown> | undefined;
   const upstream = vi.fn((value: unknown) => ({
     ...(value as Record<string, unknown>),
@@ -54,8 +53,8 @@ async function captureProviderPayload(
       { status: 400, headers: { "content-type": "application/json" } }
     );
   };
-  const stream = await streamFn(
-    model,
+  const stream = await runtime.streamFn(
+    runtime.model,
     {
       systemPrompt: "Use tools when useful.",
       messages: [{ role: "user", content: "Search the web.", timestamp: 0 }],
@@ -67,6 +66,15 @@ async function captureProviderPayload(
   expect(result.stopReason).toBe("error");
   if (!payload) throw new Error("Provider payload was not captured.");
   return { payload, upstreamCalls: upstream.mock.calls.length };
+}
+
+async function captureProviderPayload(
+  runtimeConfig: AgentProviderRuntimeConfig,
+  webSearchEnabled: boolean
+): Promise<{ payload: Record<string, unknown>; upstreamCalls: number }> {
+  return captureStreamPayload(
+    buildProviderRuntime(runtimeConfig, 0.7, "off", { webSearchEnabled })
+  );
 }
 
 describe("DeepSeek server-side web search", () => {
@@ -115,5 +123,26 @@ describe("DeepSeek server-side web search", () => {
         { webSearchEnabled: true }
       )
     ).toThrow(/智能搜索仅支持/u);
+  });
+
+  it("keeps spawn requests free of the parent web search tool", async () => {
+    const runtimes = buildWorkspaceProviderRuntimes(
+      config("openai-responses"),
+      0.7,
+      "off",
+      { webSearchEnabled: true }
+    );
+    const parent = await captureStreamPayload({
+      model: runtimes.model,
+      streamFn: runtimes.streamFn
+    });
+    const spawn = await captureStreamPayload({
+      model: runtimes.model,
+      streamFn: runtimes.spawnStreamFn
+    });
+
+    expect(parent.payload.tools).toContainEqual({ type: "web_search" });
+    expect(spawn.payload.tools).toHaveLength(1);
+    expect(spawn.payload.tools).not.toContainEqual({ type: "web_search" });
   });
 });

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  EMPTY_LONG_MARKDOWN_REVISION,
   LONG_CHARACTER_OVERVIEW_FILE_ID,
   LONG_CHARACTER_OVERVIEW_PATH,
   longCharacterCoreProfileFileId,
@@ -16,7 +15,6 @@ const updatedAt = "2026-07-31T00:00:00.000Z";
 const overview = {
   id: LONG_CHARACTER_OVERVIEW_FILE_ID,
   path: LONG_CHARACTER_OVERVIEW_PATH,
-  revision: EMPTY_LONG_MARKDOWN_REVISION,
   updatedAt
 };
 const characterFiles = [
@@ -25,13 +23,11 @@ const characterFiles = [
     coreProfile: {
       id: longCharacterCoreProfileFileId("character_alice"),
       path: longCharacterFilePath("character_alice", "core-profile.md"),
-      revision: EMPTY_LONG_MARKDOWN_REVISION,
       updatedAt
     },
     relationships: {
       id: longCharacterRelationshipsFileId("character_alice"),
       path: longCharacterFilePath("character_alice", "relationships.md"),
-      revision: EMPTY_LONG_MARKDOWN_REVISION,
       updatedAt
     }
   }

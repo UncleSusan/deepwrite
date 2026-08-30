@@ -21,7 +21,6 @@ describe("WorkspaceDialogLayer boundary", () => {
       "book-transfer": "BookTransferDialog",
       "continuation-import": "LongContinuationImportDialog",
       "legacy-sync": "LongLegacySyncDialog",
-      "long-rollback": "LongRollbackDialog",
       "long-structure": "LongStructureDialog",
       "create-long-character": "CreateLongCharacterDialog",
       "create-long-worldbuilding-item": "CreateLongWorldbuildingItemDialog",
@@ -42,8 +41,8 @@ describe("WorkspaceDialogLayer boundary", () => {
       "delete-expert-section": "DeleteExpertSectionDialog",
       "startup-alert": "StartupAlertDialog"
     };
-    expect(WORKSPACE_DIALOG_KINDS).toHaveLength(30);
-    expect(new Set(WORKSPACE_DIALOG_KINDS).size).toBe(30);
+    expect(WORKSPACE_DIALOG_KINDS).toHaveLength(29);
+    expect(new Set(WORKSPACE_DIALOG_KINDS).size).toBe(29);
     for (const kind of WORKSPACE_DIALOG_KINDS) {
       expect(source).toContain(`module.kind === '${kind}'`);
       expect(typesSource).toContain(`kind: "${kind}"`);
@@ -55,7 +54,7 @@ describe("WorkspaceDialogLayer boundary", () => {
       );
     }
     expect(source.match(/v-if="module\.kind ===/gu)).toHaveLength(1);
-    expect(source.match(/v-else-if="module\.kind ===/gu)).toHaveLength(29);
+    expect(source.match(/v-else-if="module\.kind ===/gu)).toHaveLength(28);
   });
 
   it("does not instantiate a host or dialog branch without a module", () => {

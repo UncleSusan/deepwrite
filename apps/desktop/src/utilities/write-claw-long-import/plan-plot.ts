@@ -497,7 +497,7 @@ export function buildImportedPlot(
   }
   if (committedChapterCount > 0) {
     warnings.add(
-      `${committedChapterCount} 个旧版已落盘章节将恢复为只读、不可逆的迁移检查点；旧版没有精确 before/after 的记录不会伪造成可逆提交。`
+      `${committedChapterCount} 个旧版已落盘章节将恢复为迁移审计检查点；迁移后正文和连续性文件仍可直接编辑。`
     );
   }
   if (preservedLedgerChapterCount > 0) {
@@ -1035,7 +1035,6 @@ export function buildImportedPlot(
         placement.commitId = commitId;
         return {
           placementId: placement.id,
-          before: { status: "planned" as const, commitId: null },
           after: { status: decision, commitId },
           note:
             clipped(
@@ -1049,7 +1048,6 @@ export function buildImportedPlot(
 
       const beatChanges: Array<{
         beatId: string;
-        before: { status: "planned"; commitId: null };
         after: {
           status: "committed" | "missed";
           commitId: string;
@@ -1075,7 +1073,6 @@ export function buildImportedPlot(
           changedBeatIds.add(beat.id);
           beatChanges.push({
             beatId: beat.id,
-            before: { status: "planned", commitId: null },
             after: { status: decision, commitId },
             note: beat.note.trim() || "旧版检查点未提供单独证据。"
           });
@@ -1087,15 +1084,13 @@ export function buildImportedPlot(
           thread.beats.some((beat) => changedBeatIds.has(beat.id))
         )
         .map((thread) => {
-          const before = thread.status;
           const after =
-            before === "abandoned"
+            thread.status === "abandoned"
               ? "abandoned"
               : deriveLongForeshadowingStatusFromCommittedBeats(thread.beats);
           thread.status = after;
           return {
             foreshadowingId: thread.id,
-            before,
             after
           };
         });
@@ -1113,19 +1108,10 @@ export function buildImportedPlot(
           committedRow.legacyCardId,
           committedRow.stageId
         ),
-        reversible: false,
-        sourceWorkspaceRevision: sequence - 1,
-        committedWorkspaceRevision: sequence,
-        sourceProjectRevision: sequence - 1,
-        committedProjectRevision: sequence,
-        previousCommittedThroughChapterId:
-          committedChapterRows[commitIndex - 1]?.chapterCardId ?? null,
         committedThroughChapterId: committedRow.chapterCardId,
-        previousChapterCommitId: null,
         placementChanges,
         foreshadowingBeatChanges: beatChanges,
-        foreshadowingThreadChanges: threadChanges,
-        fileChanges: []
+        foreshadowingThreadChanges: threadChanges
       });
       const recordReference = documents.add(
         longLedgerCommitFileId(commitId),
@@ -1143,15 +1129,13 @@ export function buildImportedPlot(
         sequence,
         chapterCardId: committedRow.chapterCardId,
         committedAt,
-        reversible: false,
-        sourceRevision: sequence - 1,
         placementIds: placements.map(({ id }) => id),
         foreshadowingBeatIds: beatChanges.map(({ beatId }) => beatId),
         recordFile: recordReference
       });
     }
     warnings.add(
-      "旧版连续性已恢复为不可逆迁移检查点；如需改写已提交前缀，请复制内容到新项目或从源文件重新迁移。"
+      "旧版连续性已恢复为迁移审计检查点；迁移后的正文与连续性文件可继续直接编辑。"
     );
   }
 

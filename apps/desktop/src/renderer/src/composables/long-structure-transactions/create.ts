@@ -242,6 +242,32 @@ export function createLongStructureCreate(
     );
   }
 
+  async function openLongVolumeCreateInternal(
+    requestId: number,
+    target: { bookId: string; source: "book-line" | "draft" }
+  ): Promise<void> {
+    if (activeLongBookId.value !== target.bookId) {
+      if (!(await saveActiveLongEditorBeforeLeaving(target.bookId))) return;
+      if (!dialogRequestIsCurrent(requestId)) return;
+      await openLongBook(target.bookId);
+    } else if (!(await saveActiveLongEditorChanges())) {
+      return;
+    }
+    if (!dialogRequestIsCurrent(requestId)) return;
+    if (
+      activeLongBookId.value !== target.bookId ||
+      !activeLongWorkspaceIndex.value ||
+      !captureLongStructureMutationTarget(target.bookId)
+    ) {
+      uiMessage.warning("当前长篇工作区尚未准备好新建分卷。");
+      return;
+    }
+    longVolumeCreate.value = {
+      bookId: target.bookId,
+      source: target.source
+    };
+  }
+
   async function openLongVolumeCreate(): Promise<void> {
     const requestId = beginDialogRequest();
     if (requestId === null) return;
@@ -254,18 +280,18 @@ export function createLongStructureCreate(
       ) {
         return;
       }
-      if (!(await saveActiveLongEditorChanges())) return;
+      await openLongVolumeCreateInternal(requestId, {
+        bookId,
+        source: "book-line"
+      });
       if (
-        !dialogRequestIsCurrent(requestId) ||
-        !captureLongStructureMutationTarget(bookId) ||
+        dialogRequestIsCurrent(requestId) &&
+        longVolumeCreate.value?.bookId === bookId &&
         activeLongSelection.value?.key !== "plot-design:book-line"
       ) {
-        if (dialogRequestIsCurrent(requestId)) {
-          uiMessage.warning("活动长篇已切换，本次新建分卷已取消。");
-        }
-        return;
+        longVolumeCreate.value = null;
+        uiMessage.warning("活动长篇已切换，本次新建分卷已取消。");
       }
-      longVolumeCreate.value = { bookId };
     });
   }
 
@@ -367,12 +393,36 @@ export function createLongStructureCreate(
           lease,
           batch,
           apply.completion,
-          {},
+          {
+            saveEditor: false,
+            ...(target.source === "draft"
+              ? {
+                  successMessage: `已新建分卷“${input.title}”，剧情阶段已同步生成卷纲`
+                }
+              : {})
+          },
           index
         );
         if (!apply.didApply() || isDisposed()) return;
         if (longVolumeCreate.value === target) longVolumeCreate.value = null;
         if (!apply.didSucceed() || !mutationIsCurrent(lease)) return;
+        if (target.source === "draft") {
+          await nextTick();
+          if (!mutationIsCurrent(lease)) return;
+          if (
+            activeLongBookId.value === target.bookId &&
+            activeLongSelection.value?.root === "draft"
+          ) {
+            return;
+          }
+          const draftRoot = resourceNode(
+            longNavigationNodeId(target.bookId, "root:draft")
+          );
+          if (draftRoot) {
+            await selectResource(draftRoot);
+          }
+          return;
+        }
         if (
           await selectCreatedLongTreeResource(
             lease,
@@ -729,6 +779,7 @@ export function createLongStructureCreate(
     openLongWorldbuildingItemCreateForCategoryInternal,
     openLongCharacterCreate,
     openLongWorldbuildingItemCreate,
+    openLongVolumeCreateInternal,
     openLongVolumeCreate,
     openLongPlotPointCreateForVolumeInternal,
     openLongPlotPointCreate,

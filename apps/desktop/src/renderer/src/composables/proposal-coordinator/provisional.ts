@@ -122,7 +122,8 @@ export function createProvisionalSectionHelpers(ctx: ProposalLaneContext) {
           title: realDocument.title,
           provisionalExpertSection: false,
           baseRevision: proposal.predecessorProposalId
-            ? proposal.baseRevision
+            ? (proposal.baseRevision ??
+              createShortWorkspaceContentRevision(realDocument.content))
             : createShortWorkspaceContentRevision(realDocument.content),
           statusMessage:
             proposal.statusMessage ??

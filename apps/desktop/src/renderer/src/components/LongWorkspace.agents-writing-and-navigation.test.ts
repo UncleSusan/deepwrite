@@ -9,7 +9,6 @@ import {
   it,
   leftSidebarSource,
   longConversationSource,
-  longRollbackSource,
   longStructureTransactionsSource,
   longWorkspaceModuleSource,
   longWorkspaceRefreshSource,
@@ -18,7 +17,6 @@ import {
   proposalRuntimeSource,
   proposalSource,
   resourceTreeCoordinatorSource,
-  rollbackSource,
   sectionSource,
   treeNodeSource,
   workspaceDialogLayerSource,
@@ -186,8 +184,8 @@ describe("long-form renderer vertical slice: agents-writing-and-navigation", () 
     expect(proposalSource).toContain("查看具体影响");
     expect(proposalSource).toContain("删除实体");
     expect(proposalSource).toContain("实体完整前后快照");
-    expect(proposalSource).toContain("entitySnapshotText(change.before)");
-    expect(proposalSource).toContain("entitySnapshotText(change.after)");
+    expect(proposalSource).toContain("snapshotText(change.before)");
+    expect(proposalSource).toContain("snapshotText(change.after)");
     expect(proposalSource).not.toContain(".slice(0, 80)");
     expect(proposalSource).toContain("long.continuity_file_proposal");
     expect(proposalSource).not.toContain("查看提交内容");
@@ -222,12 +220,12 @@ describe("long-form renderer vertical slice: agents-writing-and-navigation", () 
     expect(proposalSource).not.toContain("workspace.editor_mutation");
   });
 
-  it("keeps saved revisions atomic and pauses long-agent sends while refreshing", () => {
+  it("keeps saves ordered and pauses long-agent sends while refreshing", () => {
     expect(longWorkspaceRefreshSource).toContain(
       "createLongWorkspaceRefreshClock()"
     );
     expect(longWorkspaceRefreshSource).toContain(
-      "isMonotonicLongWorkspaceRefresh("
+      "isCurrent(bookId, requestId)"
     );
     expect(appSource).toContain("activeLongWorkspaceContextReady");
     expect(longWorkspaceRefreshSource).toContain(
@@ -278,7 +276,7 @@ describe("long-form renderer vertical slice: agents-writing-and-navigation", () 
     expect(appSource).not.toContain("const longEditorLocked = computed(");
     expect(longWorkspaceModuleSource).toContain(':locked="editorLocked"');
     expect(presentationCoordinatorSource).toContain(
-      "agentRunScopeHasWriteBarrier(scope)"
+      "function agentRunScopeHasWriteBarrier(scope: string)"
     );
     expect(presentationCoordinatorSource).toContain(
       "conversation.hasPendingEditReview.value"
@@ -286,9 +284,7 @@ describe("long-form renderer vertical slice: agents-writing-and-navigation", () 
     expect(presentationCoordinatorSource).toContain(
       "正在保存并准备发送，编辑暂时锁定"
     );
-    expect(presentationCoordinatorSource).toContain(
-      "长篇智能体运行中 · 暂停编辑以防止版本冲突"
-    );
+    expect(presentationCoordinatorSource).not.toContain("版本冲突");
     expect(editorSource).toContain("lockedReason?: string");
     expect(editorSource).toContain(':disabled="locked"');
     const approveSource =
@@ -330,19 +326,10 @@ describe("long-form renderer vertical slice: agents-writing-and-navigation", () 
     expect(agentRunPreferencesSource).not.toContain("longConversationKey");
   });
 
-  it("requires a modal confirmation before rolling back the final commit", () => {
-    expect(editorSource).toContain("回滚最后提交");
-    expect(appSource).toContain('@rollback="openLongRollbackDialog"');
-    expect(appSource).toContain("useLazyLongRollbackCoordinator({");
-    expect(longRollbackSource).toContain("api.rollbackLastCommit({");
-    expect(longRollbackSource).toContain(
-      "await session.saveActiveEditorChanges()"
-    );
-    expect(longRollbackSource).toContain(
-      "await session.refreshActiveWorkspace(operationTarget.bookId)"
-    );
-    expect(rollbackSource).toContain('role="alertdialog"');
-    expect(rollbackSource).toContain('aria-modal="true"');
-    expect(rollbackSource).toContain("var(--surface-raised)");
+  it("does not expose the removed long-form rollback surface", () => {
+    expect(editorSource).not.toContain("回滚最后提交");
+    expect(appSource).not.toContain("openLongRollbackDialog");
+    expect(appSource).not.toContain("useLazyLongRollbackCoordinator");
+    expect(workspaceDialogLayerSource).not.toContain("LongRollbackDialog");
   });
 });

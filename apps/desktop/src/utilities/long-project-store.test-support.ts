@@ -47,7 +47,6 @@ import {
 } from "@deepwrite/contracts";
 import { projectTransactionContentSha256 } from "./project-transaction";
 import {
-  createLongFileRevision,
   deriveLongForeshadowingStatus,
   LongProjectStore
 } from "./long-project-store";
@@ -64,6 +63,14 @@ async function temporaryParent(): Promise<string> {
 
 function store(): LongProjectStore {
   return new LongProjectStore({ now: () => FIXED_NOW });
+}
+
+// Legacy-fixture helper only. Production no longer creates or compares file
+// revisions, but migration tests still need to construct the retired format.
+function createLongFileRevision(content: string | Uint8Array): string {
+  const bytes =
+    typeof content === "string" ? Buffer.from(content, "utf8") : content;
+  return `v2:${bytes.byteLength}:${projectTransactionContentSha256(bytes)}`;
 }
 
 async function createFixture(suffix: string) {

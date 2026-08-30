@@ -67,7 +67,7 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
     proposal: AgentEditProposal
   ): string {
     return expectedDraftSectionCreationRevision(
-      proposal.baseRevision,
+      proposal.baseRevision ?? proposal.id,
       acceptedDraftSectionCreationRevisions.get(
         draftSectionCreationRevisionKey(proposal.runId, proposal.workspaceId)
       )
@@ -85,7 +85,7 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
     acceptedDraftSectionCreationRevisions.set(
       key,
       advanceDraftSectionCreationRevision(
-        proposal.baseRevision,
+        proposal.baseRevision ?? proposal.id,
         currentRevision,
         acceptedDraftSectionCreationRevisions.get(key)
       )
@@ -746,7 +746,8 @@ export function createDraftSectionLane(ctx: ProposalLaneContext) {
       rememberAcceptedDraftSectionCreation(
         proposal,
         currentExpertDraftDirectoryRevision(proposal.workspaceId) ??
-          proposal.baseRevision
+          proposal.baseRevision ??
+          proposal.id
       );
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",

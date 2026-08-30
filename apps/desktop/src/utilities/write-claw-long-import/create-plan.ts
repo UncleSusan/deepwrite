@@ -34,7 +34,7 @@ import {
   buildCharacterOverviewMarkdown,
   buildImportedCharacters
 } from "./plan-characters";
-import { createDocumentBuilder, fileRevision } from "./plan-documents";
+import { createDocumentBuilder } from "./plan-documents";
 import { buildImportedPlot } from "./plan-plot";
 import { buildImportedWorldbuilding } from "./plan-worldbuilding";
 import type {
@@ -227,7 +227,6 @@ export function createWriteClawLongImportPlan(
 
   const index = LongWorkspaceIndexSnapshotSchema.parse({
     schemaVersion: 1,
-    revision: legacyCommits.length,
     bookId,
     updatedAt: importedAt,
     bookLine,
@@ -252,10 +251,8 @@ export function createWriteClawLongImportPlan(
   });
 
   const createdAt = normalizeTimestamp(source.book?.created_at, importedAt);
-  const indexContent = serializeJson(index);
   const manifest = LongProjectManifestSchema.parse({
     schemaVersion: 1,
-    revision: legacyCommits.length,
     kind: "deepwrite.long-book",
     id: bookId,
     title: bookTitle,
@@ -269,7 +266,6 @@ export function createWriteClawLongImportPlan(
     workspaceIndexFile: {
       id: LONG_WORKSPACE_INDEX_FILE_ID,
       path: LONG_WORKSPACE_INDEX_PATH,
-      revision: fileRevision(indexContent),
       updatedAt: importedAt
     }
   });

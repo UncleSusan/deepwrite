@@ -54,3 +54,47 @@ describe("session user-input commands", () => {
     );
   });
 });
+
+describe("session prompt web search", () => {
+  it("rejects workspace web search for an incompatible model", async () => {
+    const command = CommandEnvelopeSchema.parse(
+      createEnvelope(
+        "session.prompt",
+        {
+          sessionId: "session_workspace_search",
+          message: "查一下近期同类题材",
+          modelId: "writer",
+          webSearchEnabled: true
+        },
+        {
+          id: "command_workspace_search",
+          context: { sessionId: "session_workspace_search" }
+        }
+      )
+    );
+    const ctx = {
+      pendingUsageContexts: new Map(),
+      requireModelConfigStore: () => ({
+        resolve: vi.fn(async () => ({
+          id: "writer",
+          label: "Writer",
+          provider: "openai",
+          modelId: "writer-model",
+          api: "openai-responses",
+          baseUrl: "https://api.example.test/v1",
+          reasoning: true,
+          defaultThinkingLevel: "medium",
+          thinkingLevelOptions: ["low", "high"],
+          temperatureOptions: [0.1, 0.7, 1]
+        }))
+      })
+    } as unknown as IpcCommandContext;
+
+    await expect(handleSessionCommands(ctx, command)).resolves.toMatchObject({
+      status: "rejected",
+      error: {
+        message: expect.stringMatching(/智能搜索仅支持/u)
+      }
+    });
+  });
+});

@@ -13,6 +13,7 @@ import {
   longChapterHandoffFileId,
   longWorldbuildingItemContentPath,
   longWorldbuildingItemFileId,
+  type LongWorkspaceImpactConfirmation,
   type LongWorkspaceOperationBatch,
   type SystemEventEnvelope
 } from "@deepwrite/contracts";
@@ -41,7 +42,6 @@ const proposalBase = {
   summary: "待审阅长篇提案",
   runtime
 };
-const fileRevision = "v1:0:00000000";
 const ledgerAudit = {
   commitMessage: "核验并提交第一章",
   chapterSummary: {
@@ -60,6 +60,13 @@ const emptyImpact = {
   createdFileIds: [] as string[],
   deletedFileIds: [] as string[],
   documentWriteProposalIds: [] as string[]
+};
+const emptyConfirmation: LongWorkspaceImpactConfirmation = {
+  impact: emptyImpact,
+  entityChanges: [],
+  relationshipChanges: [],
+  fileIntents: [],
+  ledgerRecordEdits: []
 };
 
 function systemEvent(event: unknown): SystemEventEnvelope {
@@ -80,7 +87,6 @@ function mutationEvent(
         ...proposalBase,
         toolCallId: options.toolCallId ?? proposalBase.toolCallId,
         batch: {
-          baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
           operations: [
             {
@@ -90,8 +96,7 @@ function mutationEvent(
             }
           ],
           documentWrites: []
-        },
-        baseProjectRevision: 11
+        }
       },
       { id: options.id ?? "event_mutation", context: envelopeContext }
     )
@@ -110,7 +115,6 @@ function worldbuildingFileEvent() {
       {
         ...proposalBase,
         batch: {
-          baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
           operations: [
             {
@@ -123,7 +127,6 @@ function worldbuildingFileEvent() {
                 file: {
                   id: fileId,
                   path: filePath,
-                  revision: fileRevision,
                   updatedAt: "2026-07-26T12:00:00.000Z"
                 }
               }
@@ -131,7 +134,6 @@ function worldbuildingFileEvent() {
           ],
           documentWrites: []
         },
-        baseProjectRevision: 11,
         files: [
           {
             categoryId: "world_rules",
@@ -141,9 +143,7 @@ function worldbuildingFileEvent() {
             title: "记忆代价",
             operation: "create" as const,
             beforeText: "",
-            afterText: "",
-            beforeRevision: null,
-            nextRevision: fileRevision
+            afterText: ""
           }
         ]
       },
@@ -166,7 +166,6 @@ function worldbuildingWriteEvent() {
         toolCallId: "tool_worldbuilding_write",
         summary: "写入记忆代价",
         batch: {
-          baseRevision: 7,
           updatedAt: "2026-07-26T12:00:01.000Z",
           operations: [],
           documentWrites: [
@@ -175,14 +174,11 @@ function worldbuildingWriteEvent() {
               fileId,
               content: "每次施法都会遗忘一段记忆。",
               mode: "replace" as const,
-              expectedRevision: fileRevision,
-              nextRevision: "v1:4:11111111",
               updatedAt: "2026-07-26T12:00:01.000Z",
               reason: "写入记忆代价"
             }
           ]
         },
-        baseProjectRevision: 11,
         files: [
           {
             categoryId: "world_rules",
@@ -192,9 +188,7 @@ function worldbuildingWriteEvent() {
             title: "记忆代价",
             operation: "write" as const,
             beforeText: "",
-            afterText: "每次施法都会遗忘一段记忆。",
-            beforeRevision: fileRevision,
-            nextRevision: "v1:4:11111111"
+            afterText: "每次施法都会遗忘一段记忆。"
           }
         ]
       },
@@ -215,7 +209,6 @@ function characterWriteEvent() {
         toolCallId: "tool_character_write",
         summary: "写入林岚核心档案",
         batch: {
-          baseRevision: 7,
           updatedAt: "2026-07-26T12:00:01.000Z",
           operations: [],
           documentWrites: [
@@ -224,14 +217,11 @@ function characterWriteEvent() {
               fileId,
               content: "雾港巡夜人。",
               mode: "replace" as const,
-              expectedRevision: fileRevision,
-              nextRevision: "v1:6:12345678",
               updatedAt: "2026-07-26T12:00:01.000Z",
               reason: "写入林岚核心档案"
             }
           ]
         },
-        baseProjectRevision: 11,
         files: [
           {
             characterId: "character_lan",
@@ -242,9 +232,7 @@ function characterWriteEvent() {
             title: "林岚 / 核心档案",
             operation: "write" as const,
             beforeText: "",
-            afterText: "雾港巡夜人。",
-            beforeRevision: fileRevision,
-            nextRevision: "v1:6:12345678"
+            afterText: "雾港巡夜人。"
           }
         ]
       },
@@ -269,7 +257,6 @@ function continuityWriteEvent() {
         toolCallId: "tool_continuity_write",
         summary: "记录第一章伏笔变化",
         batch: {
-          baseRevision: 7,
           updatedAt: "2026-07-26T12:00:01.000Z",
           operations: [],
           documentWrites: [
@@ -278,14 +265,11 @@ function continuityWriteEvent() {
               fileId,
               content: "本章无伏笔变化。",
               mode: "replace" as const,
-              expectedRevision: fileRevision,
-              nextRevision: "v1:9:12345678",
               updatedAt: "2026-07-26T12:00:01.000Z",
               reason: "记录第一章伏笔变化"
             }
           ]
         },
-        baseProjectRevision: 11,
         files: [
           {
             chapterCardId,
@@ -296,9 +280,7 @@ function continuityWriteEvent() {
             title: "第一章 / 伏笔变化",
             operation: "write" as const,
             beforeText: "",
-            afterText: "本章无伏笔变化。",
-            beforeRevision: fileRevision,
-            nextRevision: "v1:9:12345678"
+            afterText: "本章无伏笔变化。"
           }
         ]
       },
@@ -315,7 +297,6 @@ function chapterEvent() {
         ...proposalBase,
         agentId: "long" as const,
         batch: {
-          baseRevision: 7,
           updatedAt: "2026-07-26T12:00:00.000Z",
           operations: [],
           documentWrites: [
@@ -324,14 +305,11 @@ function chapterEvent() {
               fileId: longChapterBodyFileId("chapter_one"),
               content: "正文",
               mode: "replace" as const,
-              expectedRevision: fileRevision,
-              nextRevision: "v1:2:12345678",
               updatedAt: "2026-07-26T12:00:00.000Z",
               reason: "完成第一章"
             }
           ]
         },
-        baseProjectRevision: 11,
         file: {
           chapterCardId: "chapter_one",
           chapterTitle: "第一章",
@@ -339,9 +317,7 @@ function chapterEvent() {
           filePath: longChapterFilePath("chapter_one", "body.md"),
           operation: "create" as const,
           beforeText: "",
-          afterText: "正文",
-          beforeRevision: fileRevision,
-          nextRevision: "v1:2:12345678"
+          afterText: "正文"
         }
       },
       { id: "event_chapter", context: envelopeContext }
@@ -359,17 +335,10 @@ function ledgerEvent() {
         input: {
           bookId: proposalBase.bookId,
           chapterCardId: "chapter_one",
-          chapterFileRevisions: {
-            body: fileRevision,
-            characterState: fileRevision,
-            handoff: fileRevision
-          },
           placementDecisions: {},
           foreshadowingBeatDecisions: {},
           fileUpdates: [],
-          ...ledgerAudit,
-          baseWorkspaceRevision: 7,
-          baseProjectRevision: 11
+          ...ledgerAudit
         }
       },
       { id: "event_ledger", context: envelopeContext }
@@ -389,21 +358,8 @@ function textFilesLedgerEvent() {
           mode: "text_files" as const,
           bookId: proposalBase.bookId,
           chapterCardId: "chapter_one",
-          chapterFileRevisions: { body: fileRevision },
-          continuityFileRevisions: [
-            {
-              fileId: longChapterCharacterStateFileId("chapter_one"),
-              revision: fileRevision
-            },
-            {
-              fileId: longChapterHandoffFileId("chapter_one"),
-              revision: fileRevision
-            }
-          ],
           foreshadowingBeatDecisions: {},
-          commitMessage: "留存第一章连续性文本",
-          baseWorkspaceRevision: 7,
-          baseProjectRevision: 11
+          commitMessage: "留存第一章连续性文本"
         }
       },
       { id: "event_text_files_ledger", context: envelopeContext }
@@ -415,24 +371,20 @@ function harness(
   acceptsEvent = true,
   approvalMode: "request-approval" | "auto-approve" = "request-approval"
 ) {
-  const previewOperations = vi.fn(
-    async (_input: { bookId: string; batch: LongWorkspaceOperationBatch }) => {
-      structuredClone(_input);
-      return {
-        bookId: proposalBase.bookId,
-        preview: {
-          baseRevision: _input.batch.baseRevision,
-          resultRevision: _input.batch.baseRevision + 1,
-          impact: emptyImpact,
-          entityChanges: [],
-          fileIntents: [],
-          documentWrites: [] as LongWorkspaceOperationBatch["documentWrites"],
-          provisionalIdMap: {}
-        },
-        projectRevision: 13
-      };
-    }
-  );
+  const previewOperations = vi.fn<
+    LongWorkspaceRendererApi["previewOperations"]
+  >(async (_input: { bookId: string; batch: LongWorkspaceOperationBatch }) => {
+    structuredClone(_input);
+    return {
+      bookId: proposalBase.bookId,
+      preview: {
+        ...emptyConfirmation,
+        confirmation: emptyConfirmation,
+        documentWrites: [] as LongWorkspaceOperationBatch["documentWrites"],
+        provisionalIdMap: {}
+      }
+    };
+  });
   const applyOperations = vi.fn(async (input: unknown) => {
     structuredClone(input);
     return undefined;
@@ -441,7 +393,6 @@ function harness(
     bookId: proposalBase.bookId,
     workspaceIndex: {
       bookId: proposalBase.bookId,
-      revision: 9,
       characters: [{ id: "character_lan", name: "林岚" }],
       plot: {
         chapterCards: [{ id: "chapter_one", title: "第一章" }]
@@ -464,7 +415,6 @@ function harness(
                   "world_rules",
                   "worlditem_existing"
                 ),
-                revision: fileRevision,
                 updatedAt: "2026-07-26T11:00:00.000Z"
               }
             }
@@ -477,25 +427,21 @@ function harness(
           coreProfile: {
             id: longCharacterCoreProfileFileId("character_lan"),
             path: longCharacterFilePath("character_lan", "core-profile.md"),
-            revision: fileRevision,
             updatedAt: "2026-07-26T11:00:00.000Z"
           },
           relationships: {
             id: "file_character_lan:relationships",
             path: "long/characters/character_lan/relationships.md",
-            revision: fileRevision,
             updatedAt: "2026-07-26T11:00:00.000Z"
           },
           currentState: {
             id: "file_character_lan:current-state",
             path: "long/characters/character_lan/current-state.md",
-            revision: fileRevision,
             updatedAt: "2026-07-26T11:00:00.000Z"
           },
           history: {
             id: "file_character_lan:history",
             path: "long/characters/character_lan/history.md",
-            revision: fileRevision,
             updatedAt: "2026-07-26T11:00:00.000Z"
           }
         }
@@ -506,25 +452,21 @@ function harness(
           body: {
             id: longChapterBodyFileId("chapter_one"),
             path: longChapterFilePath("chapter_one", "body.md"),
-            revision: fileRevision,
             updatedAt: "2026-07-26T11:00:00.000Z"
           },
           card: {
             id: longChapterCardFileId("chapter_one"),
             path: longChapterFilePath("chapter_one", "card.md"),
-            revision: fileRevision,
             updatedAt: "2026-07-26T11:00:00.000Z"
           },
           characterState: {
             id: longChapterCharacterStateFileId("chapter_one"),
             path: longChapterFilePath("chapter_one", "character-state.md"),
-            revision: fileRevision,
             updatedAt: "2026-07-26T11:00:00.000Z"
           },
           handoff: {
             id: longChapterHandoffFileId("chapter_one"),
             path: longChapterFilePath("chapter_one", "handoff.md"),
-            revision: fileRevision,
             updatedAt: "2026-07-26T11:00:00.000Z"
           },
           foreshadowingChanges: {
@@ -533,7 +475,6 @@ function harness(
               "chapter_one",
               "foreshadowing-changes.md"
             ),
-            revision: fileRevision,
             updatedAt: "2026-07-26T11:00:00.000Z"
           },
           worldReveals: null,
@@ -541,8 +482,7 @@ function harness(
           commitId: null
         }
       ]
-    },
-    projectRevision: 13
+    }
   }));
   const readDocument = vi.fn(
     async ({
@@ -567,15 +507,12 @@ function harness(
             "chapter_one",
             "foreshadowing-changes.md"
           ),
-          revision: fileRevision,
           updatedAt: "2026-07-26T11:00:00.000Z"
         },
         content: "",
         offset,
         totalCharacters: 0,
-        nextOffset: null,
-        workspaceRevision: 9,
-        projectRevision: 13
+        nextOffset: null
       };
     }
   );
@@ -630,10 +567,10 @@ export {
   continuityWriteEvent,
   createEnvelope,
   describe,
+  emptyConfirmation,
   emptyImpact,
   envelopeContext,
   expect,
-  fileRevision,
   harness,
   it,
   ledgerAudit,

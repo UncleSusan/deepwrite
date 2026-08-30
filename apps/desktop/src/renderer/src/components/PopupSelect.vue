@@ -5,6 +5,7 @@ import {
   onBeforeUnmount,
   onMounted,
   ref,
+  useSlots,
   watch,
   type CSSProperties
 } from "vue";
@@ -55,6 +56,7 @@ const emit = defineEmits<{
   optionAction: [value: PopupSelectValue];
 }>();
 
+const slots = useSlots();
 const trigger = ref<HTMLButtonElement | null>(null);
 const menu = ref<HTMLElement | null>(null);
 const optionElements = ref<Array<HTMLButtonElement | undefined>>([]);
@@ -101,7 +103,7 @@ function positionMenu(): void {
     props.options.reduce(
       (height, option) => height + (option.description ? 58 : 41),
       12
-    ),
+    ) + (slots.footer ? 52 : 0),
     320
   );
   const spaceBelow = Math.max(
@@ -327,7 +329,7 @@ onBeforeUnmount(() => {
       class="popup-select-trigger"
       type="button"
       role="combobox"
-      aria-haspopup="listbox"
+      :aria-haspopup="$slots.footer ? 'dialog' : 'listbox'"
       :aria-label="accessibleLabel"
       :aria-controls="open ? menuId : undefined"
       :aria-expanded="open"
@@ -361,58 +363,66 @@ onBeforeUnmount(() => {
           class="popup-select-menu"
           :class="{ 'is-compact-menu': variant === 'compact' }"
           :style="menuStyle"
-          role="listbox"
+          :role="$slots.footer ? undefined : 'listbox'"
           :aria-label="accessibleLabel"
           @keydown="handleMenuKeydown"
         >
           <div
-            v-for="(option, index) in options"
-            :key="`${typeof option.value}:${option.value}`"
-            class="popup-select-option-row"
-            :class="{
-              'has-action': Boolean(option.actionIcon && option.actionLabel)
-            }"
-            role="presentation"
+            :role="$slots.footer ? 'listbox' : undefined"
+            :aria-label="$slots.footer ? accessibleLabel : undefined"
           >
-            <button
-              :ref="(element) => setOptionElement(element, index)"
-              class="popup-select-option"
+            <div
+              v-for="(option, index) in options"
+              :key="`${typeof option.value}:${option.value}`"
+              class="popup-select-option-row"
               :class="{
-                'is-selected': Object.is(option.value, modelValue),
-                'has-description': Boolean(option.description)
+                'has-action': Boolean(option.actionIcon && option.actionLabel)
               }"
-              type="button"
-              role="option"
-              :aria-selected="Object.is(option.value, modelValue)"
-              :disabled="option.disabled"
-              :title="option.title"
-              :style="option.style"
-              @click="selectOption(option)"
+              role="presentation"
             >
-              <span class="popup-select-option-copy">
-                <span>{{ option.label }}</span>
-                <small v-if="option.description">{{
-                  option.description
-                }}</small>
-              </span>
-              <AppIcon
-                v-if="Object.is(option.value, modelValue)"
-                class="popup-select-check"
-                name="check"
-                :size="15"
-              />
-            </button>
-            <button
-              v-if="option.actionIcon && option.actionLabel"
-              class="popup-select-option-action"
-              type="button"
-              :aria-label="option.actionLabel"
-              :title="option.actionLabel"
-              :disabled="option.disabled"
-              @click.stop="runOptionAction(option)"
-            >
-              <AppIcon :name="option.actionIcon" :size="15" />
-            </button>
+              <button
+                :ref="(element) => setOptionElement(element, index)"
+                class="popup-select-option"
+                :class="{
+                  'is-selected': Object.is(option.value, modelValue),
+                  'has-description': Boolean(option.description)
+                }"
+                type="button"
+                role="option"
+                :aria-selected="Object.is(option.value, modelValue)"
+                :disabled="option.disabled"
+                :title="option.title"
+                :style="option.style"
+                @click="selectOption(option)"
+              >
+                <span class="popup-select-option-copy">
+                  <span>{{ option.label }}</span>
+                  <small v-if="option.description">{{
+                    option.description
+                  }}</small>
+                </span>
+                <AppIcon
+                  v-if="Object.is(option.value, modelValue)"
+                  class="popup-select-check"
+                  name="check"
+                  :size="15"
+                />
+              </button>
+              <button
+                v-if="option.actionIcon && option.actionLabel"
+                class="popup-select-option-action"
+                type="button"
+                :aria-label="option.actionLabel"
+                :title="option.actionLabel"
+                :disabled="option.disabled"
+                @click.stop="runOptionAction(option)"
+              >
+                <AppIcon :name="option.actionIcon" :size="15" />
+              </button>
+            </div>
+          </div>
+          <div v-if="$slots.footer" class="popup-select-footer">
+            <slot name="footer" />
           </div>
         </div>
       </Transition>
@@ -514,7 +524,15 @@ onBeforeUnmount(() => {
 .popup-select-prefix {
   display: inline-flex;
   flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
   color: currentColor;
+}
+
+.popup-select-footer {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--theme-line-soft, #e8e8e4);
 }
 
 .popup-select-label {

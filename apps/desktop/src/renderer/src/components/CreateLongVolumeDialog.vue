@@ -1,12 +1,22 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch
+} from "vue";
 import { uiMessage } from "../ui-feedback";
 import AppIcon from "./AppIcon.vue";
 
 const props = defineProps<{
   open: boolean;
   pending?: boolean;
+  source?: "book-line" | "draft";
 }>();
+
+const fromDraft = computed(() => props.source === "draft");
 
 const emit = defineEmits<{
   close: [];
@@ -119,7 +129,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
         <form @submit.prevent="submit">
           <header>
             <div>
-              <span>剧情设计 · 全书故事线</span>
+              <span>{{ fromDraft ? "正文" : "剧情设计 · 全书故事线" }}</span>
               <h2 id="create-long-volume-title">新建分卷</h2>
             </div>
             <button
@@ -154,6 +164,10 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
                 placeholder="可选；创建后也可以在对应分卷 Tab 中继续编辑"
               />
             </label>
+            <p v-if="fromDraft">
+              确认后，剧情阶段会同步生成对应卷纲。可在「剧情设计 →
+              全书故事线」中继续完善。
+            </p>
           </fieldset>
 
           <footer>
@@ -161,7 +175,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               取消
             </button>
             <button class="primary-button" type="submit" :disabled="pending">
-              {{ pending ? "创建中…" : "创建分卷" }}
+              {{ pending ? "创建中…" : fromDraft ? "确认新建" : "创建分卷" }}
             </button>
           </footer>
         </form>
@@ -270,6 +284,13 @@ input:focus,
 textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 0.16rem var(--accent-soft);
+}
+
+fieldset p {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.78rem;
+  line-height: 1.5;
 }
 
 footer {

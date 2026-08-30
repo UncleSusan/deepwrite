@@ -37,7 +37,6 @@ import {
   LongReadDocumentResultSchema,
   LongReadAgentsMdResultSchema,
   LongRemoveBookResultSchema,
-  LongRollbackLastCommitResultSchema,
   LongSearchResultSchema,
   LongWorkspaceIndexResultSchema,
   LongWriteChapterResultSchema,
@@ -58,7 +57,6 @@ import {
 } from "./folder-catalog-store";
 import { readLegacyLibraryArchive } from "./legacy-library-import";
 import { bootUtility } from "./runtime";
-import { LongProjectConflictError } from "./long-project-store";
 import { LongWorkspaceService } from "./long-workspace-service";
 import { RendererStateStore } from "./renderer-state-store";
 
@@ -379,15 +377,6 @@ async function handleCatalogCommand(
         requestId: command.id,
         payload: LongCommitChapterResultSchema.parse(
           await longWorkspaceService.commitChapter(command.payload)
-        )
-      };
-    }
-    if (command.type === "long.rollbackLastCommit") {
-      return {
-        status: "accepted",
-        requestId: command.id,
-        payload: LongRollbackLastCommitResultSchema.parse(
-          await longWorkspaceService.rollbackLastCommit(command.payload)
         )
       };
     }
@@ -774,21 +763,6 @@ async function handleCatalogCommand(
           details: {
             kind: error.name,
             operationCode: error.code
-          }
-        }
-      };
-    }
-    if (error instanceof LongProjectConflictError) {
-      return {
-        status: "rejected",
-        requestId: command.id,
-        error: {
-          code: "long.conflict",
-          message: error.message,
-          details: {
-            scope: error.scope,
-            expectedRevision: error.expected,
-            actualRevision: error.actual
           }
         }
       };

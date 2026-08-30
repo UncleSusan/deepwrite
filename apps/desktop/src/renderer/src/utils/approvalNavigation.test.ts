@@ -150,7 +150,6 @@ describe("approval navigation target resolution", () => {
         longCharacterTarget: {
           bookId: "long_book",
           batch: {} as LongWorkspaceOperationBatch,
-          baseProjectRevision: 2,
           files: [
             {
               characterId: "character_test",
@@ -161,9 +160,7 @@ describe("approval navigation target resolution", () => {
               title: "人物关系",
               operation: "write",
               beforeText: "",
-              afterText: "关系",
-              beforeRevision: "revision_before",
-              nextRevision: "revision_relationships"
+              afterText: "关系"
             },
             {
               characterId: "character_test",
@@ -174,9 +171,7 @@ describe("approval navigation target resolution", () => {
               title: "核心档案",
               operation: "write",
               beforeText: "",
-              afterText: "核心",
-              beforeRevision: "revision_before",
-              nextRevision: "revision_core"
+              afterText: "核心"
             }
           ]
         }
@@ -192,7 +187,6 @@ describe("approval navigation target resolution", () => {
 
   it("prefers document writes as exact file targets before structure fallbacks", () => {
     const candidates = longApprovalCandidatesForBatch({
-      baseRevision: 4,
       updatedAt: "2026-08-14T00:00:00.000Z",
       operations: [
         {
@@ -207,8 +201,6 @@ describe("approval navigation target resolution", () => {
           fileId: "file_story_plot",
           content: "情节",
           mode: "replace",
-          expectedRevision: "revision_before",
-          nextRevision: "revision_after",
           updatedAt: "2026-08-14T00:00:00.000Z",
           reason: "写入故事情节"
         }
@@ -226,7 +218,6 @@ describe("approval navigation target resolution", () => {
 
   it("orders surviving structure targets before deletion fallbacks", () => {
     const candidates = longApprovalCandidatesForBatch({
-      baseRevision: 4,
       updatedAt: "2026-08-14T00:00:00.000Z",
       operations: [
         { type: "chapter.delete", id: "chapter_deleted" },

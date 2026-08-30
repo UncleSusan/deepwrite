@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import appSource from "../WorkspaceShell.vue?raw";
 import catalogProjectionSource from "./useCatalogWorkspaceProjectionCoordinator.ts?raw";
 import lazySource from "./useLazyProposalCoordinator.ts?raw";
+import longImpactApprovalSource from "./proposal-coordinator/long-impact-approval.ts?raw";
 import plotStructureLaneSource from "./proposal-coordinator/plot-structure-lane.ts?raw";
 import queueSource from "./proposal-coordinator/queue.ts?raw";
 import source from "./useProposalCoordinator.ts?raw";
@@ -148,8 +149,13 @@ describe("useProposalCoordinator extraction boundary", () => {
 
   it("retains the critical short, library, and long persistence paths", () => {
     expect(source).toContain("async function acceptLongDraftProposal(");
-    expect(source).toContain("await api.previewOperations(");
+    expect(longImpactApprovalSource).toContain("await api.previewOperations(");
     expect(source).toContain("await api.applyOperations(");
+    expect(longImpactApprovalSource).toContain(
+      "longWorkspaceOperationsRequireImpactConfirmation"
+    );
+    expect(longImpactApprovalSource).toContain("input.removeQueued(");
+    expect(source).toContain("removeQueued: removeQueuedAgentEdit");
     expect(source).toContain("async function acceptLibraryCreationProposal(");
     expect(source).toContain("currentApi.catalog.createLibraryEntry({");
     expect(source).toContain(

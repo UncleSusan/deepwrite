@@ -2,6 +2,7 @@ import type { LongWorkspaceOperation } from "./long-workspace-operations.test-su
 import {
   LongWorkspaceOperationBatchSchema,
   applyLongWorkspaceOperations,
+  applyPreviewedLongWorkspaceOperations,
   committedAnchorWorkspace,
   committedWorkspace,
   describe,
@@ -18,9 +19,8 @@ describe("long workspace operation engine: ordering-and-foreshadowing", () => {
   it("requires an exact preview impact for cascading deletion", () => {
     const source = workspace();
     const plan = LongWorkspaceOperationBatchSchema.parse({
-      baseRevision: source.revision,
       updatedAt: later,
-      operations: [{ type: "arc.delete", id: "arc_letter", cascade: true }]
+      operations: [{ type: "arc.delete", id: "arc_letter" }]
     });
     const preview = previewLongWorkspaceOperations(source, plan);
 
@@ -58,7 +58,7 @@ describe("long workspace operation engine: ordering-and-foreshadowing", () => {
       source,
       LongWorkspaceOperationBatchSchema.parse({
         ...plan,
-        expectedImpact: preview.impact
+        expectedImpact: preview.confirmation
       })
     );
     expect(applied.snapshot.plot.chapterCards).toHaveLength(2);
@@ -69,8 +69,8 @@ describe("long workspace operation engine: ordering-and-foreshadowing", () => {
     ).toBe(true);
     expect(applied.snapshot.chapters).toHaveLength(2);
 
-    const staleImpact = structuredClone(preview.impact);
-    staleImpact.deletedEntityIds = [];
+    const staleImpact = structuredClone(preview.confirmation);
+    staleImpact.impact.deletedEntityIds = [];
     expectOperationError(
       () =>
         applyLongWorkspaceOperations(
@@ -80,14 +80,14 @@ describe("long workspace operation engine: ordering-and-foreshadowing", () => {
             expectedImpact: staleImpact
           })
         ),
-      "cascade_impact_mismatch"
+      "impact_mismatch"
     );
 
     const result = applyLongWorkspaceOperations(
       source,
       LongWorkspaceOperationBatchSchema.parse({
         ...plan,
-        expectedImpact: preview.impact
+        expectedImpact: preview.confirmation
       })
     );
     expect(result.snapshot.plot.arcs).toEqual([]);
@@ -104,13 +104,11 @@ describe("long workspace operation engine: ordering-and-foreshadowing", () => {
   it("reports implicit order shifts and omits no-op metadata updates", () => {
     const source = workspace();
     const deletion = previewLongWorkspaceOperations(source, {
-      baseRevision: source.revision,
       updatedAt: later,
       operations: [
         {
           type: "chapter.delete",
-          id: "chapter_one",
-          cascade: true
+          id: "chapter_one"
         }
       ]
     });
@@ -125,7 +123,6 @@ describe("long workspace operation engine: ordering-and-foreshadowing", () => {
     });
 
     const noOp = previewLongWorkspaceOperations(source, {
-      baseRevision: source.revision,
       updatedAt: later,
       operations: [
         {
@@ -142,7 +139,6 @@ describe("long workspace operation engine: ordering-and-foreshadowing", () => {
   it("keeps recorded chapters structurally mutable and cascades their records", () => {
     const source = committedWorkspace();
     const reordered = applyLongWorkspaceOperations(source, {
-      baseRevision: source.revision,
       updatedAt: later,
       operations: [
         {
@@ -160,14 +156,13 @@ describe("long workspace operation engine: ordering-and-foreshadowing", () => {
     ).toEqual(["chapter_two", "chapter_one"]);
 
     const batch = LongWorkspaceOperationBatchSchema.parse({
-      baseRevision: source.revision,
       updatedAt: later,
-      operations: [{ type: "chapter.delete", id: "chapter_one", cascade: true }]
+      operations: [{ type: "chapter.delete", id: "chapter_one" }]
     });
     const preview = previewLongWorkspaceOperations(source, batch);
     const deleted = applyLongWorkspaceOperations(source, {
       ...batch,
-      expectedImpact: preview.impact
+      expectedImpact: preview.confirmation
     });
     expect(
       deleted.snapshot.plot.chapterCards.some(({ id }) => id === "chapter_one")
@@ -184,8 +179,7 @@ describe("long workspace operation engine: ordering-and-foreshadowing", () => {
 
   it("allows structure changes around recorded anchors", () => {
     const source = committedWorkspace();
-    const result = applyLongWorkspaceOperations(source, {
-      baseRevision: source.revision,
+    const result = applyPreviewedLongWorkspaceOperations(source, {
       updatedAt: later,
       operations: [
         {
@@ -393,8 +387,7 @@ describe("long workspace operation engine: ordering-and-foreshadowing", () => {
       const source = committedAnchorWorkspace();
       expect(
         () =>
-          applyLongWorkspaceOperations(source, {
-            baseRevision: source.revision,
+          applyPreviewedLongWorkspaceOperations(source, {
             updatedAt: later,
             operations: [operation]
           }),
@@ -408,7 +401,6 @@ describe("long workspace operation engine: ordering-and-foreshadowing", () => {
     expectOperationError(
       () =>
         applyLongWorkspaceOperations(source, {
-          baseRevision: source.revision,
           updatedAt: later,
           operations: [
             {
@@ -425,14 +417,13 @@ describe("long workspace operation engine: ordering-and-foreshadowing", () => {
             }
           ]
         }),
-      "committed_prefix_protected"
+      "invalid_reference"
     );
   });
 
   it("creates, refines, and cascades typed foreshadowing planning anchors", () => {
     const source = workspace();
     const created = applyLongWorkspaceOperations(source, {
-      baseRevision: source.revision,
       updatedAt: later,
       operations: [
         {
@@ -475,8 +466,7 @@ describe("long workspace operation engine: ordering-and-foreshadowing", () => {
       beats: [{ volumeId: "volume_one", arcId: null }]
     });
 
-    const refined = applyLongWorkspaceOperations(created.snapshot, {
-      baseRevision: created.resultRevision,
+    const refined = applyPreviewedLongWorkspaceOperations(created.snapshot, {
       updatedAt: later,
       operations: [
         {
@@ -499,27 +489,23 @@ describe("long workspace operation engine: ordering-and-foreshadowing", () => {
     expectOperationError(
       () =>
         applyLongWorkspaceOperations(refined.snapshot, {
-          baseRevision: refined.resultRevision,
           updatedAt: later,
           operations: [
             {
               type: "arc.delete",
-              id: "arc_letter",
-              cascade: false
+              id: "arc_letter"
             }
           ]
         }),
-      "cascade_required"
+      "impact_mismatch"
     );
 
     const deletePlan = LongWorkspaceOperationBatchSchema.parse({
-      baseRevision: refined.resultRevision,
       updatedAt: later,
       operations: [
         {
           type: "arc.delete",
-          id: "arc_letter",
-          cascade: true
+          id: "arc_letter"
         }
       ]
     });
@@ -527,16 +513,23 @@ describe("long workspace operation engine: ordering-and-foreshadowing", () => {
       refined.snapshot,
       deletePlan
     );
-    expect(deletePreview.impact.deletedEntityIds).toContain(
+    expect(deletePreview.impact.deletedEntityIds).not.toContain(
       "beat_identity_plant"
     );
     const deleted = applyLongWorkspaceOperations(
       refined.snapshot,
       LongWorkspaceOperationBatchSchema.parse({
         ...deletePlan,
-        expectedImpact: deletePreview.impact
+        expectedImpact: deletePreview.confirmation
       })
     );
-    expect(deleted.snapshot.plot.foreshadowing[0]!.beats).toHaveLength(0);
+    expect(deleted.snapshot.plot.foreshadowing[0]!.beats).toEqual([
+      expect.objectContaining({
+        id: "beat_identity_plant",
+        arcId: null,
+        volumeId: null,
+        plannedScope: "原关联对象已删除，待重新指定锚点。"
+      })
+    ]);
   });
 });

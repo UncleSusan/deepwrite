@@ -1,7 +1,7 @@
 import type { LongWorkspaceIndexSnapshot } from "../long-workspace";
 
 export interface LongChapterMutationViolation {
-  code: "not_found" | "committed_prefix_protected";
+  code: "not_found";
   message: string;
 }
 
@@ -19,11 +19,7 @@ export function chapterMutationViolation(
       message: `Chapter ${chapterCardId} does not exist.`
     };
   }
-  if (chapter.commitId !== null) {
-    return {
-      code: "committed_prefix_protected",
-      message: `Chapter ${chapterCardId} has already been committed and cannot ${action}.`
-    };
-  }
+  void chapter;
+  void action;
   return null;
 }

@@ -1,5 +1,4 @@
 import {
-  EMPTY_LONG_MARKDOWN_REVISION,
   LongWorkspaceOperationBatchSchema,
   type LongDocumentWriteProposal,
   type LongWorkspaceOperationBatch,
@@ -21,28 +20,15 @@ function matchesDisplayedFile(
   file: {
     fileId: string;
     afterText: string;
-    beforeRevision: string | null;
-    nextRevision: string;
     operation: "create" | "write" | "edit";
   }
 ): boolean {
   return (
     write.fileId === file.fileId &&
     write.content === file.afterText &&
-    write.nextRevision === file.nextRevision &&
     (file.operation === "create"
-      ? write.mode === "create" && write.expectedRevision === null
-      : write.mode !== "create" &&
-        write.expectedRevision === file.beforeRevision)
-  );
-}
-
-function isLegacyBlankFileCreation(file: {
-  afterText: string;
-  nextRevision: string;
-}): boolean {
-  return (
-    file.afterText === "" && file.nextRevision === EMPTY_LONG_MARKDOWN_REVISION
+      ? write.mode === "create"
+      : write.mode !== "create")
   );
 }
 
@@ -65,14 +51,12 @@ export function longWorldbuildingBatchForFile(
   const validCreateWrite =
     documentWrites.length === 1 &&
     matchesDisplayedFile(documentWrites[0]!, file);
-  const validLegacyBlankCreate =
-    documentWrites.length === 0 && isLegacyBlankFileCreation(file);
   if (
     (file.operation === "create" &&
       (operations.length !== 1 ||
         event.payload.batch.operations.length !== 1 ||
         event.payload.batch.documentWrites.length !== documentWrites.length ||
-        (!validCreateWrite && !validLegacyBlankCreate))) ||
+        !validCreateWrite)) ||
     (file.operation !== "create" &&
       (operations.length !== 0 ||
         event.payload.batch.operations.length !== 0 ||

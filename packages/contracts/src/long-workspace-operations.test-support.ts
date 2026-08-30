@@ -32,10 +32,9 @@ import type {
 
 const now = "2026-07-26T12:00:00.000Z";
 const later = "2026-07-26T12:05:00.000Z";
-const revision = "v1:0:00000000";
 
 function file(id: string, path: string, updatedAt = now) {
-  return { id, path, revision, updatedAt };
+  return { id, path, updatedAt };
 }
 
 function characterFiles(characterId: string, slug: string) {
@@ -86,7 +85,6 @@ function chapterFiles(chapterCardId: string, slug: string) {
 function workspace(): LongWorkspaceIndexSnapshot {
   return LongWorkspaceIndexSnapshotSchema.parse({
     schemaVersion: 1,
-    revision: 7,
     bookId: "longbook_operations",
     updatedAt: now,
     bookLine: file(LONG_BOOK_LINE_FILE_ID, "long/plot/book-line.md"),
@@ -173,8 +171,6 @@ function committedWorkspace(): LongWorkspaceIndexSnapshot {
     sequence: 1,
     chapterCardId: "chapter_one",
     committedAt: now,
-    reversible: true,
-    sourceRevision: value.revision,
     placementIds: [],
     foreshadowingBeatIds: [],
     recordFile: file(
@@ -433,6 +429,18 @@ function expectOperationError(
   }
 }
 
+function applyPreviewedLongWorkspaceOperations(
+  snapshot: LongWorkspaceIndexSnapshot,
+  batchInput: Parameters<typeof previewLongWorkspaceOperations>[1]
+): ReturnType<typeof applyLongWorkspaceOperations> {
+  const batch = LongWorkspaceOperationBatchSchema.parse(batchInput);
+  const preview = previewLongWorkspaceOperations(snapshot, batch);
+  return applyLongWorkspaceOperations(snapshot, {
+    ...batch,
+    expectedImpact: preview.confirmation
+  });
+}
+
 function createBatch() {
   const newWorldFile = file(
     longWorldbuildingFileId("world_magic"),
@@ -458,7 +466,6 @@ function createBatch() {
   });
 
   return LongWorkspaceOperationBatchSchema.parse({
-    baseRevision: 7,
     updatedAt: later,
     operations: [
       {
@@ -595,8 +602,6 @@ function createBatch() {
         proposalId: "proposal_world_magic",
         fileId: newWorldFile.id,
         mode: "create",
-        expectedRevision: null,
-        nextRevision: newWorldFile.revision,
         updatedAt: later,
         content: "# 魔法规则\n",
         reason: "初始化世界规则分类"
@@ -611,6 +616,7 @@ export {
   LongWorkspaceOperationBatchSchema,
   LongWorkspaceOperationError,
   applyLongWorkspaceOperations,
+  applyPreviewedLongWorkspaceOperations,
   chapterFiles,
   characterFiles,
   committedAnchorWorkspace,
@@ -642,7 +648,6 @@ export {
   longWorldbuildingOverviewFileId,
   now,
   previewLongWorkspaceOperations,
-  revision,
   workspace
 };
 export type {

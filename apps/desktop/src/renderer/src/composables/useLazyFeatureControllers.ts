@@ -5,6 +5,7 @@ import type {
   SystemEventEnvelope
 } from "@deepwrite/contracts";
 import type { LearningImitationController } from "./useLearningImitation";
+import type { LongBookAnalysisController } from "../extras/long-book-analysis/useLongBookAnalysis";
 import type { SubagentAuthoringController } from "./useSubagentAuthoring";
 
 export interface LazyLearningImitationController {
@@ -26,6 +27,18 @@ export interface LazySubagentAuthoringController {
   dispose(): void;
 }
 
+export interface LazyLongBookAnalysisController {
+  controller: ShallowRef<LongBookAnalysisController | null>;
+  isBusy: ComputedRef<boolean>;
+  ensureLoaded(): Promise<LongBookAnalysisController>;
+  setConfiguredModels(
+    models: readonly ModelConfig[],
+    defaultModelId?: string
+  ): void;
+  handleEvent(event: SystemEventEnvelope): void;
+  dispose(): void;
+}
+
 type LearningImitationModule = Pick<
   typeof import("./useLearningImitation"),
   "useLearningImitation"
@@ -34,6 +47,11 @@ type LearningImitationModule = Pick<
 type SubagentAuthoringModule = Pick<
   typeof import("./useSubagentAuthoring"),
   "useSubagentAuthoring"
+>;
+
+type LongBookAnalysisModule = Pick<
+  typeof import("../extras/long-book-analysis/useLongBookAnalysis"),
+  "useLongBookAnalysis"
 >;
 
 function cancelledLoadError(feature: string): Error {
@@ -141,6 +159,65 @@ export function useLazySubagentAuthoringController(options: {
       active = false;
       generation += 1;
       loadPromise = null;
+      controller.value = null;
+    }
+  };
+}
+
+export function useLazyLongBookAnalysisController(options: {
+  api: () => DeepWriteApi | undefined;
+  loadModule?: () => Promise<LongBookAnalysisModule>;
+}): LazyLongBookAnalysisController {
+  const controller = shallowRef<LongBookAnalysisController | null>(null);
+  const isBusy = computed(() => controller.value?.isBusy.value ?? false);
+  let loadPromise: Promise<LongBookAnalysisController> | null = null;
+  let generation = 0;
+  let active = true;
+  let configuredModels: readonly ModelConfig[] = [];
+  let configuredDefaultModelId: string | undefined;
+
+  async function ensureLoaded(): Promise<LongBookAnalysisController> {
+    if (controller.value) return controller.value;
+    if (loadPromise) return await loadPromise;
+    active = true;
+    const loadGeneration = generation;
+    const pending = (async () => {
+      const { useLongBookAnalysis } = await (options.loadModule?.() ??
+        import("../extras/long-book-analysis/useLongBookAnalysis"));
+      const loaded = useLongBookAnalysis({ api: options.api });
+      loaded.setConfiguredModels(configuredModels, configuredDefaultModelId);
+      if (!active || generation !== loadGeneration) {
+        loaded.dispose();
+        throw cancelledLoadError("Long book analysis");
+      }
+      controller.value = loaded;
+      return loaded;
+    })();
+    loadPromise = pending;
+    try {
+      return await pending;
+    } finally {
+      if (loadPromise === pending) loadPromise = null;
+    }
+  }
+
+  return {
+    controller,
+    isBusy,
+    ensureLoaded,
+    setConfiguredModels(models, defaultModelId) {
+      configuredModels = models;
+      configuredDefaultModelId = defaultModelId;
+      controller.value?.setConfiguredModels(models, defaultModelId);
+    },
+    handleEvent(event) {
+      controller.value?.handleEvent(event);
+    },
+    dispose() {
+      active = false;
+      generation += 1;
+      loadPromise = null;
+      controller.value?.dispose();
       controller.value = null;
     }
   };

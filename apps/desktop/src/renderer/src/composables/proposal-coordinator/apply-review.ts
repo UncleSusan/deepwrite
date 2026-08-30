@@ -331,7 +331,7 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         const diff = buildAgentTextDiff(realTarget.content, proposedText);
         const identity = resolveAgentEditProposalGeneration(laneId, existing);
         const applyBaseRevision = identity.coalescesExisting
-          ? existing!.baseRevision
+          ? (existing!.baseRevision ?? event.payload.baseRevision)
           : (existing?.proposedRevision ?? event.payload.baseRevision);
         const noChanges =
           proposedRevision === currentRevision &&
@@ -492,7 +492,7 @@ export function createApplyReview(ctx: ProposalLaneContext) {
       const diff = buildAgentTextDiff(baseText, proposedText);
       const identity = resolveAgentEditProposalGeneration(laneId, existing);
       const applyBaseRevision = identity.coalescesExisting
-        ? existing!.baseRevision
+        ? (existing!.baseRevision ?? event.payload.baseRevision)
         : (existing?.proposedRevision ?? event.payload.baseRevision);
       const noChanges =
         proposedRevision === createShortWorkspaceContentRevision("") &&
@@ -659,7 +659,7 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         summary: event.payload.summary,
         status: "pending",
         baseRevision: identity.coalescesExisting
-          ? existing!.baseRevision
+          ? (existing!.baseRevision ?? event.payload.baseRevision)
           : (existing?.proposedRevision ?? event.payload.baseRevision),
         proposedRevision,
         proposedText,
@@ -805,7 +805,7 @@ export function createApplyReview(ctx: ProposalLaneContext) {
     const diff = buildAgentTextDiff(target.content, proposedText);
     const identity = resolveAgentEditProposalGeneration(laneId, existing);
     const applyBaseRevision = identity.coalescesExisting
-      ? existing!.baseRevision
+      ? (existing!.baseRevision ?? event.payload.baseRevision)
       : (existing?.proposedRevision ?? event.payload.baseRevision);
     const noChanges =
       proposedRevision === currentRevision &&
@@ -971,7 +971,7 @@ export function createApplyReview(ctx: ProposalLaneContext) {
         predecessor.status === "error"
       ) {
         const message =
-          "前一版智能体修改未能落盘，本版依赖已阻断，没有覆盖当前文稿。";
+          "前序智能体修改未能落盘，当前这项依赖已阻断，没有覆盖当前文稿。";
         conversation.updateEditProposal(request.runId, request.proposalId, {
           status: "conflict",
           proposedText: undefined,
@@ -982,7 +982,7 @@ export function createApplyReview(ctx: ProposalLaneContext) {
       if (predecessor.status !== "accepted") {
         conversation.updateEditProposal(request.runId, request.proposalId, {
           status: "pending",
-          statusMessage: "正在等待前一版修改完成落盘…"
+          statusMessage: "正在等待前序修改完成落盘…"
         });
         return;
       }

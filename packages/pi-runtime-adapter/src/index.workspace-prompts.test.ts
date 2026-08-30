@@ -176,6 +176,43 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     );
   });
 
+  it("describes DeepSeek server-side search for workspace agents only when enabled", () => {
+    const shortProfile = DEFAULT_SHORT_WORKSPACE_AGENT_PROFILES[0]!;
+    const workspaceContext = {
+      shortWorkspace: {
+        ...(screenplayWorkspace() as unknown as ShortWorkspaceSnapshot),
+        activeAgentId: "short" as const
+      }
+    };
+    const disabledPrompt = buildEffectiveSystemPrompt("DeepWrite base", {
+      runId: "run_short_search_off",
+      sessionId: "session_short_search_off",
+      prompt: "继续写第一节",
+      agentProfile: shortProfile,
+      workspaceContext
+    });
+    expect(disabledPrompt).not.toContain("本轮已启用 DeepSeek 服务端智能搜索");
+    expect(disabledPrompt).not.toContain(
+      "实时公开信息使用 DeepSeek 服务端 web_search"
+    );
+
+    const enabledPrompt = buildEffectiveSystemPrompt("DeepWrite base", {
+      runId: "run_short_search_on",
+      sessionId: "session_short_search_on",
+      prompt: "查一下同类题材",
+      agentProfile: shortProfile,
+      webSearchEnabled: true,
+      workspaceContext
+    });
+    expect(enabledPrompt).toContain("本轮已启用 DeepSeek 服务端智能搜索");
+    expect(enabledPrompt).toContain(
+      "实时公开信息使用 DeepSeek 服务端 web_search"
+    );
+    expect(enabledPrompt).toContain(
+      "网络能力仅限本轮列出的 DeepSeek 服务端 web_search"
+    );
+  });
+
   it("keeps one draft conversation while refreshing the selected script episode", async () => {
     const runtime = new PiAgentRuntimeAdapter({ tokensPerSecond: 0 });
     const firstWorkspace = screenplayWorkspace();
@@ -415,11 +452,8 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       title: "雾港长篇",
       activeRoot: "plot_design",
       activeAgentId: profile.id,
-      workspaceRevision: 3,
-      projectRevision: 5,
       navigation: {
         schemaVersion: 1,
-        revision: 3,
         bookId: "longbook_prompt",
         updatedAt: "2026-07-26T10:00:00.000Z",
         counts: {
@@ -467,11 +501,8 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       activeRoot: "draft",
       activeAgentId: profile.id,
       activeChapterCardId: "chapter_writer_prompt",
-      workspaceRevision: 3,
-      projectRevision: 5,
       navigation: {
         schemaVersion: 1,
-        revision: 3,
         bookId: "longbook_writer_prompt",
         updatedAt: "2026-08-02T10:00:00.000Z",
         counts: {
@@ -539,11 +570,8 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       title: "雾港长篇",
       activeRoot: "continuity_ledger",
       activeAgentId: profile.id,
-      workspaceRevision: 3,
-      projectRevision: 5,
       navigation: {
         schemaVersion: 1,
-        revision: 3,
         bookId: "longbook_ledger_prompt",
         updatedAt: "2026-08-16T10:00:00.000Z",
         counts: {
@@ -591,9 +619,6 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       activeRoot: "worldbuilding",
       activeAgentId: profile.id,
       activeFileId: "file_world_rules:content",
-      activeFileRevision: "v1:0:00000000",
-      workspaceRevision: 3,
-      projectRevision: 5,
       worldbuildingDirectory: {
         categories: [
           {
@@ -636,7 +661,6 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       },
       navigation: {
         schemaVersion: 1,
-        revision: 3,
         bookId: "longbook_world_prompt",
         updatedAt: "2026-07-26T10:00:00.000Z",
         counts: {
@@ -695,7 +719,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     expect(userPrompt).toContain("【世界观条目列表（发送时快照）】");
     expect(userPrompt).toContain("【人物设计列表（发送时快照）】");
     expect(userPrompt).toContain(
-      "【长篇结构导航（发送时快照；条目正文与最新修订请通过工具读取）】"
+      "【长篇结构导航（发送时快照；条目正文与最新内容请通过工具读取）】"
     );
     expect(userPrompt).toContain("【当前阶段信息与要求】");
     expect(userPrompt.indexOf("【世界观条目列表（发送时快照）】")).toBeLessThan(
@@ -703,12 +727,12 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     );
     expect(userPrompt.indexOf("【人物设计列表（发送时快照）】")).toBeLessThan(
       userPrompt.indexOf(
-        "【长篇结构导航（发送时快照；条目正文与最新修订请通过工具读取）】"
+        "【长篇结构导航（发送时快照；条目正文与最新内容请通过工具读取）】"
       )
     );
     expect(
       userPrompt.indexOf(
-        "【长篇结构导航（发送时快照；条目正文与最新修订请通过工具读取）】"
+        "【长篇结构导航（发送时快照；条目正文与最新内容请通过工具读取）】"
       )
     ).toBeLessThan(userPrompt.indexOf("【当前阶段信息与要求】"));
     expect(userPrompt).toContain(
@@ -786,9 +810,6 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       activeRoot: "character_design",
       activeAgentId: profile.id,
       activeFileId: "file_character_lan:relationships",
-      activeFileRevision: "v1:0:00000000",
-      workspaceRevision: 3,
-      projectRevision: 5,
       worldbuildingDirectory: {
         categories: [
           {
@@ -812,7 +833,6 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       },
       navigation: {
         schemaVersion: 1,
-        revision: 3,
         bookId: "longbook_character_prompt",
         updatedAt: "2026-07-26T10:00:00.000Z",
         counts: {
@@ -868,17 +888,17 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     );
     expect(userPrompt).toContain("【人物设计列表（发送时快照）】");
     expect(userPrompt).toContain(
-      "【长篇结构导航（发送时快照；条目正文与最新修订请通过工具读取）】"
+      "【长篇结构导航（发送时快照；条目正文与最新内容请通过工具读取）】"
     );
     expect(userPrompt).toContain("【当前阶段信息与要求】");
     expect(userPrompt.indexOf("【人物设计列表（发送时快照）】")).toBeLessThan(
       userPrompt.indexOf(
-        "【长篇结构导航（发送时快照；条目正文与最新修订请通过工具读取）】"
+        "【长篇结构导航（发送时快照；条目正文与最新内容请通过工具读取）】"
       )
     );
     expect(
       userPrompt.indexOf(
-        "【长篇结构导航（发送时快照；条目正文与最新修订请通过工具读取）】"
+        "【长篇结构导航（发送时快照；条目正文与最新内容请通过工具读取）】"
       )
     ).toBeLessThan(userPrompt.indexOf("【当前阶段信息与要求】"));
     expect(userPrompt).toContain(
@@ -928,8 +948,6 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
           title: "雾港长篇",
           activeRoot: "worldbuilding",
           activeAgentId: profile.id,
-          workspaceRevision: 3,
-          projectRevision: 5,
           worldbuildingDirectory: {
             categories: [
               {
@@ -943,7 +961,6 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
           },
           navigation: {
             schemaVersion: 1,
-            revision: 3,
             bookId: "longbook_character_directory",
             updatedAt: "2026-07-26T10:00:00.000Z",
             counts: {
@@ -1001,11 +1018,8 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       activeRoot: "draft",
       activeAgentId: profile.id,
       activeChapterCardId: "chapter_window_30",
-      workspaceRevision: 1,
-      projectRevision: 1,
       navigation: {
         schemaVersion: 1,
-        revision: 1,
         bookId: "longbook_chapter_window",
         updatedAt: "2026-08-19T00:00:00.000Z",
         counts: {
@@ -1097,7 +1111,6 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     )!;
     const navigation = {
       schemaVersion: 1 as const,
-      revision: 3,
       bookId: "longbook_plot_prompt",
       updatedAt: "2026-07-26T10:00:00.000Z",
       counts: {
@@ -1170,10 +1183,6 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       activeRoot: "plot_design",
       activeAgentId: profile.id,
       activeFileId: "file_long-book-line",
-      activeFileRevision:
-        "v2:0:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      workspaceRevision: 3,
-      projectRevision: 5,
       agentsMd: "# 长篇上下文\n\n## 剧情点阶段\n维护结构。",
       worldbuildingDirectory: {
         categories: [
@@ -1264,12 +1273,12 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     );
     expect(userPrompt).toContain("【人物设计列表（发送时快照）】");
     expect(userPrompt).toContain(
-      "【长篇结构导航（发送时快照；条目正文与最新修订请通过工具读取）】"
+      "【长篇结构导航（发送时快照；条目正文与最新内容请通过工具读取）】"
     );
     expect(userPrompt).not.toContain("【当前阶段信息与要求】");
     expect(userPrompt.indexOf("【人物设计列表（发送时快照）】")).toBeLessThan(
       userPrompt.indexOf(
-        "【长篇结构导航（发送时快照；条目正文与最新修订请通过工具读取）】"
+        "【长篇结构导航（发送时快照；条目正文与最新内容请通过工具读取）】"
       )
     );
     expect(userPrompt).toContain("主角（type_id=protagonist；共 1 人）");
@@ -1333,7 +1342,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     expect(draftPrompt).toContain("【世界观条目列表（发送时快照）】");
     expect(draftPrompt).toContain("【人物设计列表（发送时快照）】");
     expect(draftPrompt).toContain(
-      "【长篇结构导航（发送时快照；条目正文与最新修订请通过工具读取）】"
+      "【长篇结构导航（发送时快照；条目正文与最新内容请通过工具读取）】"
     );
     expect(draftPrompt).toContain(
       "世界规则（category_id=world_rules；类型=文本）"
@@ -1353,11 +1362,8 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       },
       {
         ...longWorkspace,
-        workspaceRevision: 4,
-        projectRevision: 6,
         navigation: {
           ...navigation,
-          revision: 4,
           updatedAt: "2026-07-26T10:01:00.000Z"
         },
         plotFocus: {
@@ -1370,12 +1376,9 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       },
       {
         ...longWorkspace,
-        workspaceRevision: 5,
-        projectRevision: 7,
         activeChapterCardId: "chapter_plot_one",
         navigation: {
           ...navigation,
-          revision: 5,
           updatedAt: "2026-07-26T10:02:00.000Z"
         },
         plotFocus: {
@@ -1437,7 +1440,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       "【本轮长篇工作区上下文】"
     );
     expect(String(userMessages?.[1]?.content)).toContain(
-      "【长篇结构导航（本轮发送时快照；条目正文与最新修订请通过工具读取）】"
+      "【长篇结构导航（本轮发送时快照；条目正文与最新内容请通过工具读取）】"
     );
     expect(String(userMessages?.[1]?.content)).toContain(
       "【长篇上下文（AGENTS.md）】"
@@ -1485,7 +1488,6 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
     )!;
     const navigation = {
       schemaVersion: 1 as const,
-      revision: 3,
       bookId: "longbook_draft_prompt",
       updatedAt: "2026-07-26T10:00:00.000Z",
       counts: {
@@ -1543,8 +1545,6 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       activeRoot: "draft",
       activeAgentId: profile.id,
       activeChapterCardId: "chapter_draft_one",
-      workspaceRevision: 3,
-      projectRevision: 5,
       agentsMd: "# 长篇上下文\n\n## 正文阶段\n按章写作。",
       worldbuildingDirectory: {
         categories: [
@@ -1564,11 +1564,8 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       longWorkspace,
       {
         ...longWorkspace,
-        workspaceRevision: 4,
-        projectRevision: 6,
         navigation: {
           ...navigation,
-          revision: 4,
           updatedAt: "2026-07-26T10:01:00.000Z"
         }
       }
@@ -1609,7 +1606,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       "【人物设计列表（发送时快照）】"
     );
     expect(String(userMessages?.[0]?.content)).toContain(
-      "【长篇结构导航（发送时快照；条目正文与最新修订请通过工具读取）】"
+      "【长篇结构导航（发送时快照；条目正文与最新内容请通过工具读取）】"
     );
     expect(String(userMessages?.[0]?.content)).toContain(
       "正文进度：已写 0 章，空白 1 章。"
@@ -1624,7 +1621,7 @@ describe("DeepWrite Pi runtime adapter: workspace-prompts", () => {
       "【本轮长篇工作区上下文】"
     );
     expect(String(userMessages?.[1]?.content)).toContain(
-      "【长篇结构导航（本轮发送时快照；条目正文与最新修订请通过工具读取）】"
+      "【长篇结构导航（本轮发送时快照；条目正文与最新内容请通过工具读取）】"
     );
     expect(String(userMessages?.[1]?.content)).toContain(
       "当前章卡: chapter_draft_one"

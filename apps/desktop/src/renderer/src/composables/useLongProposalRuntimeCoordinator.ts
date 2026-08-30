@@ -14,15 +14,7 @@ import {
   type LongWorkspaceProposalEvent,
   type LongWorkspaceProposalItem
 } from "./useLongWorkspaceProposals";
-import type { LongWorkspaceRevisionSyncRequirement } from "../stores/longWorkspaceStore";
 import type { LongWorkspaceRendererApi } from "../types/longWorkspace";
-import {
-  AcceptedEditDiscardConflictError,
-  approvalUsesModificationTool,
-  discardStatePatch,
-  longProposalSupportsDiscard
-} from "../utils/acceptedEditDiscard";
-import { discardAcceptedLongWorkspaceProposal } from "./accepted-edit-discard/long-proposal";
 
 export interface LongProposalRuntimeNotifications {
   error(message: string): void;
@@ -36,7 +28,6 @@ export interface LongProposalRuntimeState {
   activeBookSummary: Readonly<Ref<LongBookSummary | null>>;
   workspaceIndex: Ref<LongWorkspaceIndexSnapshot | null>;
   proposalApprovalPending: Ref<boolean>;
-  revisionRequirement: Ref<LongWorkspaceRevisionSyncRequirement | null>;
 }
 
 export interface LongProposalConversationRegistry {
@@ -49,10 +40,6 @@ export interface LongProposalWorkspacePort {
   saveActiveEditorChanges(): Promise<boolean>;
   refreshActiveWorkspace(bookId: string): Promise<boolean>;
   refreshBookList(): Promise<void>;
-  synchronizeEditorRevisions(
-    workspaceRevision: number,
-    projectRevision: number
-  ): void;
 }
 
 export interface LongProposalRuntimeCoordinatorContext {
@@ -140,18 +127,6 @@ export function useLongProposalRuntimeCoordinator(
   ): Promise<boolean> {
     if (disposed) return false;
     const refreshed = await context.workspace.refreshActiveWorkspace(bookId);
-    if (
-      !disposed &&
-      refreshed &&
-      state.activeBookId.value === bookId &&
-      state.workspaceIndex.value &&
-      state.activeBookSummary.value?.id === bookId
-    ) {
-      context.workspace.synchronizeEditorRevisions(
-        state.workspaceIndex.value.revision,
-        state.activeBookSummary.value.projectRevision
-      );
-    }
     await context.workspace.refreshBookList();
     return !disposed && refreshed;
   }
@@ -208,9 +183,6 @@ export function useLongProposalRuntimeCoordinator(
 
   function disposeBookProposalState(bookId: string): void {
     workspaceProposals.discardBook(bookId);
-    if (state.revisionRequirement.value?.bookId === bookId) {
-      state.revisionRequirement.value = null;
-    }
     context.removeAgentRunPreferences(`long:${bookId}`);
   }
 
@@ -289,64 +261,6 @@ export function useLongProposalRuntimeCoordinator(
     }
   }
 
-  async function discardAcceptedProposal(eventId: string): Promise<void> {
-    const bookId = state.activeBookId.value;
-    const api = context.api();
-    if (!bookId || !api || state.proposalApprovalPending.value) return;
-    const item = workspaceProposals
-      .itemsForBook(bookId)
-      .find(({ event }) => event.id === eventId);
-    const conversation = item
-      ? conversationForProposalEvent(item.event)
-      : undefined;
-    if (
-      !item ||
-      !conversation ||
-      !longProposalSupportsDiscard(item) ||
-      !conversation.messages.value.some((message) =>
-        approvalUsesModificationTool(message, [item.event.payload.toolCallId])
-      ) ||
-      item.discardState?.status === "discarding"
-    ) {
-      return;
-    }
-    state.proposalApprovalPending.value = true;
-    workspaceProposals.setDiscardState(
-      bookId,
-      eventId,
-      discardStatePatch("discarding", "正在校验当前版本并舍弃本次修改…")
-    );
-    try {
-      await nextTick();
-      if (!(await context.workspace.saveActiveEditorChanges())) {
-        throw new AcceptedEditDiscardConflictError(
-          "当前长篇编辑内容尚未保存，未舍弃本次修改。"
-        );
-      }
-      await discardAcceptedLongWorkspaceProposal(api, item);
-      workspaceProposals.setDiscardState(
-        bookId,
-        eventId,
-        discardStatePatch("discarded", "已舍弃本次修改，并恢复修改前的内容。")
-      );
-      await refreshWorkspaceAfterProposal(bookId);
-      notifications.success("已舍弃本次修改");
-    } catch (error: unknown) {
-      const conflict = error instanceof AcceptedEditDiscardConflictError;
-      const message =
-        error instanceof Error ? error.message : "舍弃本次修改失败。";
-      workspaceProposals.setDiscardState(
-        bookId,
-        eventId,
-        discardStatePatch(conflict ? "conflict" : "error", message)
-      );
-      if (conflict) notifications.warning(message);
-      else notifications.error(message);
-    } finally {
-      state.proposalApprovalPending.value = false;
-    }
-  }
-
   function dispose(): void {
     disposed = true;
   }
@@ -367,7 +281,6 @@ export function useLongProposalRuntimeCoordinator(
     rejectProposal,
     retryProposalPreview,
     locateAcceptedProposal,
-    discardAcceptedProposal,
     dispose
   };
 }

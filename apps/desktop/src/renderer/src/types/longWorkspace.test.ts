@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  EMPTY_LONG_MARKDOWN_REVISION,
   type LongBookSummary,
   type LongWorkspaceFileReference,
   type LongWorkspaceIndexSnapshot
@@ -21,9 +20,8 @@ function file(id: string, path: string): LongWorkspaceFileReference {
   return {
     id,
     path,
-    revision: EMPTY_LONG_MARKDOWN_REVISION,
     updatedAt: "2026-07-26T12:00:00.000Z"
-  } as unknown as LongWorkspaceFileReference;
+  };
 }
 
 function fixture(commitId: string | null): {
@@ -421,6 +419,7 @@ describe("long workspace chapter navigation", () => {
     });
     expect(selection?.files.map(({ role }) => role)).toEqual([
       "body",
+      "foreshadowing-changes",
       "character-state",
       "handoff"
     ]);
@@ -523,8 +522,6 @@ describe("long workspace chapter navigation", () => {
       "file_chapter_world",
       "long/chapters/chapter_one/continuity/world-reveals.md"
     );
-    workspaceIndex.chapters[0]!.foreshadowingChanges.revision =
-      "v2:1:0000000000000000000000000000000000000000000000000000000000000000" as LongWorkspaceFileReference["revision"];
     workspaceIndex.chapters[0]!.characterContinuity = [
       {
         characterId: "character_lead",
@@ -683,13 +680,8 @@ describe("long workspace chapter navigation", () => {
     });
   });
 
-  it("maps a legacy structured chapter only after its Markdown projection exists", () => {
+  it("maps a committed legacy structured chapter without a version marker", () => {
     const { workspaceIndex } = fixture("commit_one");
-    expect(latestCommittedContinuityChapter(workspaceIndex)).toBeUndefined();
-
-    workspaceIndex.chapters[0]!.foreshadowingChanges.revision =
-      "v2:1:0000000000000000000000000000000000000000000000000000000000000000" as LongWorkspaceFileReference["revision"];
-
     expect(
       latestCommittedContinuityChapter(workspaceIndex)?.chapterCardId
     ).toBe("chapter_one");

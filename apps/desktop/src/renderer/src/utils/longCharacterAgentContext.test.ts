@@ -12,7 +12,6 @@ function file(id: string, path: string) {
   return {
     id,
     path,
-    revision: "v1:3:1234abcd",
     updatedAt: UPDATED_AT
   };
 }
@@ -28,9 +27,7 @@ function page(
     content: visible,
     offset: input.offset,
     totalCharacters: Array.from(content).length,
-    nextOffset: null,
-    workspaceRevision: 3,
-    projectRevision: 5
+    nextOffset: null
   };
 }
 

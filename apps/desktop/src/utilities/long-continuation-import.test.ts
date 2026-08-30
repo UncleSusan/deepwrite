@@ -83,53 +83,35 @@ describe("long continuation TXT import", () => {
 
     const stateWrite = await store.writeDocument(imported.projectDirectory, {
       fileId: index.chapters[2]!.characterState.id,
-      content: "章末状态：等待作者补录人物设定。",
-      expectedFileRevision: index.chapters[2]!.characterState.revision,
-      expectedWorkspaceRevision: index.revision,
-      expectedProjectRevision: imported.book.projectRevision!
+      content: "章末状态：等待作者补录人物设定。"
     });
     const stateIndex = stateWrite.book.workspaceIndex;
     const handoffWrite = await store.writeDocument(imported.projectDirectory, {
       fileId: stateIndex.chapters[2]!.handoff.id,
-      content: "接续包：从导入正文继续创作。",
-      expectedFileRevision: stateIndex.chapters[2]!.handoff.revision,
-      expectedWorkspaceRevision: stateWrite.workspaceRevision,
-      expectedProjectRevision: stateWrite.projectRevision
+      content: "接续包：从导入正文继续创作。"
     });
     const readyIndex = handoffWrite.book.workspaceIndex;
     const readyChapter = readyIndex.chapters[2]!;
     const committed = await store.commitChapter(imported.projectDirectory, {
       mode: "text_files",
       chapterCardId: readyChapter.chapterCardId,
-      chapterFileRevisions: { body: readyChapter.body.revision },
-      continuityFileRevisions: [
-        {
-          fileId: readyChapter.characterState.id,
-          revision: readyChapter.characterState.revision
-        },
-        {
-          fileId: readyChapter.handoff.id,
-          revision: readyChapter.handoff.revision
-        }
-      ],
       foreshadowingBeatDecisions: {},
-      commitMessage: "提交续写导入的最后一章",
-      baseWorkspaceRevision: handoffWrite.workspaceRevision,
-      baseProjectRevision: handoffWrite.projectRevision
+      commitMessage: "提交续写导入的最后一章"
     });
     expect(committed.record.sequence).toBe(3);
     const committedBook = await store.openBook(imported.projectDirectory);
     expect(committedBook.book.workspaceIndex.ledger.commits.at(-1)?.mode).toBe(
       "text_files"
     );
-    await store.rollbackLastCommit(imported.projectDirectory, {
-      expectedCommitId: committed.record.id,
-      baseWorkspaceRevision: committed.workspaceRevision,
-      baseProjectRevision: committed.projectRevision
+    await store.writeDocument(imported.projectDirectory, {
+      fileId: readyChapter.body.id,
+      content: "提交后仍可直接改写正文。"
     });
-    const rolledBack = await store.openBook(imported.projectDirectory);
-    expect(rolledBack.book.workspaceIndex.ledger.commits).toHaveLength(2);
-    expect(rolledBack.book.workspaceIndex.chapters[2]!.commitId).toBeNull();
+    await expect(
+      store.readDocument(imported.projectDirectory, {
+        fileId: readyChapter.body.id
+      })
+    ).resolves.toMatchObject({ content: "提交后仍可直接改写正文。" });
   });
 
   it("imports ordered volume folders and decodes UTF-16 and GB18030 text", async () => {

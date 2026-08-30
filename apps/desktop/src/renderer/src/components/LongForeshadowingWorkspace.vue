@@ -12,16 +12,19 @@ import type {
   LongExecutionStatus,
   LongForeshadowingBeatType,
   LongForeshadowingStatus,
+  LongWorkspaceImpactConfirmation,
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
 import { uiMessage } from "../ui-feedback";
+import { useLongForeshadowingDeleteConfirmation } from "../composables/useLongForeshadowingDeleteConfirmation";
 import {
   createLongStructureMutationBuilder,
   type LongStructureMutationBuilder
 } from "../types/longStructureMutations";
 import type { LongStructureMutationCompletion } from "../types/longWorkspace";
 import AppIcon from "./AppIcon.vue";
+import LongForeshadowingDeleteDialog from "./LongForeshadowingDeleteDialog.vue";
 import PopupSelect, {
   type PopupSelectOption,
   type PopupSelectValue
@@ -33,7 +36,7 @@ type FilterValue = "all" | LongForeshadowingStatus;
 type SpanFilterValue = "all" | PlannedSpan;
 type FormKind = "thread" | "beat";
 type FormMode = "create" | "edit";
-type MutationSurface = "form" | "delete" | "background";
+type MutationSurface = "form" | "background";
 
 type SnapshotThread =
   LongWorkspaceIndexSnapshot["plot"]["foreshadowing"][number];
@@ -82,17 +85,6 @@ interface VolumeSummarySection {
   items: BeatItem[];
 }
 
-type DeleteTarget =
-  | {
-      kind: "thread";
-      thread: ForeshadowingThread;
-    }
-  | {
-      kind: "beat";
-      thread: ForeshadowingThread;
-      beat: ForeshadowingBeat;
-    };
-
 const props = withDefaults(
   defineProps<{
     snapshot: LongWorkspaceIndexSnapshot;
@@ -107,6 +99,10 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
+  previewMutation: [
+    batch: LongWorkspaceOperationBatch,
+    completion: (impact?: LongWorkspaceImpactConfirmation) => void
+  ];
   mutation: [
     batch: LongWorkspaceOperationBatch,
     completion: LongStructureMutationCompletion
@@ -187,11 +183,8 @@ const workspaceElement = ref<HTMLElement | null>(null);
 const formOpen = ref(false);
 const formKind = ref<FormKind>("thread");
 const formMode = ref<FormMode>("create");
-const deleteTarget = ref<DeleteTarget | null>(null);
 const formDialog = ref<HTMLElement | null>(null);
-const deleteDialog = ref<HTMLElement | null>(null);
 const firstFormInput = ref<HTMLInputElement | null>(null);
-const deleteCancelButton = ref<HTMLButtonElement | null>(null);
 const pendingMutation = ref<{
   id: number;
   surface: MutationSurface;
@@ -226,8 +219,28 @@ function emptyBeatDraft(): BeatDraft {
   };
 }
 
+const {
+  deleteTarget,
+  deleteTitle,
+  deleteSubmitting,
+  requestDeleteThread,
+  requestDeleteBeat,
+  closeDelete,
+  confirmDelete
+} = useLongForeshadowingDeleteConfirmation({
+  snapshot: computed(() => props.snapshot),
+  locked: () => props.disabled || pendingMutation.value !== null,
+  threadLocked: (thread) => isThreadLocked(thread as ForeshadowingThread),
+  beatLocked: (beat) => isBeatLocked(beat as ForeshadowingBeat),
+  rememberFocus,
+  restoreFocus,
+  preview: (batch, completion) => emit("previewMutation", batch, completion),
+  mutate: (batch, completion) => emit("mutation", batch, completion),
+  notify: uiMessage
+});
 const mutationLocked = computed(
-  () => props.disabled || pendingMutation.value !== null
+  () =>
+    props.disabled || pendingMutation.value !== null || deleteSubmitting.value
 );
 
 const threads = computed(
@@ -602,14 +615,6 @@ const formTitle = computed(() => {
   return `${action}${formKind.value === "thread" ? "伏笔线" : "伏笔触点"}`;
 });
 
-const deleteTitle = computed(() => {
-  const target = deleteTarget.value;
-  if (!target) return "确认删除";
-  return target.kind === "thread"
-    ? `删除伏笔线“${target.thread.title}”`
-    : `删除“${target.thread.title}”的${beatTypeLabels[target.beat.type]}触点`;
-});
-
 watch(
   () => [
     props.mode,
@@ -880,7 +885,7 @@ function openEditBeat(
 ): void {
   if (mutationLocked.value) return;
   if (isBeatLocked(beat)) {
-    uiMessage.info("该触点已经提交，需先回滚相关连续性提交才能修改。");
+    uiMessage.info("该触点正在处理其它变更，请稍后重试。");
     return;
   }
   // Keep legacy event/chapter/placement anchors untouched. The derived
@@ -910,31 +915,6 @@ function closeForm(): void {
   restoreFocus();
 }
 
-function requestDeleteThread(thread: ForeshadowingThread): void {
-  if (mutationLocked.value) return;
-  if (isThreadLocked(thread)) {
-    uiMessage.info("该伏笔线包含已提交触点，不能删除。");
-    return;
-  }
-  rememberFocus();
-  deleteTarget.value = { kind: "thread", thread };
-  void nextTick(() => deleteCancelButton.value?.focus({ preventScroll: true }));
-}
-
-function requestDeleteBeat(
-  thread: ForeshadowingThread,
-  beat: ForeshadowingBeat
-): void {
-  if (mutationLocked.value) return;
-  if (isBeatLocked(beat)) {
-    uiMessage.info("该触点已经提交，需先回滚相关连续性提交才能删除。");
-    return;
-  }
-  rememberFocus();
-  deleteTarget.value = { kind: "beat", thread, beat };
-  void nextTick(() => deleteCancelButton.value?.focus({ preventScroll: true }));
-}
-
 function toggleThreadAbandoned(thread: ForeshadowingThread): void {
   if (mutationLocked.value) return;
   rememberFocus();
@@ -948,12 +928,6 @@ function toggleThreadAbandoned(thread: ForeshadowingThread): void {
   if (!emitted) restoreFocus();
 }
 
-function closeDelete(): void {
-  if (mutationLocked.value) return;
-  deleteTarget.value = null;
-  restoreFocus();
-}
-
 function finishMutation(
   requestId: number,
   outcome: "succeeded" | "failed" | "applied-refresh-failed"
@@ -964,8 +938,6 @@ function finishMutation(
   if (outcome === "failed") return;
   if (pending.surface === "form") {
     formOpen.value = false;
-  } else if (pending.surface === "delete") {
-    deleteTarget.value = null;
   }
   restoreFocus();
 }
@@ -1085,18 +1057,6 @@ function submitForm(): void {
   }
 }
 
-function confirmDelete(): void {
-  const target = deleteTarget.value;
-  if (!target) return;
-  emitMutation(
-    (builder) =>
-      target.kind === "thread"
-        ? builder.deleteForeshadowing(target.thread.id, true)
-        : builder.deleteForeshadowingBeat(target.beat.id),
-    "delete"
-  );
-}
-
 function activateSummaryItem(item: BeatItem): void {
   activeThreadId.value = item.thread.id;
   openEditBeat(item.thread, item.beat);
@@ -1146,13 +1106,6 @@ function handleDocumentKeydown(event: KeyboardEvent): void {
     }
     trapFocus(event, formDialog.value);
     return;
-  }
-  if (deleteTarget.value) {
-    if (event.key === "Escape") {
-      closeDelete();
-      return;
-    }
-    trapFocus(event, deleteDialog.value);
   }
 }
 
@@ -1472,7 +1425,7 @@ onBeforeUnmount(() =>
                 <span>{{ activeThreadBeats.length }} 个</span>
               </div>
               <small v-if="isThreadLocked(activeThread)">
-                已提交触点保持只读；如需修改，请先回滚相关提交。
+                当前伏笔线正在处理其它变更。
               </small>
             </header>
 
@@ -1751,59 +1704,14 @@ onBeforeUnmount(() =>
       </div>
     </Teleport>
 
-    <Teleport to="body">
-      <div
-        v-if="deleteTarget"
-        class="dialog-backdrop foreshadow-dialog-overlay"
-        @mousedown.self="closeDelete"
-      >
-        <section
-          ref="deleteDialog"
-          class="foreshadow-dialog delete-dialog"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="foreshadow-delete-title"
-          aria-describedby="foreshadow-delete-description"
-          tabindex="-1"
-        >
-          <header class="dialog-header">
-            <div>
-              <span>DELETE</span>
-              <h3 id="foreshadow-delete-title">{{ deleteTitle }}</h3>
-            </div>
-          </header>
-          <div class="dialog-body">
-            <p id="foreshadow-delete-description" class="delete-copy">
-              {{
-                deleteTarget.kind === "thread"
-                  ? "这会同时删除该伏笔线下全部尚未提交的触点，保存后无法从当前界面恢复。"
-                  : "这会删除该触点，其他卷和剧情点中的同一伏笔线不会被删除。"
-              }}
-            </p>
-          </div>
-          <footer class="dialog-actions">
-            <button
-              ref="deleteCancelButton"
-              type="button"
-              :disabled="mutationLocked"
-              @click="closeDelete"
-            >
-              取消
-            </button>
-            <button
-              class="danger-button"
-              type="button"
-              :disabled="mutationLocked"
-              @click="confirmDelete"
-            >
-              {{
-                pendingMutation?.surface === "delete" ? "删除中…" : "确认删除"
-              }}
-            </button>
-          </footer>
-        </section>
-      </div>
-    </Teleport>
+    <LongForeshadowingDeleteDialog
+      :target="deleteTarget"
+      :title="deleteTitle"
+      :locked="mutationLocked"
+      :pending="deleteSubmitting"
+      @close="closeDelete"
+      @confirm="confirmDelete"
+    />
   </section>
 </template>
 
@@ -2672,24 +2580,6 @@ button:disabled {
   justify-content: flex-end;
   border-top: 1px solid var(--theme-line-soft);
   background: var(--surface-muted);
-}
-
-.delete-dialog {
-  width: min(470px, 94vw);
-}
-
-.delete-copy {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 0.785714rem;
-  line-height: 1.65;
-}
-
-.danger-button {
-  border-color: var(--danger) !important;
-  background: var(--danger) !important;
-  color: #ffffff !important;
-  font-weight: 620;
 }
 
 @container (max-width: 38rem) {

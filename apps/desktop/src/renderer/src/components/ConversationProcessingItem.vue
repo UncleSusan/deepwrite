@@ -47,7 +47,6 @@ const emit = defineEmits<{
   rejectLongProposal: [eventId: string];
   retryLongProposalPreview: [eventId: string];
   locateLongProposal: [eventId: string];
-  discardLongProposal: [eventId: string];
 }>();
 
 function writeToolFallback(): string {
@@ -163,12 +162,10 @@ function writeToolFallback(): string {
     conversation-card
     :items="[item.item]"
     :workspace-index="longWorkspaceIndex"
-    :discardable-event-ids="item.canDiscard ? [item.item.event.id] : []"
     @approve="emit('approveLongProposal', $event)"
     @reject="emit('rejectLongProposal', $event)"
     @retry-preview="emit('retryLongProposalPreview', $event)"
     @locate="emit('locateLongProposal', $event)"
-    @discard="emit('discardLongProposal', $event)"
   />
 
   <details

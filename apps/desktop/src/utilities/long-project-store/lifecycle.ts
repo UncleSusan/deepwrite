@@ -26,10 +26,8 @@ import {
   type LongWorkspaceFileReference
 } from "@deepwrite/contracts";
 import { createId, randomHex8 } from "@deepwrite/shared";
-import {
-  assertLongLedgerRecordChain,
-  assertLongLedgerRecordMatchesIndex
-} from "../long-portable-bundle";
+import { assertLongLedgerRecordMatchesIndex } from "../long-portable-bundle";
+import { parseLongLedgerCommitRecord } from "../long-version-metadata";
 import { readAgentsMdContentOrDefault } from "./agents-md";
 import {
   commitLongProjectTransaction,
@@ -42,7 +40,6 @@ import {
 } from "./io";
 import { loadProject } from "./load-project";
 import { chapterPath, indexedFileSlots } from "./paths";
-import { createLongFileRevision } from "./revisions";
 import type { LongProjectStoreContext } from "./store-context";
 import {
   BOOK_LINE_PATH,
@@ -155,7 +152,6 @@ export async function duplicateBook(
         expectedSha256: null;
       }> = [];
       const records: LongLedgerCommitRecord[] = [];
-      const continuityFileContents = new Map<string, string>();
 
       for (const slot of indexedFileSlots(source.index)) {
         const disk = await readSecureTextFile(
@@ -164,7 +160,7 @@ export async function duplicateBook(
           slot.kind === "json" ? MAX_LEDGER_RECORD_BYTES : MAX_DOCUMENT_BYTES
         );
         if (slot.kind === "json") {
-          const sourceRecord = LongLedgerCommitRecordSchema.parse(
+          const sourceRecord = parseLongLedgerCommitRecord(
             parseJson(disk.content, `长篇账本 ${slot.reference.id}`)
           );
           const record = LongLedgerCommitRecordSchema.parse({
@@ -172,8 +168,7 @@ export async function duplicateBook(
               structuredClone(sourceRecord),
               source.book.id,
               bookId
-            ),
-            reversible: false
+            )
           });
           const content = serializeJson(record);
           const entry = index.ledger.commits.find(
@@ -182,10 +177,8 @@ export async function duplicateBook(
           if (!entry) {
             throw new Error(`长篇副本缺少账本索引：${record.id}。`);
           }
-          entry.reversible = false;
           entry.recordFile = LongWorkspaceFileReferenceSchema.parse({
             ...entry.recordFile,
-            revision: createLongFileRevision(content),
             updatedAt: now
           });
           records.push(record);
@@ -195,7 +188,6 @@ export async function duplicateBook(
             expectedSha256: null
           });
         } else {
-          continuityFileContents.set(slot.reference.id, disk.content);
           operations.push({
             path: slot.reference.path,
             content: disk.content,
@@ -220,13 +212,6 @@ export async function duplicateBook(
           content
         );
       }
-      assertLongLedgerRecordChain(
-        validatedIndex,
-        records,
-        validatedIndex.revision,
-        continuityFileContents
-      );
-
       const indexContent = serializeJson(validatedIndex);
       const manifest = LongProjectManifestSchema.parse({
         ...replaceExactIdentity(
@@ -240,7 +225,6 @@ export async function duplicateBook(
         updatedAt: now,
         workspaceIndexFile: {
           ...source.manifest.workspaceIndexFile,
-          revision: createLongFileRevision(indexContent),
           updatedAt: now
         }
       });
@@ -292,15 +276,9 @@ export function createInitialProjectFiles(
   const volumeId = createId("volume");
   const arcId = createId("arc");
   const chapterId = createId("chapter");
-  const emptyRevision = createLongFileRevision("");
-  const file = (
-    id: string,
-    path: string,
-    content = ""
-  ): LongWorkspaceFileReference => ({
+  const file = (id: string, path: string): LongWorkspaceFileReference => ({
     id,
     path,
-    revision: content === "" ? emptyRevision : createLongFileRevision(content),
     updatedAt: timestamp
   });
   const worldbuilding = DEFAULT_WORLD_CATEGORIES.map(([id, title], index) => ({
@@ -338,7 +316,6 @@ export function createInitialProjectFiles(
 
   const index = LongWorkspaceIndexSnapshotSchema.parse({
     schemaVersion: 1,
-    revision: 0,
     bookId,
     updatedAt: timestamp,
     bookLine: file(LONG_BOOK_LINE_FILE_ID, BOOK_LINE_PATH),
@@ -399,7 +376,6 @@ export function createInitialProjectFiles(
   const indexContent = serializeJson(index);
   const manifest = LongProjectManifestSchema.parse({
     schemaVersion: 1,
-    revision: 0,
     kind: "deepwrite.long-book",
     id: bookId,
     title: input.title,
@@ -414,7 +390,6 @@ export function createInitialProjectFiles(
     workspaceIndexFile: {
       id: LONG_WORKSPACE_INDEX_FILE_ID,
       path: LONG_WORKSPACE_INDEX_PATH,
-      revision: createLongFileRevision(indexContent),
       updatedAt: timestamp
     }
   });

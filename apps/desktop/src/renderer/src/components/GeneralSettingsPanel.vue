@@ -12,6 +12,7 @@ defineProps<{
   autoApproveCrossStageOperations: boolean;
   autoSaveEnabled: boolean;
   language: AppLanguage;
+  showContextUsage: boolean;
   showInMenuBar: boolean;
   workspacePaneLayout: WorkspacePaneLayout;
   defaultTextViewMode: TextViewMode;
@@ -22,6 +23,7 @@ const emit = defineEmits<{
   updateAutoApproveCrossStageOperations: [enabled: boolean];
   updateAutoSave: [enabled: boolean];
   updateLanguage: [language: AppLanguage];
+  updateShowContextUsage: [enabled: boolean];
   updateShowInMenuBar: [enabled: boolean];
   updateWorkspacePaneLayout: [layout: WorkspacePaneLayout];
   updateDefaultTextViewMode: [mode: TextViewMode];
@@ -121,6 +123,24 @@ const textViewModeOptions: Array<{ value: TextViewMode; label: string }> = [
             @change="
               emit(
                 'updateAutoSave',
+                ($event.target as HTMLInputElement).checked
+              )
+            "
+        /></span>
+      </label>
+      <label class="settings-item">
+        <span class="settings-item-text"
+          ><strong>上下文使用显示</strong
+          ><small>在创作输入框中显示当前模型的上下文占用进度</small></span
+        >
+        <span class="settings-toggle"
+          ><input
+            type="checkbox"
+            :checked="showContextUsage"
+            aria-label="上下文使用显示"
+            @change="
+              emit(
+                'updateShowContextUsage',
                 ($event.target as HTMLInputElement).checked
               )
             "

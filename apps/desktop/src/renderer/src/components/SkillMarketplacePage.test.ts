@@ -6,8 +6,11 @@ import {
 import source from "./SkillMarketplacePage.vue?raw";
 import appSource from "../WorkspaceShell.vue?raw";
 import featureModulesSource from "./WorkspaceFeatureModules.vue?raw";
-import featureHostSource from "../composables/useWorkspaceFeatureHostCoordinator.ts?raw";
+import featureHostCoordinatorSource from "../composables/useWorkspaceFeatureHostCoordinator.ts?raw";
+import featureHostModuleSource from "../composables/workspaceFeatureHostModule.ts?raw";
 import sidebarSource from "./LeftSidebar.vue?raw";
+
+const featureHostSource = `${featureHostCoordinatorSource}\n${featureHostModuleSource}`;
 
 describe("SkillMarketplacePage", () => {
   it("gates the marketplace behind login or registration and keeps the HTTP warning visible", () => {
@@ -165,9 +168,10 @@ describe("SkillMarketplacePage", () => {
     expect(appSource).toContain(
       ':marketplace-display-name="marketplaceDisplayName"'
     );
-    expect(featureHostSource).toContain(
-      "session: knownMarketplaceSession.value"
+    expect(featureHostCoordinatorSource).toContain(
+      "knownMarketplaceSession.value"
     );
+    expect(featureHostModuleSource).toContain("session: marketplaceSession");
     expect(featureModulesSource).toContain(':initial-session="module.session"');
     expect(featureModulesSource).toContain(
       "@session-change=\"emit('marketplaceSessionChange', $event)\""

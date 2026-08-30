@@ -106,6 +106,7 @@ export function usageModuleForPrompt(
       : "material-library";
   }
   if (context.learningImitation) return "learning-imitation";
+  if (context.longBookAnalysis) return "long-book-analysis";
   if (context.subagentAuthoring) return "subagent-authoring";
   return "unknown";
 }

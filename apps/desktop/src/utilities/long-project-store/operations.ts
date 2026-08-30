@@ -9,7 +9,6 @@ import {
   type LongWorkspaceImpactPreview,
   type LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
-import { ProjectTransactionConflictError } from "../project-transaction";
 import type { ProjectTransactionFileOperation } from "../project-transaction";
 import { loadIndexedFile } from "./cache";
 import {
@@ -22,15 +21,14 @@ import {
   serializeJson
 } from "./io";
 import { loadProject } from "./load-project";
+import { buildLedgerRecordEditOperations } from "./operation-ledger-record-edits";
 import {
   indexedFileSlots,
   requireIndexedFileReference,
   updateChapterBodyStatus
 } from "./paths";
-import { createLongFileRevision, longRevisionsMatchContent } from "./revisions";
 import type { LongProjectStoreContext } from "./store-context";
 import {
-  LongProjectConflictError,
   MANIFEST_PATH,
   MAX_LEDGER_RECORD_BYTES,
   MIGRATION_EVIDENCE_WORLD_ID_PREFIX,
@@ -65,13 +63,6 @@ export async function applyWorkspaceOperations(
   const requestedBatch = LongWorkspaceOperationBatchSchema.parse(input.batch);
   return await ctx.runExclusive(canonical, async () => {
     const loaded = await loadProject(ctx, canonical);
-    if (input.expectedProjectRevision !== loaded.manifest.revision) {
-      throw new LongProjectConflictError(
-        "project",
-        input.expectedProjectRevision,
-        loaded.manifest.revision
-      );
-    }
     const batch = await materializeWorldbuildingConversionBatch(
       loaded,
       requestedBatch
@@ -107,52 +98,22 @@ export async function applyWorkspaceOperations(
 
     for (const intent of operationResult.fileIntents) {
       if (intent.action === "delete") {
-        const expectedRevision = intent.file.revision;
-        const current = await loadIndexedFile(loaded, intent.file.id);
-        if (current.reference.path !== intent.file.path) {
+        const current = loaded.files.get(intent.file.id);
+        if (!current || current.reference.path !== intent.file.path) {
           throw new Error(
             `长篇删除文件路径与当前索引不一致：${intent.file.id}`
           );
         }
-        if (
-          !longRevisionsMatchContent(
-            expectedRevision,
-            current.disk.revision,
-            current.disk.bytes
-          )
-        ) {
-          throw new LongProjectConflictError(
-            "file",
-            expectedRevision,
-            current.disk.revision
-          );
-        }
         fileOperations.push({
           action: "delete",
-          path: current.reference.path,
-          expectedSha256: current.disk.sha256
+          path: current.reference.path
         });
         continue;
       }
       const proposal = proposalByFileId.get(intent.file.id);
       const content = proposal?.content ?? "";
-      const actualRevision = createLongFileRevision(content);
-      if (
-        proposal &&
-        !longRevisionsMatchContent(
-          proposal.nextRevision,
-          actualRevision,
-          content
-        )
-      ) {
-        throw new Error(
-          `长篇新文件 revision 与提案内容不一致：${intent.file.id}`
-        );
-      }
       const nextFile = requireIndexedFileReference(nextIndex, intent.file.id);
-      intent.file.revision = actualRevision;
       intent.file.updatedAt = nextIndex.updatedAt;
-      nextFile.revision = actualRevision;
       nextFile.updatedAt = nextIndex.updatedAt;
       updateChapterBodyStatus(nextIndex, nextFile.id, content);
       fileOperations.push({
@@ -170,89 +131,45 @@ export async function applyWorkspaceOperations(
         throw new Error(`长篇文档提案目标不存在或不可写：${proposal.fileId}`);
       }
       const current = await loadIndexedFile(loaded, proposal.fileId);
-      if (
-        !longRevisionsMatchContent(
-          proposal.expectedRevision,
-          current.disk.revision,
-          current.disk.bytes
-        )
-      ) {
-        throw new LongProjectConflictError(
-          "file",
-          proposal.expectedRevision,
-          current.disk.revision
-        );
-      }
       const content =
         proposal.mode === "append"
           ? `${current.disk.content}${proposal.content}`
           : proposal.content;
-      const actualRevision = createLongFileRevision(content);
-      if (
-        !longRevisionsMatchContent(
-          proposal.nextRevision,
-          actualRevision,
-          content
-        )
-      ) {
-        throw new Error(
-          `长篇文档 nextRevision 与提案内容不一致：${proposal.fileId}`
-        );
-      }
       const nextFile = requireIndexedFileReference(nextIndex, proposal.fileId);
-      if (
-        !longRevisionsMatchContent(nextFile.revision, actualRevision, content)
-      ) {
-        throw new Error(
-          `长篇索引未包含文档提案的实际 revision：${proposal.fileId}`
-        );
-      }
+      nextFile.updatedAt = nextIndex.updatedAt;
       updateChapterBodyStatus(nextIndex, nextFile.id, content);
       fileOperations.push({
         path: current.reference.path,
-        content,
-        expectedSha256: current.disk.sha256
+        content
       });
     }
+
+    fileOperations.push(
+      ...(await buildLedgerRecordEditOperations({
+        loaded,
+        nextIndex,
+        edits: operationResult.ledgerRecordEdits
+      }))
+    );
+
     const indexContent = serializeJson(nextIndex);
     const nextManifest = LongProjectManifestSchema.parse({
       ...loaded.manifest,
-      revision: nextIndex.revision,
       updatedAt: nextIndex.updatedAt,
       workspaceIndexFile: {
         ...loaded.manifest.workspaceIndexFile,
-        revision: createLongFileRevision(indexContent),
         updatedAt: nextIndex.updatedAt
       }
     });
-    try {
-      await commitLongProjectTransaction({
-        projectRoot: loaded.projectDirectory,
-        operations: [
-          ...fileOperations,
-          {
-            path: LONG_WORKSPACE_INDEX_PATH,
-            content: indexContent,
-            expectedSha256: loaded.indexDisk.sha256
-          },
-          {
-            path: MANIFEST_PATH,
-            content: serializeJson(nextManifest),
-            expectedSha256: loaded.manifestDisk.sha256
-          }
-        ],
-        maxFileBytes: MAX_LEDGER_RECORD_BYTES
-      });
-    } catch (error: unknown) {
-      if (error instanceof ProjectTransactionConflictError) {
-        throw new LongProjectConflictError(
-          "transaction",
-          error.expectedSha256 ?? "missing",
-          error.actualSha256 ?? "missing"
-        );
-      }
-      throw error;
-    }
+    await commitLongProjectTransaction({
+      projectRoot: loaded.projectDirectory,
+      operations: [
+        ...fileOperations,
+        { path: LONG_WORKSPACE_INDEX_PATH, content: indexContent },
+        { path: MANIFEST_PATH, content: serializeJson(nextManifest) }
+      ],
+      maxFileBytes: MAX_LEDGER_RECORD_BYTES
+    });
     const next = await loadProject(ctx, loaded.projectDirectory);
     return {
       book: next.book,
@@ -260,8 +177,7 @@ export async function applyWorkspaceOperations(
       operationResult: {
         ...operationResult,
         snapshot: next.index
-      },
-      projectRevision: next.manifest.revision
+      }
     };
   });
 }
@@ -276,7 +192,7 @@ export async function materializeWorldbuildingConversionBatch(
   });
   const structuralResult = applyLongWorkspaceOperations(loaded.index, {
     ...requestedBatch,
-    expectedImpact: structuralPreview.impact
+    expectedImpact: structuralPreview.confirmation
   });
   const previousById = new Map(
     loaded.index.worldbuilding.map((category) => [category.id, category])
@@ -327,7 +243,7 @@ export async function materializeWorldbuildingConversionBatch(
     documentWrites.push({
       proposalId: `proposal_${createHash("sha256")
         .update(
-          `worldbuilding-conversion:${requestedBatch.baseRevision}:${category.id}:${category.format}`,
+          `worldbuilding-conversion:${requestedBatch.updatedAt}:${category.id}:${category.format}`,
           "utf8"
         )
         .digest("hex")
@@ -335,8 +251,6 @@ export async function materializeWorldbuildingConversionBatch(
       fileId: targetFile.id,
       content,
       mode: "create",
-      expectedRevision: null,
-      nextRevision: createLongFileRevision(content),
       updatedAt: requestedBatch.updatedAt,
       reason: `转换世界观分类“${category.title}”为${
         category.format === "text" ? "文本" : "列表"

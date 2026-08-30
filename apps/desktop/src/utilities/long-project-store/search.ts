@@ -1,8 +1,4 @@
-import {
-  LongFileIdSchema,
-  LongFileRevisionSchema,
-  type LongFileRevision
-} from "@deepwrite/contracts";
+import { LongFileIdSchema } from "@deepwrite/contracts";
 import {
   characterOffsetAtCodeUnit,
   codeUnitOffsetAtCharacter,
@@ -10,7 +6,6 @@ import {
   sliceIndexedUnicodeCodePointRange
 } from "./cache";
 import { nonnegativeInteger } from "./io";
-import { longRevisionMatchesSecureTextFile } from "./revisions";
 import type {
   CachedPagedTextFile,
   LoadedPagedIndexedFile,
@@ -20,7 +15,6 @@ import type {
 
 export interface ScannedSearchFile {
   fileId: string;
-  revision: LongFileRevision;
   characterLength: number;
   scannedCharacters: number;
   matches: LongProjectSearchMatch[];
@@ -45,11 +39,10 @@ export function parseProjectSearchResume(
     "搜索游标字符位置"
   );
   const fileId = LongFileIdSchema.parse(raw.fileId);
-  const fileRevision = LongFileRevisionSchema.parse(raw.fileRevision);
   if (fileIndex >= fileIds.length || fileIds[fileIndex] !== fileId) {
     throw new Error("长篇搜索游标与当前文件顺序不一致。");
   }
-  return { fileIndex, fileId, fileRevision, characterOffset };
+  return { fileIndex, fileId, characterOffset };
 }
 
 export async function scanIndexedFileForSearch(
@@ -58,23 +51,17 @@ export async function scanIndexedFileForSearch(
   characterOffset: number,
   maxMatches: number,
   contextCharacters: number,
-  expectedRevision: LongFileRevision | undefined,
   characterBudget: number
 ): Promise<ScannedSearchFile> {
   const { disk, paging } = file;
-  if (
-    expectedRevision !== undefined &&
-    !longRevisionMatchesSecureTextFile(expectedRevision, disk)
-  ) {
-    throw new Error("长篇搜索游标对应的文件已发生变化，请重新搜索。");
-  }
-  if (characterOffset > paging.totalCharacters) {
-    throw new Error("长篇搜索游标字符位置已失效，请重新搜索。");
-  }
+  const startCharacterOffset = Math.min(
+    characterOffset,
+    paging.totalCharacters
+  );
 
   const normalizedWindow = createNormalizedSearchWindow(
     paging,
-    characterOffset,
+    startCharacterOffset,
     Math.max(1, characterBudget),
     query
   );
@@ -86,10 +73,9 @@ export async function scanIndexedFileForSearch(
     if (!match) {
       return {
         fileId: file.reference.id,
-        revision: disk.revision,
         characterLength: paging.totalCharacters,
         scannedCharacters:
-          normalizedWindow.scanEndCharacterOffset - characterOffset,
+          normalizedWindow.scanEndCharacterOffset - startCharacterOffset,
         matches,
         nextMatchOffset:
           normalizedWindow.scanEndCharacterOffset < paging.totalCharacters
@@ -124,9 +110,11 @@ export async function scanIndexedFileForSearch(
     if (matches.length >= maxMatches) {
       return {
         fileId: file.reference.id,
-        revision: disk.revision,
         characterLength: paging.totalCharacters,
-        scannedCharacters: Math.max(1, sourceRange.start - characterOffset),
+        scannedCharacters: Math.max(
+          1,
+          sourceRange.start - startCharacterOffset
+        ),
         matches,
         nextMatchOffset: sourceRange.start
       };
@@ -139,7 +127,6 @@ export async function scanIndexedFileForSearch(
     matches.push({
       fileId: file.reference.id,
       path: file.reference.path,
-      revision: disk.revision,
       offset: sourceRange.start,
       endOffset: sourceRange.end,
       line: 1 + countNewlines(disk.content, 0, sourceStartCodeUnit),

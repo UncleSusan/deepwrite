@@ -34,6 +34,7 @@ describe("GeneralSettingsStore", () => {
       permissionMode: "auto-approve",
       autoApproveCrossStageOperations: false,
       autoSave: true,
+      showContextUsage: true,
       defaultTextViewMode: "edit"
     });
   });
@@ -46,6 +47,7 @@ describe("GeneralSettingsStore", () => {
       autoSave: true,
       language: "zh-CN" as const,
       showInMenuBar: false,
+      showContextUsage: false,
       workspacePaneLayout: "editor-agent" as const,
       defaultTextViewMode: "preview" as const
     };
@@ -88,6 +90,7 @@ describe("GeneralSettingsStore", () => {
         autoSave: false,
         language: "zh-CN",
         showInMenuBar: false,
+        showContextUsage: true,
         workspacePaneLayout: "agent-editor",
         defaultTextViewMode: "edit"
       }

@@ -28,10 +28,6 @@ export const OptionalProvisionalIdShape = {
   provisionalId: LongProvisionalIdSchema.optional()
 } as const;
 
-export const DeleteControlShape = {
-  cascade: z.boolean()
-} as const;
-
 export function nonEmptyPatch<T extends z.ZodRawShape>(shape: T) {
   return z
     .object(shape)

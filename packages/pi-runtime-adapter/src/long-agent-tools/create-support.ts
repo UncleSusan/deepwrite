@@ -1,11 +1,10 @@
 import {
-  EMPTY_LONG_MARKDOWN_REVISION,
   createEmptyLongMarkdownFileReference,
   type LongWorkspaceFileReference,
   type LongWorkspaceIndexSnapshot,
   type LongWorkspaceOperation
 } from "@deepwrite/contracts";
-import { contentRevision, type LongFileChangeInput } from "./proposals";
+import type { LongFileChangeInput } from "./proposals";
 import type { LongCreateKind } from "./entity-registry";
 import type { LongDocumentTarget } from "./target";
 
@@ -65,18 +64,13 @@ export function requireMeta<T>(value: T | undefined | null, field: string): T {
   return value;
 }
 
-/** New files carry the revision of their initial content so Core can match it. */
 export function newLongFile(
   id: string,
   path: string,
   timestamp: string,
-  content: string
+  _content: string
 ): LongWorkspaceFileReference {
-  const file = createEmptyLongMarkdownFileReference(id, path, timestamp);
-  return {
-    ...file,
-    revision: content ? contentRevision(content) : EMPTY_LONG_MARKDOWN_REVISION
-  };
+  return createEmptyLongMarkdownFileReference(id, path, timestamp);
 }
 
 export function createChange(
@@ -89,32 +83,6 @@ export function createChange(
     operation: "create",
     beforeText: "",
     afterText: content,
-    beforeRevision: null,
-    nextRevision: file.revision,
-    file
-  };
-}
-
-/** Fill an already-indexed empty continuity file in the same create call. */
-export function writeEmptyFileChange(
-  target: LongDocumentTarget,
-  file: LongWorkspaceFileReference,
-  content: string,
-  timestamp: string
-): LongFileChangeInput {
-  const nextRevision = content
-    ? contentRevision(content)
-    : EMPTY_LONG_MARKDOWN_REVISION;
-  return {
-    target: {
-      ...target,
-      file: { ...file, revision: nextRevision, updatedAt: timestamp }
-    },
-    operation: "write",
-    beforeText: "",
-    afterText: content,
-    beforeRevision: file.revision,
-    nextRevision,
     file
   };
 }

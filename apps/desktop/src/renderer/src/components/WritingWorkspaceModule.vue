@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type {
+  AgentTeamRunMode,
   ThinkingLevel,
   UserPromptAttachment,
   WorkspacePaneLayout
@@ -65,6 +66,7 @@ type WritingEditorViewModel = Readonly<
     | "showDeleteSection"
     | "canDeleteSection"
     | "deleteSectionLabel"
+    | "entrySearchItems"
   >
 >;
 
@@ -97,6 +99,7 @@ const emit = defineEmits<{
   selectThinking: [level: ThinkingLevel];
   selectTemperature: [temperature: number];
   selectApproval: [mode: AgentApprovalMode];
+  selectAgentTeamMode: [mode: AgentTeamRunMode];
   reviewEdit: [
     payload: {
       runId: string;
@@ -114,6 +117,8 @@ const emit = defineEmits<{
   createSection: [];
   deleteSection: [];
   selectDraftFile: [fileKind: "body" | "character-state"];
+  selectEntrySearchResult: [documentId: string];
+  prepareEntrySearch: [];
   resizeStart: [event: PointerEvent];
   resizeKeydown: [event: KeyboardEvent];
 }>();
@@ -135,8 +140,10 @@ const emit = defineEmits<{
     :models="conversationController.configuredModels.value"
     :selected-model-id="conversationController.selectedModelId.value"
     :thinking-level="conversationController.thinkingLevel.value"
+    :web-search-enabled="conversationController.webSearchEnabled.value"
     :temperature="conversationController.temperature.value"
     :approval-mode="conversationController.approvalMode.value"
+    :agent-team-mode="conversationController.agentTeamMode.value"
     :user-input-request="conversationController.pendingUserInput.value"
     :user-input-submitting="conversationController.submittingUserInput.value"
     @update:draft="emit('update:draft', $event)"
@@ -149,8 +156,10 @@ const emit = defineEmits<{
     @toggle-right="emit('toggleRight')"
     @select-model="emit('selectModel', $event)"
     @select-thinking="emit('selectThinking', $event)"
+    @toggle-web-search="conversationController.selectWebSearchEnabled($event)"
     @select-temperature="emit('selectTemperature', $event)"
     @select-approval="emit('selectApproval', $event)"
+    @select-agent-team-mode="emit('selectAgentTeamMode', $event)"
     @review-edit="emit('reviewEdit', $event)"
     @locate-edit-proposal="emit('locateEditProposal', $event)"
     @discard-edit-proposal="emit('discardEditProposal', $event)"
@@ -174,6 +183,8 @@ const emit = defineEmits<{
     @create-section="emit('createSection')"
     @delete-section="emit('deleteSection')"
     @select-draft-file="emit('selectDraftFile', $event)"
+    @select-entry-search-result="emit('selectEntrySearchResult', $event)"
+    @prepare-entry-search="emit('prepareEntrySearch')"
   />
 
   <div

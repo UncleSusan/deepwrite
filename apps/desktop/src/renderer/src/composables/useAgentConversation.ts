@@ -4,6 +4,7 @@ import type {
   AgentUserInputAnswer,
   AgentUserInputRequestedPayload,
   AgentUsage,
+  AgentTeamRunMode,
   ChatAssistantRequestContext,
   DeepWriteApi,
   LongCharacterFileChange,
@@ -21,6 +22,7 @@ import {
   CharacterStructureMutationSchema,
   LongCharacterFileChangeSchema,
   LongChapterBodyChangeSchema,
+  LongWorkspaceImpactConfirmationSchema,
   LongWorldbuildingFileChangeSchema,
   LongWorkspaceOperationBatchSchema,
   LongWorkspaceRuntimeContextSchema,
@@ -45,6 +47,13 @@ import type {
 } from "../types/conversation";
 import type { WorkspaceDocument } from "../types/workspace";
 import { normalizeChatAssistantRequestContext } from "./agent-conversation/chat-assistant-request";
+import {
+  WORKSPACE_WEB_SEARCH_AUTO_DISABLED_MESSAGE,
+  isWorkspaceWebSearchAvailable,
+  resolveWorkspaceWebSearchEnabled,
+  workspaceWebSearchAfterModelChange,
+  workspaceWebSearchPromptFields
+} from "./agent-conversation/web-search";
 import { buildConversationHistory } from "./agent-conversation/history";
 import {
   conversationMessageRewriteIsCurrent,
@@ -60,6 +69,11 @@ import {
   parseStoredDiscardSnapshot,
   parseStoredDiscardState
 } from "../utils/acceptedEditDiscardPersistence";
+import {
+  isStoredLongProposalCandidate,
+  normalizeStoredLongProposalStatusMessage,
+  normalizeStoredLongProposalTarget
+} from "./agent-conversation/long-proposal-persistence-compatibility";
 
 export interface ConversationStorage {
   getItem(key: string): string | null;
@@ -96,6 +110,8 @@ export interface AgentRunSettings {
   thinkingLevel: ThinkingLevel;
   temperature: number;
   approvalMode: AgentApprovalMode;
+  agentTeamMode?: AgentTeamRunMode;
+  webSearchEnabled?: boolean;
 }
 
 export interface AgentConversationPersistenceRecord {
@@ -163,8 +179,10 @@ export interface AgentConversationController {
   draft: Ref<string>;
   sessionId: Ref<string>;
   approvalMode: Ref<AgentApprovalMode>;
+  agentTeamMode: Ref<AgentTeamRunMode>;
   thinkingLevel: Ref<ThinkingLevel>;
   temperature: Ref<number>;
+  webSearchEnabled: Ref<boolean>;
   configuredModels: Ref<ModelConfig[]>;
   selectedModelId: Ref<string>;
   runtime: Ref<AgentRuntimeRef | null>;
@@ -237,8 +255,10 @@ export interface AgentConversationController {
   applyRunSettings(settings: AgentRunSettings): void;
   selectModel(modelId: string): void;
   selectThinkingLevel(level: ThinkingLevel): void;
+  selectWebSearchEnabled(enabled: boolean): void;
   selectTemperature(temperature: number): void;
   selectApprovalMode(mode: AgentApprovalMode): void;
+  selectAgentTeamMode(mode: AgentTeamRunMode): void;
   useSuggestion(value: string): void;
   capturePersistenceSnapshot(): AgentConversationPersistenceSnapshot;
   restorePersistenceSnapshot(snapshot: unknown): Promise<boolean>;
@@ -690,51 +710,57 @@ function parseStoredPlotStructureTarget(
 function parseStoredLongWorldbuildingTarget(
   value: unknown
 ): AgentEditProposal["longWorldbuildingTarget"] | undefined {
-  const appliedProjectRevision = isRecord(value)
-    ? value.appliedProjectRevision
-    : undefined;
+  value = normalizeStoredLongProposalTarget(value);
   if (
     !isRecord(value) ||
     typeof value.bookId !== "string" ||
-    !value.bookId.trim() ||
-    !nonnegativeInteger(value.baseProjectRevision) ||
-    (appliedProjectRevision !== undefined &&
-      !nonnegativeInteger(appliedProjectRevision))
+    !value.bookId.trim()
   ) {
     return undefined;
   }
   const batch = LongWorkspaceOperationBatchSchema.safeParse(value.batch);
   const file = LongWorldbuildingFileChangeSchema.safeParse(value.file);
-  if (!batch.success || !file.success) return undefined;
+  const expectedImpact =
+    value.expectedImpact === undefined
+      ? undefined
+      : LongWorkspaceImpactConfirmationSchema.safeParse(value.expectedImpact);
+  if (
+    !batch.success ||
+    !file.success ||
+    (expectedImpact !== undefined && !expectedImpact.success)
+  )
+    return undefined;
   return {
     bookId: value.bookId,
     batch: batch.data,
-    baseProjectRevision: value.baseProjectRevision,
-    ...(appliedProjectRevision === undefined ? {} : { appliedProjectRevision }),
-    file: file.data
+    file: file.data,
+    ...(expectedImpact?.success ? { expectedImpact: expectedImpact.data } : {})
   };
 }
 
 function parseStoredLongCharacterTarget(
   value: unknown
 ): AgentEditProposal["longCharacterTarget"] | undefined {
-  const appliedProjectRevision = isRecord(value)
-    ? value.appliedProjectRevision
-    : undefined;
+  value = normalizeStoredLongProposalTarget(value);
   if (
     !isRecord(value) ||
     typeof value.bookId !== "string" ||
     !value.bookId.trim() ||
-    !nonnegativeInteger(value.baseProjectRevision) ||
-    (appliedProjectRevision !== undefined &&
-      !nonnegativeInteger(appliedProjectRevision)) ||
     !Array.isArray(value.files) ||
     value.files.length < 1
   ) {
     return undefined;
   }
   const batch = LongWorkspaceOperationBatchSchema.safeParse(value.batch);
-  if (!batch.success) return undefined;
+  const expectedImpact =
+    value.expectedImpact === undefined
+      ? undefined
+      : LongWorkspaceImpactConfirmationSchema.safeParse(value.expectedImpact);
+  if (
+    !batch.success ||
+    (expectedImpact !== undefined && !expectedImpact.success)
+  )
+    return undefined;
   const files: LongCharacterFileChange[] = [];
   for (const file of value.files) {
     const parsed = LongCharacterFileChangeSchema.safeParse(file);
@@ -744,41 +770,43 @@ function parseStoredLongCharacterTarget(
   return {
     bookId: value.bookId,
     batch: batch.data,
-    baseProjectRevision: value.baseProjectRevision,
-    ...(appliedProjectRevision === undefined ? {} : { appliedProjectRevision }),
-    files
+    files,
+    ...(expectedImpact?.success ? { expectedImpact: expectedImpact.data } : {})
   };
 }
 
 function parseStoredLongPlotDesignTarget(
   value: unknown
 ): AgentEditProposal["longPlotDesignTarget"] | undefined {
-  const appliedProjectRevision = isRecord(value)
-    ? value.appliedProjectRevision
-    : undefined;
+  value = normalizeStoredLongProposalTarget(value);
   if (
     !isRecord(value) ||
     typeof value.bookId !== "string" ||
-    !value.bookId.trim() ||
-    !nonnegativeInteger(value.baseProjectRevision) ||
-    (appliedProjectRevision !== undefined &&
-      !nonnegativeInteger(appliedProjectRevision))
+    !value.bookId.trim()
   ) {
     return undefined;
   }
   const batch = LongWorkspaceOperationBatchSchema.safeParse(value.batch);
-  if (!batch.success) return undefined;
+  const expectedImpact =
+    value.expectedImpact === undefined
+      ? undefined
+      : LongWorkspaceImpactConfirmationSchema.safeParse(value.expectedImpact);
+  if (
+    !batch.success ||
+    (expectedImpact !== undefined && !expectedImpact.success)
+  )
+    return undefined;
   return {
     bookId: value.bookId,
     batch: batch.data,
-    baseProjectRevision: value.baseProjectRevision,
-    ...(appliedProjectRevision === undefined ? {} : { appliedProjectRevision })
+    ...(expectedImpact?.success ? { expectedImpact: expectedImpact.data } : {})
   };
 }
 
 function parseStoredLongDraftTarget(
   value: unknown
 ): AgentEditProposal["longDraftTarget"] | undefined {
+  value = normalizeStoredLongProposalTarget(value);
   if (
     !isRecord(value) ||
     typeof value.bookId !== "string" ||
@@ -788,33 +816,29 @@ function parseStoredLongDraftTarget(
   }
   const batch = LongWorkspaceOperationBatchSchema.safeParse(value.batch);
   const file = LongChapterBodyChangeSchema.safeParse(value.file);
+  const expectedImpact =
+    value.expectedImpact === undefined
+      ? undefined
+      : LongWorkspaceImpactConfirmationSchema.safeParse(value.expectedImpact);
   if (
     !batch.success ||
     !file.success ||
-    typeof value.baseProjectRevision !== "number" ||
-    !Number.isInteger(value.baseProjectRevision) ||
-    value.baseProjectRevision < 0
+    (expectedImpact !== undefined && !expectedImpact.success)
   ) {
     return undefined;
   }
-  const appliedProjectRevision =
-    typeof value.appliedProjectRevision === "number" &&
-    Number.isInteger(value.appliedProjectRevision) &&
-    value.appliedProjectRevision >= 0
-      ? value.appliedProjectRevision
-      : undefined;
   return {
     bookId: value.bookId,
     batch: batch.data,
-    baseProjectRevision: value.baseProjectRevision,
-    ...(appliedProjectRevision === undefined ? {} : { appliedProjectRevision }),
-    file: file.data
+    file: file.data,
+    ...(expectedImpact?.success ? { expectedImpact: expectedImpact.data } : {})
   };
 }
 
 function parseStoredEditProposal(
   value: unknown
 ): AgentEditProposal | undefined {
+  const isLongFormProposalCandidate = isStoredLongProposalCandidate(value);
   if (
     !isRecord(value) ||
     typeof value.id !== "string" ||
@@ -834,8 +858,9 @@ function parseStoredEditProposal(
       "conflict",
       "error"
     ].includes(String(value.status)) ||
-    typeof value.baseRevision !== "string" ||
-    typeof value.proposedRevision !== "string" ||
+    (!isLongFormProposalCandidate && typeof value.baseRevision !== "string") ||
+    (!isLongFormProposalCandidate &&
+      typeof value.proposedRevision !== "string") ||
     (value.proposedText !== undefined &&
       typeof value.proposedText !== "string") ||
     !Array.isArray(value.toolCallIds) ||
@@ -854,7 +879,8 @@ function parseStoredEditProposal(
       value.approvalMode !== "auto-approve") ||
     (value.predecessorProposalId !== undefined &&
       typeof value.predecessorProposalId !== "string") ||
-    (value.sourceBaseRevision !== undefined &&
+    (!isLongFormProposalCandidate &&
+      value.sourceBaseRevision !== undefined &&
       typeof value.sourceBaseRevision !== "string") ||
     (value.decisionToken !== undefined &&
       typeof value.decisionToken !== "string") ||
@@ -878,6 +904,12 @@ function parseStoredEditProposal(
     value.longPlotDesignTarget
   );
   const longDraftTarget = parseStoredLongDraftTarget(value.longDraftTarget);
+  const isLongFormProposal = Boolean(
+    longWorldbuildingTarget ||
+    longCharacterTarget ||
+    longPlotDesignTarget ||
+    longDraftTarget
+  );
   if (
     (value.stageId === "library" && !libraryTarget) ||
     (value.stageId !== "library" && value.libraryTarget !== undefined) ||
@@ -943,9 +975,15 @@ function parseStoredEditProposal(
   if (hunks.length !== value.hunks.length) return undefined;
   const discardSnapshot = parseStoredDiscardSnapshot(value.discardSnapshot);
   const discardState = parseStoredDiscardState(value.discardState);
+  const statusMessage = isLongFormProposal
+    ? value.status === "conflict"
+      ? undefined
+      : normalizeStoredLongProposalStatusMessage(value.statusMessage)
+    : (value.statusMessage as string | undefined);
   if (
-    (value.discardSnapshot !== undefined && !discardSnapshot) ||
-    (value.discardState !== undefined && !discardState)
+    !isLongFormProposal &&
+    ((value.discardSnapshot !== undefined && !discardSnapshot) ||
+      (value.discardState !== undefined && !discardState))
   ) {
     return undefined;
   }
@@ -961,9 +999,9 @@ function parseStoredEditProposal(
     ...(value.predecessorProposalId === undefined
       ? {}
       : { predecessorProposalId: value.predecessorProposalId }),
-    ...(value.sourceBaseRevision === undefined
-      ? {}
-      : { sourceBaseRevision: value.sourceBaseRevision }),
+    ...(!isLongFormProposal && typeof value.sourceBaseRevision === "string"
+      ? { sourceBaseRevision: value.sourceBaseRevision }
+      : {}),
     ...(value.decisionToken === undefined
       ? {}
       : { decisionToken: value.decisionToken }),
@@ -974,11 +1012,16 @@ function parseStoredEditProposal(
     title: value.title,
     summary: value.summary,
     status:
-      value.status === "accepting"
+      value.status === "accepting" ||
+      (isLongFormProposal && value.status === "conflict")
         ? "pending"
         : (value.status as AgentEditProposal["status"]),
-    baseRevision: value.baseRevision,
-    proposedRevision: value.proposedRevision,
+    ...(!isLongFormProposal && typeof value.baseRevision === "string"
+      ? { baseRevision: value.baseRevision }
+      : {}),
+    ...(!isLongFormProposal && typeof value.proposedRevision === "string"
+      ? { proposedRevision: value.proposedRevision }
+      : {}),
     ...(value.proposedText === undefined
       ? {}
       : { proposedText: value.proposedText }),
@@ -987,13 +1030,11 @@ function parseStoredEditProposal(
     deletions: value.deletions,
     hunks,
     ...(value.truncated === undefined ? {} : { truncated: value.truncated }),
-    ...(value.statusMessage === undefined
-      ? {}
-      : { statusMessage: value.statusMessage }),
+    ...(statusMessage === undefined ? {} : { statusMessage }),
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
-    ...(discardSnapshot ? { discardSnapshot } : {}),
-    ...(discardState ? { discardState } : {}),
+    ...(!isLongFormProposal && discardSnapshot ? { discardSnapshot } : {}),
+    ...(!isLongFormProposal && discardState ? { discardState } : {}),
     ...(libraryTarget ? { libraryTarget } : {}),
     ...(longWorldbuildingTarget ? { longWorldbuildingTarget } : {}),
     ...(longCharacterTarget ? { longCharacterTarget } : {}),
@@ -1605,8 +1646,10 @@ export function useAgentConversation(
   const approvalMode = ref<AgentApprovalMode>(
     storedActive?.approvalMode ?? "request-approval"
   );
+  const agentTeamMode = ref<AgentTeamRunMode>("normal");
   const thinkingLevel = ref<ThinkingLevel>("medium");
   const temperature = ref(storedActive?.temperature ?? 0.7);
+  const webSearchEnabled = ref(false);
   const configuredModels = ref<ModelConfig[]>([]);
   const defaultModelId = ref("");
   const selectedModelId = ref("");
@@ -1886,7 +1929,8 @@ export function useAgentConversation(
       approvalMode,
       selectedModelId,
       thinkingLevel,
-      temperature
+      temperature,
+      webSearchEnabled
     ],
     () => {
       if (
@@ -3666,6 +3710,7 @@ export function useAgentConversation(
       preparedRewrite || sessionsRequiringHistoryReplacement.has(sendSessionId)
     );
     const attemptId = ++attemptSequence;
+    const requestedAgentTeamMode = agentTeamMode.value;
     const originalLength = activeDocument?.content.length ?? 0;
     const snapshotContent =
       activeDocument &&
@@ -3994,6 +4039,11 @@ export function useAgentConversation(
           ? {}
           : {
               writeApprovalMode: approvalModeByAttempt.get(attemptId),
+              ...(contextSnapshot?.shortWorkspace ||
+              contextSnapshot?.scriptWorkspace ||
+              contextSnapshot?.longWorkspace
+                ? { agentTeamMode: requestedAgentTeamMode }
+                : {}),
               autoApproveCrossStageOperations:
                 options.autoApproveCrossStageOperations?.() === true
             }),
@@ -4004,6 +4054,9 @@ export function useAgentConversation(
               ...(selectedModel ? { temperature: temperature.value } : {})
             }
           : { thinkingLevel: thinkingLevel.value }),
+        ...(mode === "chat-assistant"
+          ? {}
+          : workspaceWebSearchPromptFields(webSearchEnabled.value)),
         ...(contextSnapshot ? { workspaceContext: contextSnapshot } : {})
       });
       if (replaceConversationHistory && accepted.sessionId === sendSessionId) {
@@ -4323,15 +4376,18 @@ export function useAgentConversation(
   function applyRunSettings(settings: AgentRunSettings): void {
     hasRunSettingsPreference = true;
     approvalMode.value = settings.approvalMode;
+    agentTeamMode.value = settings.agentTeamMode ?? "normal";
     if (configuredModels.value.length === 0) {
       if (modelSettingsApplied) {
         selectedModelId.value = "";
         thinkingLevel.value = "medium";
         temperature.value = 0.7;
+        webSearchEnabled.value = false;
       } else {
         selectedModelId.value = settings.selectedModelId;
         thinkingLevel.value = settings.thinkingLevel;
         temperature.value = settings.temperature;
+        webSearchEnabled.value = settings.webSearchEnabled === true;
       }
       return;
     }
@@ -4359,6 +4415,10 @@ export function useAgentConversation(
       selected.temperatureOptions.includes(settings.temperature)
         ? settings.temperature
         : (selected.temperatureOptions[1] ?? 0.7);
+    webSearchEnabled.value = resolveWorkspaceWebSearchEnabled(
+      selected,
+      settings.webSearchEnabled ?? webSearchEnabled.value
+    );
   }
 
   function applyModelSettings(settings: ModelSettings): void {
@@ -4366,7 +4426,9 @@ export function useAgentConversation(
       selectedModelId: selectedModelId.value,
       thinkingLevel: thinkingLevel.value,
       temperature: temperature.value,
-      approvalMode: approvalMode.value
+      approvalMode: approvalMode.value,
+      agentTeamMode: agentTeamMode.value,
+      webSearchEnabled: webSearchEnabled.value
     };
     configuredModels.value = settings.models;
     defaultModelId.value = settings.defaultModelId;
@@ -4375,6 +4437,7 @@ export function useAgentConversation(
       selectedModelId.value = "";
       thinkingLevel.value = "medium";
       temperature.value = 0.7;
+      webSearchEnabled.value = false;
       return;
     }
     if (hasRunSettingsPreference) {
@@ -4388,6 +4451,7 @@ export function useAgentConversation(
     selectedModelId.value = selected?.id ?? "";
     thinkingLevel.value = selected?.defaultThinkingLevel ?? "medium";
     temperature.value = selected?.temperatureOptions[1] ?? 0.7;
+    webSearchEnabled.value = false;
     hasRunSettingsPreference = true;
   }
 
@@ -4401,6 +4465,14 @@ export function useAgentConversation(
     selectedModelId.value = selected.id;
     thinkingLevel.value = selected.defaultThinkingLevel;
     temperature.value = selected.temperatureOptions[1];
+    const nextSearch = workspaceWebSearchAfterModelChange(
+      selected,
+      webSearchEnabled.value
+    );
+    webSearchEnabled.value = nextSearch.enabled;
+    if (nextSearch.autoDisabled) {
+      options.onContextWarning?.(WORKSPACE_WEB_SEARCH_AUTO_DISABLED_MESSAGE);
+    }
   }
 
   function selectThinkingLevel(level: ThinkingLevel): void {
@@ -4415,6 +4487,16 @@ export function useAgentConversation(
       return;
     }
     thinkingLevel.value = level;
+  }
+
+  function selectWebSearchEnabled(enabled: boolean): void {
+    const selected = configuredModels.value.find(
+      (model) => model.id === selectedModelId.value
+    );
+    if (enabled && !isWorkspaceWebSearchAvailable(selected)) {
+      return;
+    }
+    webSearchEnabled.value = enabled;
   }
 
   function selectTemperature(value: number): void {
@@ -4437,13 +4519,21 @@ export function useAgentConversation(
     }
   }
 
+  function selectAgentTeamMode(mode: AgentTeamRunMode): void {
+    if (mode === "normal" || mode === "team") {
+      agentTeamMode.value = mode;
+    }
+  }
+
   return {
     messages,
     draft,
     sessionId,
     approvalMode,
+    agentTeamMode,
     thinkingLevel,
     temperature,
+    webSearchEnabled,
     configuredModels,
     selectedModelId,
     runtime,
@@ -4479,8 +4569,10 @@ export function useAgentConversation(
     applyRunSettings,
     selectModel,
     selectThinkingLevel,
+    selectWebSearchEnabled,
     selectTemperature,
     selectApprovalMode,
+    selectAgentTeamMode,
     capturePersistenceSnapshot,
     restorePersistenceSnapshot,
     holdPersistenceEmits,

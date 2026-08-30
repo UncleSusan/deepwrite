@@ -3,8 +3,6 @@ import {
   LONG_CHARACTER_OVERVIEW_FILE_ID,
   LONG_CHARACTER_OVERVIEW_PATH,
   LONG_WORKSPACE_INDEX_PATH,
-  LongLedgerCommitRecordSchema,
-  LongProjectManifestSchema,
   LongWorkspaceFileReferenceSchema,
   LongWorkspaceIndexSnapshotSchema,
   longWorldbuildingItemContentPath,
@@ -20,19 +18,13 @@ import { join } from "node:path";
 import type { ProjectTransactionFileOperation } from "../../project-transaction";
 import {
   commitLongProjectTransaction,
+  encodeUtf8Strict,
   isNodeError,
-  parseJson,
   readSecureTextFile,
   serializeJson,
   unknownRecord
 } from "../io";
 import {
-  createLongFileRevision,
-  encodeUtf8Strict,
-  longRevisionsMatchContent
-} from "../revisions";
-import {
-  MANIFEST_PATH,
   MAX_DOCUMENT_BYTES,
   MAX_LEDGER_RECORD_BYTES,
   type SecureTextFile
@@ -62,7 +54,6 @@ export async function migrateLegacyWorldbuildingStorage(input: {
     const overview = {
       id: longWorldbuildingOverviewFileId(categoryId),
       path: overviewPath,
-      revision: createLongFileRevision(""),
       updatedAt:
         typeof rawIndex.updatedAt === "string"
           ? rawIndex.updatedAt
@@ -88,7 +79,6 @@ export async function migrateLegacyWorldbuildingStorage(input: {
             ...category,
             overview: {
               ...overview,
-              revision: existingOverview.revision,
               updatedAt: existingOverview.updatedAt
             }
           });
@@ -116,17 +106,6 @@ export async function migrateLegacyWorldbuildingStorage(input: {
       legacyFile.path,
       MAX_DOCUMENT_BYTES
     );
-    if (
-      !longRevisionsMatchContent(
-        legacyFile.revision,
-        legacyDisk.revision,
-        legacyDisk.bytes
-      )
-    ) {
-      throw new Error(
-        `旧版世界观分类 ${categoryId} 的索引 revision 与聚合文件不一致。`
-      );
-    }
     const legacyItems = parseLongWorldbuildingMarkdownList(legacyDisk.content);
     const items = legacyItems.map((item, itemIndex) => {
       const path = longWorldbuildingItemContentPath(categoryId, item.id);
@@ -137,7 +116,6 @@ export async function migrateLegacyWorldbuildingStorage(input: {
       const file: LongWorkspaceFileReference = {
         id: longWorldbuildingItemFileId(item.id),
         path,
-        revision: createLongFileRevision(bytes),
         updatedAt: legacyFile.updatedAt
       };
       fileOperations.push({
@@ -154,8 +132,7 @@ export async function migrateLegacyWorldbuildingStorage(input: {
     });
     fileOperations.push({
       action: "delete",
-      path: legacyFile.path,
-      expectedSha256: legacyDisk.sha256
+      path: legacyFile.path
     });
     fileOperations.push({
       path: overviewPath,
@@ -180,26 +157,13 @@ export async function migrateLegacyWorldbuildingStorage(input: {
     worldbuilding
   });
   const indexContent = serializeJson(nextIndex);
-  const nextManifest = LongProjectManifestSchema.parse({
-    ...input.manifest,
-    workspaceIndexFile: {
-      ...input.manifest.workspaceIndexFile,
-      revision: createLongFileRevision(indexContent)
-    }
-  });
   await commitLongProjectTransaction({
     projectRoot: input.projectDirectory,
     operations: [
       ...fileOperations,
       {
         path: LONG_WORKSPACE_INDEX_PATH,
-        content: indexContent,
-        expectedSha256: input.indexDisk.sha256
-      },
-      {
-        path: MANIFEST_PATH,
-        content: serializeJson(nextManifest),
-        expectedSha256: input.manifestDisk.sha256
+        content: indexContent
       }
     ],
     maxFileBytes: MAX_LEDGER_RECORD_BYTES
@@ -221,25 +185,12 @@ export async function migrateLegacyCharacterTypes(input: {
     characterTypes: structuredClone(DEFAULT_LONG_CHARACTER_TYPES)
   });
   const indexContent = serializeJson(nextIndex);
-  const nextManifest = LongProjectManifestSchema.parse({
-    ...input.manifest,
-    workspaceIndexFile: {
-      ...input.manifest.workspaceIndexFile,
-      revision: createLongFileRevision(indexContent)
-    }
-  });
   await commitLongProjectTransaction({
     projectRoot: input.projectDirectory,
     operations: [
       {
         path: LONG_WORKSPACE_INDEX_PATH,
-        content: indexContent,
-        expectedSha256: input.indexDisk.sha256
-      },
-      {
-        path: MANIFEST_PATH,
-        content: serializeJson(nextManifest),
-        expectedSha256: input.manifestDisk.sha256
+        content: indexContent
       }
     ],
     maxFileBytes: MAX_LEDGER_RECORD_BYTES
@@ -261,7 +212,6 @@ export async function migrateLegacyCharacterOverviewStorage(input: {
   const overview = {
     id: LONG_CHARACTER_OVERVIEW_FILE_ID,
     path: overviewPath,
-    revision: createLongFileRevision(""),
     updatedAt:
       typeof rawIndex.updatedAt === "string"
         ? rawIndex.updatedAt
@@ -299,30 +249,16 @@ export async function migrateLegacyCharacterOverviewStorage(input: {
       ...rawIndex,
       characterOverview: {
         ...overview,
-        revision: existingOverview.revision,
         updatedAt: existingOverview.updatedAt
       }
     });
     const indexContent = serializeJson(nextIndex);
-    const nextManifest = LongProjectManifestSchema.parse({
-      ...input.manifest,
-      workspaceIndexFile: {
-        ...input.manifest.workspaceIndexFile,
-        revision: createLongFileRevision(indexContent)
-      }
-    });
     await commitLongProjectTransaction({
       projectRoot: input.projectDirectory,
       operations: [
         {
           path: LONG_WORKSPACE_INDEX_PATH,
-          content: indexContent,
-          expectedSha256: input.indexDisk.sha256
-        },
-        {
-          path: MANIFEST_PATH,
-          content: serializeJson(nextManifest),
-          expectedSha256: input.manifestDisk.sha256
+          content: indexContent
         }
       ],
       maxFileBytes: MAX_LEDGER_RECORD_BYTES
@@ -337,13 +273,6 @@ export async function migrateLegacyCharacterOverviewStorage(input: {
     characterOverview: overview
   });
   const indexContent = serializeJson(nextIndex);
-  const nextManifest = LongProjectManifestSchema.parse({
-    ...input.manifest,
-    workspaceIndexFile: {
-      ...input.manifest.workspaceIndexFile,
-      revision: createLongFileRevision(indexContent)
-    }
-  });
   await commitLongProjectTransaction({
     projectRoot: input.projectDirectory,
     operations: [
@@ -354,13 +283,7 @@ export async function migrateLegacyCharacterOverviewStorage(input: {
       },
       {
         path: LONG_WORKSPACE_INDEX_PATH,
-        content: indexContent,
-        expectedSha256: input.indexDisk.sha256
-      },
-      {
-        path: MANIFEST_PATH,
-        content: serializeJson(nextManifest),
-        expectedSha256: input.manifestDisk.sha256
+        content: indexContent
       }
     ],
     maxFileBytes: MAX_LEDGER_RECORD_BYTES
@@ -406,79 +329,29 @@ export async function migrateLegacyCharacterStateFiles(input: {
   const operations: ProjectTransactionFileOperation[] = [];
   for (const reference of legacyFiles) {
     try {
-      const disk = await readSecureTextFile(
+      await readSecureTextFile(
         input.projectDirectory,
         reference.path,
         MAX_DOCUMENT_BYTES
       );
-      if (
-        !longRevisionsMatchContent(
-          reference.revision,
-          disk.revision,
-          disk.bytes
-        )
-      ) {
-        throw new Error(
-          `旧版人物状态文件存在索引外修改，无法安全移除：${reference.path}`
-        );
-      }
       operations.push({
         action: "delete",
-        path: reference.path,
-        expectedSha256: disk.sha256
+        path: reference.path
       });
     } catch (error: unknown) {
       if (!isNodeError(error, "ENOENT")) throw error;
     }
   }
 
-  for (const commit of index.ledger.commits) {
-    if (commit.mode !== "structured") continue;
-    const disk = await readSecureTextFile(
-      input.projectDirectory,
-      commit.recordFile.path,
-      MAX_LEDGER_RECORD_BYTES
-    );
-    const record = LongLedgerCommitRecordSchema.parse(
-      parseJson(disk.content, `旧版连续性账本 ${commit.id}`)
-    );
-    const content = serializeJson(
-      LongLedgerCommitRecordSchema.parse({ ...record, reversible: false })
-    );
-    commit.reversible = false;
-    commit.recordFile = {
-      ...commit.recordFile,
-      revision: createLongFileRevision(content)
-    };
-    operations.push({
-      path: commit.recordFile.path,
-      content,
-      expectedSha256: disk.sha256
-    });
-  }
-
   const nextIndex = LongWorkspaceIndexSnapshotSchema.parse(index);
   const indexContent = serializeJson(nextIndex);
-  const nextManifest = LongProjectManifestSchema.parse({
-    ...input.manifest,
-    workspaceIndexFile: {
-      ...input.manifest.workspaceIndexFile,
-      revision: createLongFileRevision(indexContent)
-    }
-  });
   await commitLongProjectTransaction({
     projectRoot: input.projectDirectory,
     operations: [
       ...operations,
       {
         path: LONG_WORKSPACE_INDEX_PATH,
-        content: indexContent,
-        expectedSha256: input.indexDisk.sha256
-      },
-      {
-        path: MANIFEST_PATH,
-        content: serializeJson(nextManifest),
-        expectedSha256: input.manifestDisk.sha256
+        content: indexContent
       }
     ],
     maxFileBytes: MAX_LEDGER_RECORD_BYTES

@@ -64,6 +64,10 @@ import {
   LearningImitationSettingsInputSchema,
   LearningImitationSettingsSchema,
   LearningImitationStageIdSchema,
+  LongBookAnalysisSettingsInputSchema,
+  LongBookAnalysisSettingsSchema,
+  LongBookAnalysisSourceKindSchema,
+  LongBookAnalysisSourceSchema,
   CLOUD_BACKUP_IPC_CHANNEL,
   CloudBackupApplyResultSchema,
   CloudBackupIpcRequestSchema,
@@ -121,8 +125,6 @@ import {
   LongRenameBookInputSchema,
   LongRemoveBookInputSchema,
   LongRemoveBookResultSchema,
-  LongRollbackLastCommitInputSchema,
-  LongRollbackLastCommitResultSchema,
   LongUpdateBindingsInputSchema,
   LongWorkspaceIndexResultSchema,
   LongWriteChapterInputSchema,
@@ -214,6 +216,10 @@ import {
   type LearningImitationSettings,
   type LearningImitationSettingsInput,
   type LearningImitationStageId,
+  type LongBookAnalysisSettings,
+  type LongBookAnalysisSettingsInput,
+  type LongBookAnalysisSource,
+  type LongBookAnalysisSourceKind,
   type MarketplaceContentRef,
   type MarketplaceInstallInput,
   type MarketplaceLikeInput,
@@ -251,8 +257,6 @@ import {
   type LongRenameBookInput,
   type LongRemoveBookInput,
   type LongRemoveBookResult,
-  type LongRollbackLastCommitInput,
-  type LongRollbackLastCommitResult,
   type LongUpdateBindingsInput,
   type LongWorkspaceIndexResult,
   type LongWriteChapterInput,
@@ -299,6 +303,7 @@ import {
 
 import { browserId, invokeCommand } from "./invoke";
 import { appearance } from "./appearance-api";
+import { searchLongDocuments } from "./long-api";
 import {
   abort,
   clearOfficialModelToken,
@@ -820,22 +825,6 @@ async function commitLongChapter(
   return LongCommitChapterResultSchema.parse(
     await invokeCommand<LongCommitChapterResult>(
       createEnvelope("long.commitChapter", input, {
-        id,
-        correlationId: id,
-        context: { resourceId: input.bookId }
-      })
-    )
-  );
-}
-
-async function rollbackLongCommit(
-  rawInput: LongRollbackLastCommitInput
-): Promise<LongRollbackLastCommitResult> {
-  const input = LongRollbackLastCommitInputSchema.parse(rawInput);
-  const id = browserId("cmd_long_rollback");
-  return LongRollbackLastCommitResultSchema.parse(
-    await invokeCommand<LongRollbackLastCommitResult>(
-      createEnvelope("long.rollbackLastCommit", input, {
         id,
         correlationId: id,
         context: { resourceId: input.bookId }
@@ -1552,6 +1541,65 @@ async function resetLearningImitationSettings(
   );
 }
 
+async function chooseLongBookAnalysisSource(
+  rawKind: LongBookAnalysisSourceKind
+): Promise<LongBookAnalysisSource | null> {
+  const kind = LongBookAnalysisSourceKindSchema.parse(rawKind);
+  const id = browserId("cmd_long_book_analysis_choose_source");
+  return LongBookAnalysisSourceSchema.nullable().parse(
+    await invokeCommand<LongBookAnalysisSource | null>(
+      createEnvelope(
+        "longBookAnalysis.chooseSource",
+        { kind },
+        { id, correlationId: id }
+      )
+    )
+  );
+}
+
+async function listLongBookAnalysisPresets(): Promise<LongBookAnalysisSettings> {
+  const id = browserId("cmd_long_book_analysis_presets_list");
+  return LongBookAnalysisSettingsSchema.parse(
+    await invokeCommand<LongBookAnalysisSettings>(
+      createEnvelope(
+        "longBookAnalysisSettings.list",
+        {},
+        { id, correlationId: id }
+      )
+    )
+  );
+}
+
+async function saveLongBookAnalysisPresets(
+  rawSettings: LongBookAnalysisSettingsInput
+): Promise<LongBookAnalysisSettings> {
+  const settings = LongBookAnalysisSettingsInputSchema.parse(rawSettings);
+  const id = browserId("cmd_long_book_analysis_presets_save");
+  return LongBookAnalysisSettingsSchema.parse(
+    await invokeCommand<LongBookAnalysisSettings>(
+      createEnvelope("longBookAnalysisSettings.save", settings, {
+        id,
+        correlationId: id
+      })
+    )
+  );
+}
+
+async function resetLongBookAnalysisPresets(
+  presetId?: string
+): Promise<LongBookAnalysisSettings> {
+  const id = browserId("cmd_long_book_analysis_presets_reset");
+  return LongBookAnalysisSettingsSchema.parse(
+    await invokeCommand<LongBookAnalysisSettings>(
+      createEnvelope(
+        "longBookAnalysisSettings.reset",
+        { ...(presetId ? { presetId } : {}) },
+        { id, correlationId: id }
+      )
+    )
+  );
+}
+
 async function listWorkspaceDirectory(): Promise<WorkspaceDirectorySettings> {
   const id = browserId("cmd_workspace_directory_list");
   return WorkspaceDirectorySettingsSchema.parse(
@@ -1874,6 +1922,7 @@ const api: DeepWriteApi = {
     openExisting: openExistingLongBook,
     getWorkspaceIndex: getLongWorkspaceIndex,
     readDocument: readLongDocument,
+    search: searchLongDocuments,
     writeDocument: writeLongDocument,
     readAgentsMd: readLongAgentsMd,
     writeAgentsMd: writeLongAgentsMd,
@@ -1881,7 +1930,6 @@ const api: DeepWriteApi = {
     applyOperations: applyLongOperations,
     writeChapter: writeLongChapter,
     commitChapter: commitLongChapter,
-    rollbackLastCommit: rollbackLongCommit,
     unregister: unregisterLongBook,
     delete: deleteLongBook
   },
@@ -1942,6 +1990,14 @@ const api: DeepWriteApi = {
     list: listLearningImitationSettings,
     save: saveLearningImitationSettings,
     reset: resetLearningImitationSettings
+  },
+  longBookAnalysis: {
+    chooseSource: chooseLongBookAnalysisSource,
+    presets: {
+      list: listLongBookAnalysisPresets,
+      save: saveLongBookAnalysisPresets,
+      reset: resetLongBookAnalysisPresets
+    }
   },
   workspaceDirectory: {
     list: listWorkspaceDirectory,

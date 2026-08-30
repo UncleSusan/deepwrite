@@ -2,8 +2,20 @@
 import type { LongNavigationDeleteTarget } from "../composables/useLongEditorDeleteDialogs";
 
 defineProps<{
-  pendingStoryPlotDelete: { title: string } | null;
-  pendingWorldbuildingDeleteItem: { title: string } | null;
+  pendingStoryPlotDelete: {
+    title: string;
+    description: string;
+    previewPending: boolean;
+    pending: boolean;
+    canConfirm: boolean;
+  } | null;
+  pendingWorldbuildingDeleteItem: {
+    title: string;
+    description: string;
+    previewPending: boolean;
+    pending: boolean;
+    expectedImpact?: unknown;
+  } | null;
   navigationDeleteTarget: LongNavigationDeleteTarget | null;
   navigationDeletePending: boolean;
 }>();
@@ -53,18 +65,37 @@ const navigationDeleteCancelButton = defineModel<HTMLButtonElement | undefined>(
           确认删除“{{ pendingStoryPlotDelete.title }}”？
         </h3>
         <p id="long-story-plot-delete-description">
-          保存后该情节及其正文文件将从本机删除。
+          {{
+            pendingStoryPlotDelete.previewPending
+              ? "正在核对关联关系与删除影响…"
+              : pendingStoryPlotDelete.description
+          }}
         </p>
         <footer>
-          <button type="button" @click="$emit('cancelStoryPlotDelete')">
+          <button
+            type="button"
+            :disabled="pendingStoryPlotDelete.pending"
+            @click="$emit('cancelStoryPlotDelete')"
+          >
             取消
           </button>
           <button
             class="is-danger"
             type="button"
+            :disabled="
+              pendingStoryPlotDelete.pending ||
+              pendingStoryPlotDelete.previewPending ||
+              !pendingStoryPlotDelete.canConfirm
+            "
             @click="$emit('confirmStoryPlotDelete')"
           >
-            确认删除
+            {{
+              pendingStoryPlotDelete.pending
+                ? "删除中…"
+                : pendingStoryPlotDelete.previewPending
+                  ? "核对中…"
+                  : "确认删除"
+            }}
           </button>
         </footer>
       </section>
@@ -89,12 +120,17 @@ const navigationDeleteCancelButton = defineModel<HTMLButtonElement | undefined>(
           确认删除“{{ pendingWorldbuildingDeleteItem.title }}”？
         </h3>
         <p id="long-worldbuilding-delete-description">
-          保存后该条目及其内容将从本机文件中删除。
+          {{
+            pendingWorldbuildingDeleteItem.previewPending
+              ? "正在核对关联关系与删除影响…"
+              : pendingWorldbuildingDeleteItem.description
+          }}
         </p>
         <footer>
           <button
             ref="worldbuildingDeleteCancelButton"
             type="button"
+            :disabled="pendingWorldbuildingDeleteItem.pending"
             @click="$emit('closeWorldbuildingItemDelete')"
           >
             取消
@@ -102,9 +138,20 @@ const navigationDeleteCancelButton = defineModel<HTMLButtonElement | undefined>(
           <button
             class="is-danger"
             type="button"
+            :disabled="
+              pendingWorldbuildingDeleteItem.pending ||
+              pendingWorldbuildingDeleteItem.previewPending ||
+              !pendingWorldbuildingDeleteItem.expectedImpact
+            "
             @click="$emit('confirmWorldbuildingItemDelete')"
           >
-            确认删除
+            {{
+              pendingWorldbuildingDeleteItem.pending
+                ? "删除中…"
+                : pendingWorldbuildingDeleteItem.previewPending
+                  ? "核对中…"
+                  : "确认删除"
+            }}
           </button>
         </footer>
       </section>
@@ -129,13 +176,19 @@ const navigationDeleteCancelButton = defineModel<HTMLButtonElement | undefined>(
           确认删除“{{ navigationDeleteTarget.title }}”？
         </h3>
         <p id="long-navigation-delete-description">
-          {{ navigationDeleteTarget.description }}
+          {{
+            navigationDeleteTarget.previewPending
+              ? "正在核对关联关系与删除影响…"
+              : navigationDeleteTarget.description
+          }}
         </p>
         <footer>
           <button
             ref="navigationDeleteCancelButton"
             type="button"
-            :disabled="navigationDeletePending"
+            :disabled="
+              navigationDeletePending || navigationDeleteTarget.previewPending
+            "
             @click="$emit('closeNavigationDelete')"
           >
             取消
@@ -143,10 +196,20 @@ const navigationDeleteCancelButton = defineModel<HTMLButtonElement | undefined>(
           <button
             class="is-danger"
             type="button"
-            :disabled="navigationDeletePending"
+            :disabled="
+              navigationDeletePending ||
+              navigationDeleteTarget.previewPending ||
+              !navigationDeleteTarget.expectedImpact
+            "
             @click="$emit('confirmNavigationDelete')"
           >
-            {{ navigationDeletePending ? "删除中…" : "确认删除" }}
+            {{
+              navigationDeletePending
+                ? "删除中…"
+                : navigationDeleteTarget.previewPending
+                  ? "核对中…"
+                  : "确认删除"
+            }}
           </button>
         </footer>
       </section>

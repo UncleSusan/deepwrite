@@ -109,13 +109,6 @@ function createHarness() {
       null
     );
   const longMutationPending = shallowRef(false);
-  const rollbackDialogOpen = shallowRef(false);
-  const rollbackCommit =
-    shallowRef<WorkspaceDialogLongLifecycleState["rollbackCommit"]["value"]>(
-      null
-    );
-  const rollbackChapterTitle = shallowRef("");
-  const rollbackPending = shallowRef(false);
   const activeBookSummary =
     shallowRef<WorkspaceDialogLongLifecycleState["activeBookSummary"]["value"]>(
       null
@@ -216,10 +209,6 @@ function createHarness() {
       legacyPreview,
       legacyResult,
       mutationPending: longMutationPending,
-      rollbackDialogOpen,
-      rollbackCommit,
-      rollbackChapterTitle,
-      rollbackPending,
       activeBookSummary,
       activeBookId,
       workspaceIndex,
@@ -280,10 +269,6 @@ function createHarness() {
       legacyPreview,
       legacyResult,
       longMutationPending,
-      rollbackDialogOpen,
-      rollbackCommit,
-      rollbackChapterTitle,
-      rollbackPending,
       activeBookSummary,
       activeBookId,
       workspaceIndex,
@@ -385,18 +370,6 @@ function setKindActive(
         : null;
       state.legacyResult.value = null;
       return;
-    case "long-rollback":
-      state.rollbackDialogOpen.value = active;
-      state.rollbackCommit.value = active
-        ? fixture<
-            NonNullable<
-              WorkspaceDialogLongLifecycleState["rollbackCommit"]["value"]
-            >
-          >({
-            sequence: 7
-          })
-        : null;
-      return;
     case "create-long-character":
       state.characterCreation.value = active
         ? fixture({ groupLabel: "主角组" })
@@ -436,7 +409,9 @@ function setKindActive(
         : null;
       return;
     case "create-long-volume":
-      state.volumeCreation.value = active ? { bookId: "long-1" } : null;
+      state.volumeCreation.value = active
+        ? { bookId: "long-1", source: "book-line" }
+        : null;
       return;
     case "long-bindings":
       state.bindingsMode.value = active ? "skill" : null;
@@ -565,8 +540,8 @@ function trackedRef<Value>(
 
 describe("useWorkspaceDialogModuleCoordinator", () => {
   it("covers every dialog kind and preserves the complete strict priority", () => {
-    expect(WORKSPACE_DIALOG_PRIORITY).toHaveLength(30);
-    expect(new Set(WORKSPACE_DIALOG_PRIORITY).size).toBe(30);
+    expect(WORKSPACE_DIALOG_PRIORITY).toHaveLength(29);
+    expect(new Set(WORKSPACE_DIALOG_PRIORITY).size).toBe(29);
     expect(new Set(WORKSPACE_DIALOG_PRIORITY)).toEqual(
       new Set(WORKSPACE_DIALOG_KINDS)
     );
@@ -610,9 +585,6 @@ describe("useWorkspaceDialogModuleCoordinator", () => {
       plotBook: vi.fn(),
       syncBookOptions: vi.fn(),
       longMutationPending: vi.fn(),
-      rollbackCommit: vi.fn(),
-      rollbackChapterTitle: vi.fn(),
-      rollbackPending: vi.fn(),
       activeBookSummary: vi.fn(),
       activeBookId: vi.fn(),
       workspaceIndex: vi.fn(),
@@ -636,18 +608,6 @@ describe("useWorkspaceDialogModuleCoordinator", () => {
     harness.options.longLifecycle.mutationPending = trackedRef(
       false,
       reads.longMutationPending
-    );
-    harness.options.longLifecycle.rollbackCommit = trackedRef(
-      null,
-      reads.rollbackCommit
-    );
-    harness.options.longLifecycle.rollbackChapterTitle = trackedRef(
-      "",
-      reads.rollbackChapterTitle
-    );
-    harness.options.longLifecycle.rollbackPending = trackedRef(
-      false,
-      reads.rollbackPending
     );
     harness.options.longLifecycle.activeBookSummary = trackedRef(
       null,
@@ -723,16 +683,6 @@ describe("useWorkspaceDialogModuleCoordinator", () => {
   });
 
   it("keeps nullable targets and conditional gates compatible with fallback", () => {
-    const rollback = createHarness();
-    rollback.refs.rollbackDialogOpen.value = true;
-    rollback.refs.renameTarget.value = {
-      bookId: "long-1",
-      title: "回退重命名"
-    };
-    expect(
-      useWorkspaceDialogModuleCoordinator(rollback.options).value?.kind
-    ).toBe("long-rename");
-
     const bindings = createHarness();
     bindings.refs.bindingsMode.value = "skill";
     bindings.refs.renameTarget.value = {

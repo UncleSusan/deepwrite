@@ -151,7 +151,6 @@ function projectContext(): ChatAssistantRuntimeContext {
 function longProjectContext(): ChatAssistantRuntimeContext {
   const navigation = {
     schemaVersion: 1,
-    revision: 3,
     bookId: "long-a",
     updatedAt: NOW,
     counts: {
@@ -180,7 +179,6 @@ function longProjectContext(): ChatAssistantRuntimeContext {
     status: "editing",
     linkedMaterialIdsByKind: {},
     linkedSkillIdsByKind: {},
-    projectRevision: 3,
     navigation,
     createdAt: NOW,
     updatedAt: NOW

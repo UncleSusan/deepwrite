@@ -2,14 +2,12 @@ import {
   chapterEvent,
   continuityWriteEvent,
   describe,
-  emptyImpact,
   envelopeContext,
   expect,
   harness,
   it,
   ledgerEvent,
   mutationEvent,
-  proposalBase,
   systemEvent
 } from "./useLongWorkspaceProposals.test-support";
 
@@ -125,19 +123,6 @@ describe("long workspace proposal approval: quarantine-deduplication-and-finaliz
 
   it("waits for file approval while showing continuity finalization status", async () => {
     const test = harness();
-    test.previewOperations.mockImplementation(async ({ batch }) => ({
-      bookId: proposalBase.bookId,
-      preview: {
-        baseRevision: batch.baseRevision,
-        resultRevision: batch.baseRevision + 1,
-        impact: emptyImpact,
-        entityChanges: [],
-        fileIntents: [],
-        documentWrites: batch.documentWrites,
-        provisionalIdMap: {}
-      },
-      projectRevision: 13
-    }));
     await test.controller.handleEvent(continuityWriteEvent());
     await test.controller.handleEvent(ledgerEvent());
 

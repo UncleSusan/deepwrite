@@ -55,11 +55,11 @@ import { useGeneralSettingsCoordinator } from "./composables/useGeneralSettingsC
 import { useWorkspaceLifecycleCoordinator } from "./composables/useWorkspaceLifecycleCoordinator";
 import {
   useLazyLearningImitationController,
+  useLazyLongBookAnalysisController,
   useLazySubagentAuthoringController
 } from "./composables/useLazyFeatureControllers";
 import { useLazyApprovalNavigationCoordinator } from "./composables/useLazyApprovalNavigationCoordinator";
 import { useLazyLongBookLifecycleCoordinator } from "./composables/useLazyLongBookLifecycleCoordinator";
-import { useLazyLongRollbackCoordinator } from "./composables/useLazyLongRollbackCoordinator";
 import { useLazyShortBookLifecycleCoordinator } from "./composables/useLazyShortBookLifecycleCoordinator";
 import { useLazyProposalCoordinator } from "./composables/useLazyProposalCoordinator";
 import { useLongConversationCoordinator } from "./composables/useLongConversationCoordinator";
@@ -102,6 +102,10 @@ import {
   resolveLongWorkspaceApi
 } from "./types/longWorkspace";
 import { createConversationPersistenceAdapter } from "./utils/conversationPersistence";
+import {
+  editorEntrySearchDocuments,
+  editorEntrySearchSources
+} from "./utils/editorEntrySearch";
 import {
   resolveAgentActivityDescriptor,
   resolveAgentActivityNavigationNode
@@ -182,6 +186,10 @@ const learningImitationFeature = useLazyLearningImitationController({
   api: () => window.deepwrite
 });
 const learningImitationRunning = learningImitationFeature.isBusy;
+const longBookAnalysisFeature = useLazyLongBookAnalysisController({
+  api: () => window.deepwrite
+});
+const longBookAnalysisRunning = longBookAnalysisFeature.isBusy;
 const subagentAuthoringFeature = useLazySubagentAuthoringController({
   api: () => window.deepwrite
 });
@@ -306,6 +314,7 @@ const {
   updateDefaultTextViewMode,
   updateLanguage: updateAppLanguage,
   updatePermissionMode,
+  updateShowContextUsage,
   updateShowInMenuBar,
   updateWorkspacePaneLayout
 } = useGeneralSettingsCoordinator({
@@ -343,17 +352,12 @@ const {
   fileContext: activeLongFileContext,
   refreshStatus: longWorkspaceRefreshStatus,
   activeRefreshStatus: activeLongWorkspaceRefreshStatus,
-  revisionRequirement: longWorkspaceRevisionSyncRequirement,
-  activeRevisionRequirement: activeLongWorkspaceRevisionSyncRequirement,
   activeContextReady: activeLongWorkspaceContextReady,
   bookListError: longCatalogLoadError,
   workspaceLoading: longWorkspaceLoading,
   sendPreflightPending: longSendPreflightPending,
   mutationPending: longMutationPending,
   proposalApprovalPending: longProposalApprovalPending,
-  rollbackDialogOpen: longRollbackDialogOpen,
-  rollbackPending: longRollbackPending,
-  rollbackCommitId: longRollbackCommitId,
   structureDialogOpen: longStructureDialogOpen,
   structureAgentsMd: longStructureAgentsMd,
   structureAgentsMdPending: longStructureAgentsMdPending,
@@ -545,6 +549,7 @@ const {
   catalogSnapshot,
   features: {
     learningImitation: learningImitationFeature,
+    longBookAnalysis: longBookAnalysisFeature,
     subagentAuthoring: subagentAuthoringFeature
   },
   actions: {
@@ -577,10 +582,7 @@ const longWorkspacePresentation = useLongWorkspacePresentationCoordinator({
     fileContext: activeLongFileContext,
     contextReady: activeLongWorkspaceContextReady,
     agentSettings: longAgentSettings,
-    rollbackCommitId: longRollbackCommitId,
-    rollbackPending: longRollbackPending,
     refreshStatus: activeLongWorkspaceRefreshStatus,
-    revisionRequirement: activeLongWorkspaceRevisionSyncRequirement,
     sendPreflightPending: longSendPreflightPending,
     proposalApprovalPending: longProposalApprovalPending
   },
@@ -601,9 +603,6 @@ const {
   activeLongRoot,
   activeLongAgentProfile,
   activeLongRuntimeContext,
-  latestLongLedgerCommit,
-  longRollbackCommit,
-  longRollbackChapterTitle,
   longEditorLocked,
   longEditorLockedReason,
   editorLocked,
@@ -630,15 +629,13 @@ const {
   rejectProposal: rejectLongProposal,
   retryProposalPreview: retryLongProposalPreview,
   locateAcceptedProposal: locateAcceptedLongProposal,
-  discardAcceptedProposal: discardAcceptedLongProposal,
   dispose: disposeLongProposalRuntime
 } = useLongProposalRuntimeCoordinator({
   state: {
     activeBookId: activeLongBookId,
     activeBookSummary: activeLongBookSummary,
     workspaceIndex: activeLongWorkspaceIndex,
-    proposalApprovalPending: longProposalApprovalPending,
-    revisionRequirement: longWorkspaceRevisionSyncRequirement
+    proposalApprovalPending: longProposalApprovalPending
   },
   api: resolveLongWorkspaceApi,
   conversations: {
@@ -649,12 +646,7 @@ const {
   workspace: {
     saveActiveEditorChanges: () => saveActiveLongEditorChanges(),
     refreshActiveWorkspace: (bookId) => refreshActiveLongWorkspace(bookId),
-    refreshBookList: () => loadLongBookList({ force: true }),
-    synchronizeEditorRevisions: (workspaceRevision, projectRevision) =>
-      longWorkspaceEditor.value?.synchronizeProjectRevisions(
-        workspaceRevision,
-        projectRevision
-      )
+    refreshBookList: () => loadLongBookList({ force: true })
   },
   removeAgentRunPreferences,
   navigateToAcceptedProposal: async (item) => {
@@ -664,9 +656,6 @@ const {
   },
   notifications: uiMessage
 });
-longWorkspacePresentation.bindWorkflow({
-  activeConversationProposalItems: activeLongConversationProposalItems
-});
 const {
   editor: longWorkspaceEditor,
   loadBookList: loadLongBookList,
@@ -674,8 +663,6 @@ const {
   saveActiveEditorBeforeLeaving: saveActiveLongEditorBeforeLeaving,
   openBook: openLongBook,
   refreshActiveWorkspace: refreshActiveLongWorkspace,
-  refreshAndSynchronizeRequiredRevision:
-    refreshAndSynchronizeRequiredLongWorkspaceRevision,
   selectWorkspaceFile: selectLongWorkspaceFile,
   selectCharacterTab: selectLongCharacterTab,
   selectPlotPointTab: selectLongPlotPointTab,
@@ -699,9 +686,7 @@ const {
     selection: activeLongSelection,
     fileContext: activeLongFileContext,
     refreshStatus: longWorkspaceRefreshStatus,
-    activeRefreshStatus: activeLongWorkspaceRefreshStatus,
-    revisionRequirement: longWorkspaceRevisionSyncRequirement,
-    activeRevisionRequirement: activeLongWorkspaceRevisionSyncRequirement
+    activeRefreshStatus: activeLongWorkspaceRefreshStatus
   },
   api: resolveLongWorkspaceApi,
   isWorkspaceActive: () => isLongWorkspaceActive.value,
@@ -856,8 +841,6 @@ const {
     continuationImportPreview,
     legacySyncPreview,
     legacySyncResult,
-    rollbackDialogOpen: longRollbackDialogOpen,
-    rollbackCommitId: longRollbackCommitId,
     structureDialogOpen: longStructureDialogOpen,
     structureAgentsMd: longStructureAgentsMd,
     structureAgentsMdPending: longStructureAgentsMdPending,
@@ -904,14 +887,6 @@ const {
       revealTextPane();
     }
   },
-  editorRevisions: {
-    synchronizeProjectRevisions(workspaceRevision, projectRevision) {
-      longWorkspaceEditor.value?.synchronizeProjectRevisions(
-        workspaceRevision,
-        projectRevision
-      );
-    }
-  },
   manuscript: {
     available: () => Boolean(window.deepwrite),
     async createInput(input) {
@@ -926,48 +901,6 @@ const {
       }
       return desktop.manuscript.exportLong(input);
     }
-  },
-  scheduler: {
-    settleUi: () => nextTick()
-  },
-  notifications: uiMessage
-});
-
-const {
-  openLongRollbackDialog,
-  closeLongRollbackDialog,
-  confirmLongRollback,
-  dispose: disposeLongRollback
-} = useLazyLongRollbackCoordinator({
-  api: resolveLongWorkspaceApi,
-  state: {
-    activeBookId: activeLongBookId,
-    activeBookSummary: activeLongBookSummary,
-    workspaceIndex: activeLongWorkspaceIndex,
-    revisionRequirement: longWorkspaceRevisionSyncRequirement,
-    rollbackDialogOpen: longRollbackDialogOpen,
-    rollbackPending: longRollbackPending,
-    rollbackCommitId: longRollbackCommitId
-  },
-  session: {
-    saveActiveEditorChanges: saveActiveLongEditorChanges,
-    refreshActiveWorkspace: refreshActiveLongWorkspace,
-    refreshAndSynchronizeRequiredRevision:
-      refreshAndSynchronizeRequiredLongWorkspaceRevision
-  },
-  navigation: {
-    clearRolledBackCommitSelection(bookId, commitId) {
-      if (
-        activeLongBookId.value === bookId &&
-        activeLongSelection.value?.key === `ledger:${commitId}`
-      ) {
-        activeLongSelection.value = null;
-        activeLongFileContext.value = null;
-      }
-    }
-  },
-  catalog: {
-    loadBookList: loadLongBookList
   },
   scheduler: {
     settleUi: () => nextTick()
@@ -997,7 +930,9 @@ const {
   createLongPlotPoint,
   createLongChapterCard,
   handleActiveLongStructureMutation,
+  previewActiveLongStructureMutation,
   handleLongWorldbuildingSync,
+  previewActiveLongNavigationStructure,
   deleteActiveLongNavigationStructure,
   createLongCharacter,
   closeLongStructureDialog,
@@ -1396,10 +1331,6 @@ const workspaceDialogModule = useWorkspaceDialogModuleCoordinator({
     legacyPreview: legacySyncPreview,
     legacyResult: legacySyncResult,
     mutationPending: longMutationPending,
-    rollbackDialogOpen: longRollbackDialogOpen,
-    rollbackCommit: longRollbackCommit,
-    rollbackChapterTitle: longRollbackChapterTitle,
-    rollbackPending: longRollbackPending,
     activeBookSummary: activeLongBookSummary,
     activeBookId: activeLongBookId,
     workspaceIndex: activeLongWorkspaceIndex,
@@ -1485,6 +1416,10 @@ const {
       settings.models,
       settings.defaultModelId
     );
+    longBookAnalysisFeature.setConfiguredModels(
+      settings.models,
+      settings.defaultModelId
+    );
     applyModelSettingsToConversations(settings);
   }
 });
@@ -1502,6 +1437,7 @@ const {
   availableSkillReferences: activeLongSkillReferences,
   dispose: disposeLongConversation,
   newConversation: newLongConversation,
+  selectAgentTeamMode: selectLongAgentTeamMode,
   selectApprovalMode: selectLongApprovalMode,
   selectConversation: selectLongConversation,
   selectModel: selectLongModel,
@@ -1568,6 +1504,7 @@ const {
   conversationContext: writingConversationContext,
   dispose: disposeShortConversation,
   newConversation: newShortConversation,
+  selectAgentTeamMode,
   selectApprovalMode,
   selectConversation,
   selectModel,
@@ -1693,6 +1630,9 @@ const agentActivity = useAgentActivityCoordinator({
   notifications: uiMessage
 });
 provide(AGENT_ACTIVITY_CONTEXT_KEY, agentActivity.context);
+const activeEditorEntrySearchItems = computed(() =>
+  editorEntrySearchSources(liveWorkspaceDocuments.value, activeDocument.value)
+);
 const writingEditorViewModel = computed(() => ({
   document: activeDocument.value,
   resourceId: selectedResourceId.value,
@@ -1712,7 +1652,8 @@ const writingEditorViewModel = computed(() => ({
   createSectionLabel: editorCreateSectionLabel.value,
   showDeleteSection: showEditorDeleteSection.value,
   canDeleteSection: canDeleteEditorSection.value,
-  deleteSectionLabel: editorDeleteSectionLabel.value
+  deleteSectionLabel: editorDeleteSectionLabel.value,
+  entrySearchItems: activeEditorEntrySearchItems.value
 }));
 async function prepareLibraryProjectsForDuplicate(
   libraryIds: ReadonlySet<string>
@@ -2188,6 +2129,44 @@ function navigateToApprovalTarget(
   return approvalNavigation.navigateToTarget(target);
 }
 
+async function selectEditorEntrySearchResult(
+  documentId: string
+): Promise<void> {
+  const target = liveWorkspaceDocuments.value.find(
+    (document) => document.id === documentId
+  );
+  if (!target) {
+    uiMessage.warning("目标条目已不存在，无法跳转。");
+    return;
+  }
+  const navigated = await navigateToApprovalTarget({
+    kind: "document",
+    workspaceId: target.workspaceId ?? target.libraryId ?? target.id,
+    documentId: target.id
+  });
+  if (!navigated) uiMessage.warning("目标条目暂时无法打开。");
+}
+
+async function prepareEditorEntrySearch(): Promise<void> {
+  await ensureCatalogDocumentsLoaded(
+    editorEntrySearchDocuments(
+      liveWorkspaceDocuments.value,
+      activeDocument.value
+    )
+  );
+}
+
+async function selectLongEntrySearchResult(fileId: string): Promise<void> {
+  const bookId = activeLongBookId.value;
+  if (!bookId) return;
+  const navigated = await navigateToApprovalTarget({
+    kind: "long",
+    bookId,
+    candidates: [{ kind: "file", fileId }]
+  });
+  if (!navigated) uiMessage.warning("目标长篇条目暂时无法打开。");
+}
+
 const disposeLazyApprovalNavigationCoordinator = approvalNavigation.dispose;
 async function locateAcceptedEditProposal(input: {
   runId: string;
@@ -2250,7 +2229,6 @@ const {
   reviewAgentEdit,
   reviewLongAgentEdit,
   discardAgentEdit,
-  discardLongAgentEdit,
   scheduleQueuedAgentEdits,
   stageAgentEditProposal,
   stageLibraryEditProposal,
@@ -2330,6 +2308,7 @@ function navigateToWorkspaceStage(
 function startWorkspaceSystemEvents(): () => void {
   const removeRoutes = registerWorkspaceSystemEventRoutes(systemEventCenter, {
     learningImitation: learningImitationFeature,
+    longBookAnalysis: longBookAnalysisFeature,
     subagentAuthoring: subagentAuthoringFeature,
     stageLongPlotDesignEditProposal,
     stageLongWorldbuildingEditProposal,
@@ -2439,7 +2418,6 @@ const workspaceLifecycle = useWorkspaceLifecycleCoordinator({
     disposeCatalogWorkspaceProjection,
     disposeLazyApprovalNavigationCoordinator,
     disposeShortBookLifecycle,
-    disposeLongRollback,
     disposeLongBookLifecycle,
     disposeShortConversation,
     disposeLongConversation,
@@ -2462,6 +2440,7 @@ const workspaceLifecycle = useWorkspaceLifecycleCoordinator({
         flush: conversationPersistenceEnabled
       }),
     () => learningImitationFeature.dispose(),
+    () => longBookAnalysisFeature.dispose(),
     () => subagentAuthoringFeature.dispose()
   ],
   onError(error, operation) {
@@ -2493,6 +2472,7 @@ onBeforeUnmount(() => {
     "
     @update-auto-save="updateEditorAutoSave"
     @update-language="updateAppLanguage"
+    @update-show-context-usage="updateShowContextUsage"
     @update-show-in-menu-bar="updateShowInMenuBar"
     @update-workspace-pane-layout="updateWorkspacePaneLayout"
     @update-default-text-view-mode="updateDefaultTextViewMode"
@@ -2514,7 +2494,6 @@ onBeforeUnmount(() => {
     @refresh-free-models="refreshFreeModels"
     @set-free-model-enabled="setFreeModelEnabled"
   />
-
   <div
     v-else
     ref="desktopShell"
@@ -2534,6 +2513,7 @@ onBeforeUnmount(() => {
       :sections="resourceTreeSections"
       :selected-id="selectedResourceId"
       :imitation-running="learningImitationRunning"
+      :long-book-analysis-running="longBookAnalysisRunning"
       :library-entry-clipboard-domain="libraryEntryClipboardDomain"
       :active-primary-feature="
         chatAssistant.active.value ? 'chat-assistant' : activePrimaryFeature
@@ -2565,7 +2545,6 @@ onBeforeUnmount(() => {
       @create-character-item="requestCreateCharacterItem"
       @character-item-action="handleCharacterItemAction"
     />
-
     <WorkspaceFeatureModules
       v-if="workspaceFeatureModule"
       :module="workspaceFeatureModule"
@@ -2597,11 +2576,7 @@ onBeforeUnmount(() => {
       :available-skill-references="activeLongSkillReferences"
       :available-material-references="activeLongMaterialReferences"
       :proposal-items="activeLongConversationProposalItems"
-      :latest-commit="latestLongLedgerCommit"
       :refresh-status="activeLongWorkspaceRefreshStatus"
-      :revision-sync-required="
-        Boolean(activeLongWorkspaceRevisionSyncRequirement)
-      "
       :runtime-available="hasDesktopRuntime"
       :send-context-ready="activeLongWorkspaceContextReady"
       :send-preflight-pending="longSendPreflightPending"
@@ -2629,21 +2604,20 @@ onBeforeUnmount(() => {
       @select-thinking="selectLongThinking"
       @select-temperature="selectLongTemperature"
       @select-approval="selectLongApprovalMode"
+      @select-agent-team-mode="selectLongAgentTeamMode"
       @review-edit="reviewLongAgentEdit"
       @locate-edit-proposal="locateAcceptedEditProposal"
-      @discard-edit-proposal="discardLongAgentEdit"
       @approve-long-proposal="approveLongProposal"
       @reject-long-proposal="rejectLongProposal"
       @retry-long-proposal-preview="retryLongProposalPreview"
       @locate-long-proposal="locateAcceptedLongProposal"
-      @discard-long-proposal="discardAcceptedLongProposal"
       @retry-workspace-refresh="retryActiveLongWorkspaceRefresh"
       @saved="handleLongDocumentSaved"
       @context-change="handleLongFileContextChange"
-      @rollback="openLongRollbackDialog"
       @select-character="selectLongCharacterTab"
       @select-plot-point="selectLongPlotPointTab"
       @select-chapter-card="selectLongChapterCardTab"
+      @select-entry-search-result="selectLongEntrySearchResult"
       @rename-character="renameLongCharacter"
       @rename-structure-title="renameLongStructureTitle"
       @create-character="openLongCharacterCreate"
@@ -2651,9 +2625,11 @@ onBeforeUnmount(() => {
       @create-plot-point="openLongPlotPointCreate"
       @create-chapter-card="openLongChapterCardCreate"
       @create-volume="openLongVolumeCreate"
+      @preview-delete-structure="previewActiveLongNavigationStructure"
       @delete-structure="deleteActiveLongNavigationStructure"
       @save-volume-outline="saveLongVolumeOutline"
       @save-plot-point-content="saveLongPlotPointContent"
+      @preview-mutation="previewActiveLongStructureMutation"
       @mutation="handleActiveLongStructureMutation"
     />
 
@@ -2676,6 +2652,7 @@ onBeforeUnmount(() => {
       @select-thinking="selectThinking"
       @select-temperature="selectTemperature"
       @select-approval="selectApprovalMode"
+      @select-agent-team-mode="selectAgentTeamMode"
       @review-edit="reviewAgentEdit"
       @locate-edit-proposal="locateAcceptedEditProposal"
       @discard-edit-proposal="discardAgentEdit"
@@ -2690,6 +2667,8 @@ onBeforeUnmount(() => {
       @create-section="createEditorSection"
       @delete-section="deleteEditorSection"
       @select-draft-file="selectDraftFile"
+      @select-entry-search-result="selectEditorEntrySearchResult"
+      @prepare-entry-search="prepareEditorEntrySearch"
       @resize-start="startPaneResize('right', $event)"
       @resize-keydown="handleResizeKeydown('right', $event)"
     />
@@ -2749,9 +2728,8 @@ onBeforeUnmount(() => {
     @confirm-continuation-import="confirmContinuationImport"
     @close-legacy-sync="closeLegacySyncDialog"
     @confirm-legacy-sync="confirmLegacySync"
-    @close-long-rollback="closeLongRollbackDialog"
-    @confirm-long-rollback="confirmLongRollback"
     @close-long-structure="closeLongStructureDialog"
+    @preview-long-structure-mutation="previewActiveLongStructureMutation"
     @long-structure-mutation="handleActiveLongStructureMutation"
     @save-long-agents-md="saveLongAgentsMd"
     @sync-long-worldbuilding="handleLongWorldbuildingSync"

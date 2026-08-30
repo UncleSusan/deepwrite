@@ -282,7 +282,6 @@ function toEventEnvelope(
         bookId: event.payload.bookId,
         agentId: event.payload.agentId,
         batch: event.payload.batch,
-        baseProjectRevision: event.payload.baseProjectRevision,
         summary: event.payload.summary,
         runtime: event.payload.runtime
       },
@@ -300,7 +299,6 @@ function toEventEnvelope(
         bookId: event.payload.bookId,
         agentId: event.payload.agentId,
         batch: event.payload.batch,
-        baseProjectRevision: event.payload.baseProjectRevision,
         summary: event.payload.summary,
         files: event.payload.files,
         runtime: event.payload.runtime
@@ -319,7 +317,6 @@ function toEventEnvelope(
         bookId: event.payload.bookId,
         agentId: event.payload.agentId,
         batch: event.payload.batch,
-        baseProjectRevision: event.payload.baseProjectRevision,
         summary: event.payload.summary,
         files: event.payload.files,
         runtime: event.payload.runtime
@@ -338,7 +335,6 @@ function toEventEnvelope(
         bookId: event.payload.bookId,
         agentId: event.payload.agentId,
         batch: event.payload.batch,
-        baseProjectRevision: event.payload.baseProjectRevision,
         summary: event.payload.summary,
         files: event.payload.files,
         runtime: event.payload.runtime
@@ -357,7 +353,6 @@ function toEventEnvelope(
         bookId: event.payload.bookId,
         agentId: event.payload.agentId,
         batch: event.payload.batch,
-        baseProjectRevision: event.payload.baseProjectRevision,
         file: event.payload.file,
         summary: event.payload.summary,
         runtime: event.payload.runtime
@@ -419,6 +414,38 @@ function toEventEnvelope(
         toolCallId: event.payload.toolCallId,
         stageId: event.payload.stageId,
         update: event.payload.update,
+        runtime: event.payload.runtime
+      },
+      { id: createId("evt"), context }
+    );
+  }
+
+  if (event.type === "long_book_analysis.note_updated") {
+    return createEnvelope(
+      "long_book_analysis.note_updated",
+      {
+        sessionId: event.sessionId,
+        runId: event.runId,
+        toolCallId: event.payload.toolCallId,
+        jobId: event.payload.jobId,
+        unitId: event.payload.unitId,
+        note: event.payload.note,
+        runtime: event.payload.runtime
+      },
+      { id: createId("evt"), context }
+    );
+  }
+
+  if (event.type === "long_book_analysis.result_updated") {
+    return createEnvelope(
+      "long_book_analysis.result_updated",
+      {
+        sessionId: event.sessionId,
+        runId: event.runId,
+        toolCallId: event.payload.toolCallId,
+        jobId: event.payload.jobId,
+        unitId: event.payload.unitId,
+        result: event.payload.result,
         runtime: event.payload.runtime
       },
       { id: createId("evt"), context }

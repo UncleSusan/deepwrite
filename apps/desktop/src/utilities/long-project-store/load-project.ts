@@ -1,5 +1,6 @@
 import {
   LongBookSchema,
+  LONG_WORKSPACE_INDEX_PATH,
   LongProjectManifestSchema,
   LongWorkspaceIndexSnapshotSchema,
   createLongBookSummary
@@ -22,8 +23,8 @@ import {
   migrateLegacyCharacterTypes,
   migrateLegacyWorldbuildingStorage
 } from "./migrations/world-character";
+import { migrateLegacyLongVersionMetadata } from "./migrations/version-metadata";
 import { indexedFileSlots } from "./paths";
-import { longRevisionsMatchContent } from "./revisions";
 import type { LongProjectStoreContext } from "./store-context";
 import {
   MANIFEST_PATH,
@@ -50,24 +51,23 @@ export async function loadProject(
     MANIFEST_PATH,
     MAX_MANIFEST_BYTES
   );
-  const manifest = LongProjectManifestSchema.parse(
-    parseJson(manifestDisk.content, "长篇项目 manifest")
-  );
+  const rawManifest = parseJson(manifestDisk.content, "长篇项目 manifest");
   const indexDisk = await readSecureTextFile(
     projectDirectory,
-    manifest.workspaceIndexFile.path,
+    LONG_WORKSPACE_INDEX_PATH,
     MAX_INDEX_BYTES
   );
-  if (
-    !longRevisionsMatchContent(
-      manifest.workspaceIndexFile.revision,
-      indexDisk.revision,
-      indexDisk.bytes
-    )
-  ) {
-    throw new Error("长篇 manifest 中的索引 revision 与实际文件不一致。");
-  }
   const rawIndex = parseJson(indexDisk.content, "长篇工作区索引");
+  if (
+    await migrateLegacyLongVersionMetadata({
+      projectDirectory,
+      rawManifest,
+      rawIndex
+    })
+  ) {
+    return await loadProject(ctx, projectDirectory);
+  }
+  const manifest = LongProjectManifestSchema.parse(rawManifest);
   if (
     await migrateLegacyCharacterTypes({
       projectDirectory,
@@ -171,9 +171,6 @@ export async function loadProject(
   if (manifest.id !== index.bookId) {
     throw new Error("长篇 manifest 与工作区索引的 book id 不一致。");
   }
-  if (manifest.revision !== index.revision) {
-    throw new Error("长篇项目 revision 与工作区 revision 不一致。");
-  }
   if (
     manifest.updatedAt !== index.updatedAt ||
     manifest.workspaceIndexFile.updatedAt !== index.updatedAt
@@ -192,10 +189,8 @@ export async function loadProject(
     });
   }
 
-  // Opening a long-form project validates only its compact manifest and
-  // workspace index. Potentially large Markdown bodies and ledger records
-  // are securely read and revision-checked only when the caller requests
-  // that specific file.
+  // Opening validates the compact manifest and workspace index. Potentially
+  // large Markdown bodies and ledger records are read only on demand.
   const hydratedIndex = index;
   const book = LongBookSchema.parse({
     schemaVersion: hydratedIndex.schemaVersion,
@@ -207,7 +202,6 @@ export async function loadProject(
     linkedMaterialIdsByKind: manifest.linkedMaterialIdsByKind,
     linkedSkillIdsByKind: manifest.linkedSkillIdsByKind,
     linkedResourceStageScopes: manifest.linkedResourceStageScopes,
-    projectRevision: manifest.revision,
     createdAt: manifest.createdAt,
     updatedAt: manifest.updatedAt,
     workspaceIndex: hydratedIndex

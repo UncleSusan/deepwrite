@@ -1,17 +1,21 @@
 import type {
+  LongWorkspaceImpactConfirmation,
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
+import { longWorkspaceOperationsRequireImpactConfirmation } from "@deepwrite/contracts/renderer";
 import {
   replaceLongBookSummary,
-  type LongStructureMutationCompletion
+  type LongStructureMutationCompletion,
+  type LongWorldbuildingSyncCompletion,
+  type LongWorldbuildingSyncRequest
 } from "../../types/longWorkspace";
 import type { LongStructureLease } from "./lease";
 import type { LongStructureMutationLease } from "./types";
 
 export function createLongStructureSync(
   host: LongStructureLease,
-  loadLongStructureMutationModule: () => Promise<
+  _loadLongStructureMutationModule: () => Promise<
     typeof import("../../types/longStructureMutations")
   >
 ) {
@@ -43,8 +47,8 @@ export function createLongStructureSync(
   } = session;
 
   async function handleLongWorldbuildingSync(
-    payload: { sourceBookId: string; sourceTitle: string },
-    completion: LongStructureMutationCompletion
+    payload: LongWorldbuildingSyncRequest,
+    completion: LongWorldbuildingSyncCompletion
   ): Promise<void> {
     const expectedBookId = activeLongBookSummary.value?.id;
     await withMutation(
@@ -70,6 +74,18 @@ export function createLongStructureSync(
           return;
         }
         try {
+          if (payload.prepared) {
+            await executeLongStructureMutation(
+              lease,
+              payload.prepared.batch,
+              completion,
+              {
+                successMessage: `已从「${payload.sourceTitle}」同步世界观（${payload.prepared.createdCategoryCount} 个分类）`,
+                expectedImpact: payload.prepared.confirmation
+              }
+            );
+            return;
+          }
           const {
             buildLongWorldbuildingSyncBatch,
             filterSyncableWorldbuildingCategories,
@@ -132,16 +148,22 @@ export function createLongStructureSync(
             lease,
             "活动长篇或结构已切换，本次世界观同步未保存。"
           );
-          await executeLongStructureMutation(
-            lease,
-            plan.batch,
-            completion,
-            {
-              saveEditor: false,
-              successMessage: `已从「${payload.sourceTitle}」同步世界观（${plan.createdCategoryCount} 个分类）`
-            },
-            latestIndex
+          const confirmation = await previewLongStructureImpact(
+            lease.target.bookId,
+            plan.batch
           );
+          assertCurrentLongStructureMutationTarget(
+            latestTarget,
+            lease,
+            "活动长篇或结构已切换，本次世界观同步影响已变化。"
+          );
+          completion.review({
+            batch: plan.batch,
+            confirmation,
+            createdCategoryCount: plan.createdCategoryCount,
+            deletedCategoryCount: plan.deletedCategoryCount,
+            writtenFileCount: plan.writtenFileCount
+          });
         } catch (error: unknown) {
           if (isDisposed()) return;
           const message =
@@ -157,8 +179,13 @@ export function createLongStructureSync(
     lease: LongStructureMutationLease,
     batch: LongWorkspaceOperationBatch,
     completion: LongStructureMutationCompletion,
-    options: { saveEditor?: boolean; successMessage?: string } = {},
-    beforeIndex: LongWorkspaceIndexSnapshot = lease.target.index
+    options: {
+      saveEditor?: boolean;
+      successMessage?: string;
+      expectedImpact?: LongWorkspaceImpactConfirmation;
+      onImpactChanged?: (impact: LongWorkspaceImpactConfirmation) => void;
+    } = {},
+    _beforeIndex: LongWorkspaceIndexSnapshot = lease.target.index
   ): Promise<void> {
     const workspaceApi = resolveLongWorkspaceApi();
     if (!workspaceApi || !mutationIsCurrent(lease)) {
@@ -193,51 +220,54 @@ export function createLongStructureSync(
       uiMessage.warning(message);
       return;
     }
+    let previewImpact: LongWorkspaceImpactConfirmation | null = null;
     try {
       if (!(await refreshActiveLongWorkspace(expectedBookId))) {
         throw new Error("无法同步最新长篇结构，本次修改未保存。");
       }
       if (!mutationIsCurrent(lease)) return;
-      const latestSummary = activeLongBookSummary.value;
       const latestTarget = captureLongStructureMutationTarget(expectedBookId);
       const latestIndex = latestTarget?.index;
       if (
-        !latestSummary ||
         !latestTarget ||
         !latestIndex ||
-        latestSummary.id !== expectedBookId
+        activeLongBookSummary.value?.id !== expectedBookId
       ) {
         throw new Error("活动长篇已切换，本次结构修改未保存。");
       }
-      const baseProjectRevision =
-        latestSummary.projectRevision ?? latestIndex.revision;
-      const { rebaseLongStructureBatchAfterDocumentSave } =
-        await loadLongStructureMutationModule();
       assertCurrentLongStructureMutationTarget(latestTarget, lease);
-      const effectiveBatch = rebaseLongStructureBatchAfterDocumentSave({
-        batch,
-        before: beforeIndex,
-        after: latestIndex
-      });
+      const { expectedImpact: batchExpectedImpact, ...unconfirmedBatch } =
+        batch;
+      const confirmedImpact = options.expectedImpact ?? batchExpectedImpact;
       const preview = await workspaceApi.previewOperations({
         bookId: expectedBookId,
-        batch: effectiveBatch
+        batch: unconfirmedBatch
       });
       assertCurrentLongStructureMutationTarget(latestTarget, lease);
-      if (
-        preview.bookId !== expectedBookId ||
-        preview.projectRevision !== baseProjectRevision
-      ) {
-        throw new Error("长篇结构已更新，请基于最新结构重新修改。");
+      if (preview.bookId !== expectedBookId) {
+        throw new Error("结构影响预览返回了其他长篇项目。");
       }
+      previewImpact = preview.preview.confirmation;
       assertCurrentLongStructureMutationTarget(latestTarget, lease);
+      if (
+        longWorkspaceOperationsRequireImpactConfirmation(
+          batch.operations,
+          previewImpact
+        ) &&
+        !confirmedImpact
+      ) {
+        const message = "请先核对关联关系与删除影响，再确认执行。";
+        options.onImpactChanged?.(previewImpact);
+        completion.fail(message, previewImpact);
+        uiMessage.warning(message);
+        return;
+      }
       const applyResult = await workspaceApi.applyOperations({
         bookId: expectedBookId,
         batch: {
-          ...effectiveBatch,
-          expectedImpact: preview.preview.impact
-        },
-        baseProjectRevision
+          ...batch,
+          expectedImpact: confirmedImpact ?? preview.preview.confirmation
+        }
       });
       lease.applied = true;
       if (isDisposed()) return;
@@ -270,23 +300,56 @@ export function createLongStructureSync(
       completion.succeed();
       uiMessage.success(
         options.successMessage ??
-          `已直接保存 ${effectiveBatch.operations.length} 项长篇结构修改`
+          `已直接保存 ${batch.operations.length} 项长篇结构修改`
       );
     } catch (error: unknown) {
       if (isDisposed()) return;
-      const message =
+      const rawMessage =
         error instanceof Error ? error.message : "保存长篇结构修改失败。";
+      const message = /impact_mismatch|影响.*变化/iu.test(rawMessage)
+        ? "关联关系已变化，请核对最新影响后再次确认。"
+        : rawMessage;
+      if (message !== rawMessage && previewImpact) {
+        options.onImpactChanged?.(previewImpact);
+      }
       if (lease.applied) {
         longStructureDialogOpen.value = false;
         completion.appliedButRefreshFailed(message);
       } else {
-        completion.fail(message);
+        completion.fail(
+          message,
+          message === rawMessage ? undefined : (previewImpact ?? undefined)
+        );
       }
-      uiMessage.error(message);
+      if (message === rawMessage) uiMessage.error(message);
+      else uiMessage.warning(message);
     }
   }
 
-  return { handleLongWorldbuildingSync, executeLongStructureMutation };
+  async function previewLongStructureImpact(
+    bookId: string,
+    batch: LongWorkspaceOperationBatch
+  ): Promise<LongWorkspaceImpactConfirmation> {
+    const workspaceApi = resolveLongWorkspaceApi();
+    if (!workspaceApi) {
+      throw new Error("当前长篇结构尚未就绪。");
+    }
+    const { expectedImpact: _expectedImpact, ...unconfirmedBatch } = batch;
+    const preview = await workspaceApi.previewOperations({
+      bookId,
+      batch: unconfirmedBatch
+    });
+    if (preview.bookId !== bookId) {
+      throw new Error("结构影响预览返回了其他长篇项目。");
+    }
+    return preview.preview.confirmation;
+  }
+
+  return {
+    handleLongWorldbuildingSync,
+    executeLongStructureMutation,
+    previewLongStructureImpact
+  };
 }
 
 export type LongStructureSync = ReturnType<typeof createLongStructureSync>;

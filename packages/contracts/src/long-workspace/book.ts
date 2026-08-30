@@ -22,11 +22,7 @@ import {
   LongWorkspaceRootSchema,
   type LongWorkspaceRoot
 } from "./agents";
-import {
-  LongRevisionSchema,
-  LongTimestampSchema,
-  LongTitleSchema
-} from "./primitives";
+import { LongTimestampSchema, LongTitleSchema } from "./primitives";
 
 const LongResourceStageListSchema = z
   .array(LongWorkspaceRootSchema)
@@ -98,7 +94,6 @@ export const LongBookSchema = z
   .object({
     schemaVersion: LongWorkspaceSchemaVersionSchema,
     ...LongBookSharedShape,
-    projectRevision: LongRevisionSchema.optional(),
     workspaceIndex: LongWorkspaceIndexSnapshotSchema
   })
   .strict()
@@ -108,17 +103,6 @@ export const LongBookSchema = z
         code: "custom",
         path: ["workspaceIndex", "bookId"],
         message: "Long book and workspace index ids must match."
-      });
-    }
-    if (
-      book.projectRevision !== undefined &&
-      book.projectRevision !== book.workspaceIndex.revision
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["projectRevision"],
-        message:
-          "Long book project revision must match its workspace index revision."
       });
     }
     if (book.updatedAt !== book.workspaceIndex.updatedAt) {
@@ -136,7 +120,6 @@ export const LongBookSummarySchema = z
     schemaVersion: LongWorkspaceSchemaVersionSchema,
     kind: z.literal("deepwrite.long-book"),
     ...LongBookSharedShape,
-    projectRevision: LongRevisionSchema,
     navigation: LongWorkspaceNavigationSnapshotSchema
   })
   .strict()
@@ -146,14 +129,6 @@ export const LongBookSummarySchema = z
         code: "custom",
         path: ["navigation", "bookId"],
         message: "Long book summary and navigation ids must match."
-      });
-    }
-    if (book.projectRevision !== book.navigation.revision) {
-      context.addIssue({
-        code: "custom",
-        path: ["projectRevision"],
-        message:
-          "Long book summary project revision must match its navigation revision."
       });
     }
     if (book.updatedAt !== book.navigation.updatedAt) {
@@ -179,7 +154,6 @@ export function createLongBookSummary(book: LongBook): LongBookSummary {
     linkedMaterialIdsByKind: book.linkedMaterialIdsByKind,
     linkedSkillIdsByKind: book.linkedSkillIdsByKind,
     linkedResourceStageScopes: book.linkedResourceStageScopes,
-    projectRevision: book.projectRevision ?? book.workspaceIndex.revision,
     createdAt: book.createdAt,
     updatedAt: book.updatedAt,
     navigation: createLongWorkspaceNavigationSnapshot(book.workspaceIndex)
@@ -215,7 +189,6 @@ export type LongWorkspaceIndexFileReference = z.infer<
 export const LongProjectManifestSchema = z
   .object({
     schemaVersion: LongProjectManifestSchemaVersionSchema,
-    revision: LongRevisionSchema,
     kind: z.literal("deepwrite.long-book"),
     ...LongBookSharedShape,
     workspaceIndexFile: LongWorkspaceIndexFileReferenceSchema

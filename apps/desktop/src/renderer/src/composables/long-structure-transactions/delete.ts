@@ -1,7 +1,13 @@
-import type { LongWorkspaceOperationBatch } from "@deepwrite/contracts";
+import type {
+  LongWorkspaceImpactConfirmation,
+  LongWorkspaceIndexSnapshot,
+  LongWorkspaceOperationBatch
+} from "@deepwrite/contracts";
 import { nextTick } from "vue";
 import { createLongChapterSelection } from "../../types/longWorkspace";
 import { longNavigationNodeId } from "../../utils/longWorkspaceResourceTree";
+import { longDeletionDescription } from "../../utils/longDeletionImpact";
+import { longImpactConfirmationDescription } from "../../utils/longImpactConfirmation";
 import type { LongStructureLease } from "./lease";
 import type { LongStructureSync } from "./sync";
 import { isActiveLongTreeItem, resolveLongTreeItemDetails } from "./tree";
@@ -37,6 +43,57 @@ export function createLongStructureDelete(
   const { selectWorkspaceFile: selectLongWorkspaceFile } = session;
   const resourceNode = resources.node;
   const selectResource = resources.select;
+
+  async function buildNavigationDeleteBatch(
+    index: LongWorkspaceIndexSnapshot,
+    input: {
+      kind: "character" | "volume" | "plotPoint" | "chapterCard";
+      id: string;
+      title: string;
+    }
+  ): Promise<{
+    batch: LongWorkspaceOperationBatch;
+    label: string;
+    title: string;
+  }> {
+    const { createLongStructureMutationBuilder } =
+      await loadLongStructureMutationModule();
+    const builder = createLongStructureMutationBuilder(index);
+    if (input.kind === "character") {
+      const target = index.characters.find(({ id }) => id === input.id);
+      if (!target) throw new Error("该人物已不存在，请刷新后重试。");
+      return {
+        batch: builder.deleteCharacter(target.id),
+        label: "人物",
+        title: target.name
+      };
+    }
+    if (input.kind === "volume") {
+      const target = index.plot.volumes.find(({ id }) => id === input.id);
+      if (!target) throw new Error("该分卷已不存在，请刷新后重试。");
+      return {
+        batch: builder.deleteVolume(target.id),
+        label: "分卷",
+        title: target.title
+      };
+    }
+    if (input.kind === "plotPoint") {
+      const target = index.plot.arcs.find(({ id }) => id === input.id);
+      if (!target) throw new Error("该剧情点已不存在，请刷新后重试。");
+      return {
+        batch: builder.deleteArc(target.id),
+        label: "剧情点",
+        title: target.title
+      };
+    }
+    const target = index.plot.chapterCards.find(({ id }) => id === input.id);
+    if (!target) throw new Error("该章卡已不存在，请刷新后重试。");
+    return {
+      batch: builder.deleteChapter(target.id),
+      label: "章卡",
+      title: target.title
+    };
+  }
 
   async function confirmDeleteLongTreeItem(): Promise<void> {
     const pending = longTreeItemDelete.value;
@@ -79,13 +136,13 @@ export function createLongStructureDelete(
             if (!target.parentId) throw new Error("缺少世界观分类 ID。");
             batch = builder.deleteWorldbuildingItem(target.parentId, target.id);
           } else if (target.kind === "character") {
-            batch = builder.deleteCharacter(target.id, true);
+            batch = builder.deleteCharacter(target.id);
           } else if (target.kind === "volume") {
-            batch = builder.deleteVolume(target.id, true);
+            batch = builder.deleteVolume(target.id);
           } else if (target.kind === "plot-point") {
-            batch = builder.deleteArc(target.id, true);
+            batch = builder.deleteArc(target.id);
           } else {
-            batch = builder.deleteChapter(target.id, true);
+            batch = builder.deleteChapter(target.id);
           }
         } catch (error: unknown) {
           if (isDisposed()) return;
@@ -111,7 +168,30 @@ export function createLongStructureDelete(
               applied = true;
             }
           },
-          { successMessage: `已删除${details.label}“${details.title}”` },
+          {
+            successMessage: `已删除${details.label}“${details.title}”`,
+            expectedImpact: pending.expectedImpact,
+            onImpactChanged: (expectedImpact) => {
+              const latestIndex = activeLongWorkspaceIndex.value;
+              const latestDetails = latestIndex
+                ? resolveLongTreeItemDetails(
+                    pending.bookId,
+                    latestIndex,
+                    pending.node
+                  )
+                : null;
+              if (longTreeItemDelete.value !== pending || !latestDetails)
+                return;
+              longTreeItemDelete.value = {
+                ...pending,
+                description: longImpactConfirmationDescription(
+                  expectedImpact,
+                  latestDetails.description
+                ),
+                expectedImpact
+              };
+            }
+          },
           index
         );
         if (!applied || isDisposed()) return;
@@ -133,8 +213,12 @@ export function createLongStructureDelete(
       kind: "character" | "volume" | "plotPoint" | "chapterCard";
       id: string;
       title: string;
+      expectedImpact: LongWorkspaceImpactConfirmation;
     },
-    completion: (succeeded: boolean) => void,
+    completion: (
+      succeeded: boolean,
+      changedImpact?: LongWorkspaceImpactConfirmation
+    ) => void,
     isTargetCurrent: () => boolean = () => true
   ): Promise<void> {
     await withMutation(
@@ -145,43 +229,16 @@ export function createLongStructureDelete(
       },
       async (lease) => {
         const index = lease.target.index;
-        let batch: LongWorkspaceOperationBatch;
-        let label: string;
-        let title: string;
+        let deletion: Awaited<ReturnType<typeof buildNavigationDeleteBatch>>;
         try {
-          const { createLongStructureMutationBuilder } =
-            await loadLongStructureMutationModule();
           assertCurrentLongStructureMutationTarget(lease.target, lease);
           if (!isTargetCurrent()) {
             throw new Error("删除目标已切换，本次操作已取消。");
           }
-          const builder = createLongStructureMutationBuilder(index);
-          if (input.kind === "character") {
-            const target = index.characters.find(({ id }) => id === input.id);
-            if (!target) throw new Error("该人物已不存在，请刷新后重试。");
-            batch = builder.deleteCharacter(target.id, true);
-            label = "人物";
-            title = target.name;
-          } else if (input.kind === "volume") {
-            const target = index.plot.volumes.find(({ id }) => id === input.id);
-            if (!target) throw new Error("该分卷已不存在，请刷新后重试。");
-            batch = builder.deleteVolume(target.id, true);
-            label = "分卷";
-            title = target.title;
-          } else if (input.kind === "plotPoint") {
-            const target = index.plot.arcs.find(({ id }) => id === input.id);
-            if (!target) throw new Error("该剧情点已不存在，请刷新后重试。");
-            batch = builder.deleteArc(target.id, true);
-            label = "剧情点";
-            title = target.title;
-          } else {
-            const target = index.plot.chapterCards.find(
-              ({ id }) => id === input.id
-            );
-            if (!target) throw new Error("该章卡已不存在，请刷新后重试。");
-            batch = builder.deleteChapter(target.id, true);
-            label = "章卡";
-            title = target.title;
+          deletion = await buildNavigationDeleteBatch(index, input);
+          assertCurrentLongStructureMutationTarget(lease.target, lease);
+          if (!isTargetCurrent()) {
+            throw new Error("删除目标已切换，本次操作已取消。");
           }
         } catch (error: unknown) {
           if (isDisposed()) return;
@@ -193,15 +250,22 @@ export function createLongStructureDelete(
           completion(false);
           return;
         }
+        let changedImpact: LongWorkspaceImpactConfirmation | undefined;
         await executeLongStructureMutation(
           lease,
-          batch,
+          deletion.batch,
           {
             succeed: () => completion(true),
-            fail: () => completion(false),
+            fail: () => completion(false, changedImpact),
             appliedButRefreshFailed: () => completion(true)
           },
-          { successMessage: `已删除${label}“${title}”` },
+          {
+            successMessage: `已删除${deletion.label}“${deletion.title}”`,
+            expectedImpact: input.expectedImpact,
+            onImpactChanged: (impact) => {
+              changedImpact = impact;
+            }
+          },
           index
         );
       }
@@ -216,9 +280,28 @@ export function createLongStructureDelete(
       {
         kind: "chapterCard",
         id: pending.chapterCardId,
-        title: pending.title
+        title: pending.title,
+        expectedImpact: pending.expectedImpact
       },
-      (succeeded) => {
+      (succeeded, changedImpact) => {
+        if (!succeeded && changedImpact) {
+          const latestIndex = activeLongWorkspaceIndex.value;
+          if (latestIndex && longDraftSectionDelete.value === pending) {
+            longDraftSectionDelete.value = {
+              ...pending,
+              description: longImpactConfirmationDescription(
+                changedImpact,
+                longDeletionDescription(
+                  latestIndex,
+                  "chapterCard",
+                  pending.chapterCardId
+                )
+              ),
+              expectedImpact: changedImpact
+            };
+          }
+          return;
+        }
         if (!succeeded || isDisposed()) return;
         const deletedSelected =
           activeLongSelection.value?.chapterCardId === pending.chapterCardId ||
@@ -276,8 +359,12 @@ export function createLongStructureDelete(
       kind: "character" | "volume" | "plotPoint" | "chapterCard";
       id: string;
       title: string;
+      expectedImpact: LongWorkspaceImpactConfirmation;
     },
-    completion: (succeeded: boolean) => void
+    completion: (
+      succeeded: boolean,
+      changedImpact?: LongWorkspaceImpactConfirmation
+    ) => void
   ): Promise<void> {
     const expectedBookId = activeLongBookId.value;
     if (!expectedBookId) {
@@ -288,11 +375,63 @@ export function createLongStructureDelete(
     await deleteLongNavigationStructure(expectedBookId, input, completion);
   }
 
+  async function previewActiveLongNavigationStructure(
+    input: {
+      kind: "character" | "volume" | "plotPoint" | "chapterCard";
+      id: string;
+      title: string;
+    },
+    completion: (impact?: LongWorkspaceImpactConfirmation) => void
+  ): Promise<void> {
+    const expectedBookId = activeLongBookId.value;
+    const index = activeLongWorkspaceIndex.value;
+    if (!expectedBookId || !index) {
+      uiMessage.warning("当前长篇结构尚未就绪。");
+      completion();
+      return;
+    }
+    await runTracked(async () => {
+      try {
+        const deletion = await buildNavigationDeleteBatch(index, input);
+        if (
+          isDisposed() ||
+          activeLongBookId.value !== expectedBookId ||
+          activeLongWorkspaceIndex.value !== index
+        ) {
+          completion();
+          return;
+        }
+        const impact = await sync.previewLongStructureImpact(
+          expectedBookId,
+          deletion.batch
+        );
+        if (
+          isDisposed() ||
+          activeLongBookId.value !== expectedBookId ||
+          activeLongWorkspaceIndex.value !== index
+        ) {
+          completion();
+          return;
+        }
+        completion(impact);
+      } catch (error: unknown) {
+        if (isDisposed()) return;
+        uiMessage.warning(
+          error instanceof Error
+            ? error.message
+            : `无法核对“${input.title}”的删除影响。`
+        );
+        completion();
+      }
+    });
+  }
+
   return {
     confirmDeleteLongTreeItem,
     confirmDeleteLongDraftSection,
     deleteLongNavigationStructure,
-    deleteActiveLongNavigationStructure
+    deleteActiveLongNavigationStructure,
+    previewActiveLongNavigationStructure
   };
 }
 

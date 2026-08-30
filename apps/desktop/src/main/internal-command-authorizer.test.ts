@@ -210,10 +210,7 @@ describe("Main internal command authorizer", () => {
         {
           bookId: BOOK_ID,
           fileId: "file_world_rules:content",
-          content: "不得直写",
-          baseRevision: "v1:0:00000000",
-          baseWorkspaceRevision: 0,
-          baseProjectRevision: 0
+          content: "不得直写"
         },
         {
           id: "long-write-forbidden",

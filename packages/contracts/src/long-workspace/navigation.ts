@@ -22,11 +22,7 @@ import {
   validateContiguousOrder,
   validateUniqueValues
 } from "./index-validation-helpers";
-import {
-  LongRevisionSchema,
-  LongTimestampSchema,
-  LongTitleSchema
-} from "./primitives";
+import { LongTimestampSchema, LongTitleSchema } from "./primitives";
 import { LongWorldbuildingFormatSchema } from "./worldbuilding";
 
 export const LongWorkspaceNavigationCountsSchema = z
@@ -96,20 +92,18 @@ const LongChapterCardNavigationEntrySchema = z
 export const LongWorkspaceNavigationSnapshotSchema = z
   .object({
     schemaVersion: LongWorkspaceSchemaVersionSchema,
-    revision: LongRevisionSchema,
     bookId: LongBookIdSchema,
     updatedAt: LongTimestampSchema,
     counts: LongWorkspaceNavigationCountsSchema,
     worldbuilding: z.array(LongWorldbuildingNavigationEntrySchema).max(10_000),
     characterTypes: z
       .array(LongCharacterTypeNavigationEntrySchema)
-      .min(1)
       .max(10_000)
       .default(() =>
         DEFAULT_LONG_CHARACTER_TYPES.map((value) => ({ ...value }))
       ),
     characters: z.array(LongCharacterNavigationEntrySchema).max(100_000),
-    volumes: z.array(LongVolumeNavigationEntrySchema).min(1).max(10_000),
+    volumes: z.array(LongVolumeNavigationEntrySchema).max(10_000),
     arcs: z.array(LongArcNavigationEntrySchema).max(100_000),
     chapterCards: z.array(LongChapterCardNavigationEntrySchema).max(100_000),
     committedThroughChapterId: LongChapterCardIdSchema.nullable()
@@ -321,7 +315,6 @@ export function createLongWorkspaceNavigationSnapshot(
 ): LongWorkspaceNavigationSnapshot {
   return LongWorkspaceNavigationSnapshotSchema.parse({
     schemaVersion: workspace.schemaVersion,
-    revision: workspace.revision,
     bookId: workspace.bookId,
     updatedAt: workspace.updatedAt,
     counts: {

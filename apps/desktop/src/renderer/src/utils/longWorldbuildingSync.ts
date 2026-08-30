@@ -1,5 +1,4 @@
 import {
-  EMPTY_LONG_MARKDOWN_REVISION,
   LongWorkspaceOperationBatchSchema,
   createEmptyLongMarkdownFileReference,
   longWorldbuildingContentPath,
@@ -10,7 +9,6 @@ import {
   longWorldbuildingOverviewFileId,
   type LongDocumentWriteProposal,
   type LongFileId,
-  type LongFileRevision,
   type LongWorkspaceIndexSnapshot,
   type LongWorkspaceOperation,
   type LongWorkspaceOperationBatch,
@@ -36,9 +34,6 @@ export interface BuildLongWorldbuildingSyncBatchInput {
   contents: LongWorldbuildingContentByFileId;
   updatedAt?: string;
   createId?: (prefix: string) => string;
-  createFileRevision?: (
-    content: string
-  ) => LongFileRevision | Promise<LongFileRevision>;
 }
 
 export interface LongWorldbuildingSyncBatchPlan {
@@ -80,20 +75,6 @@ export function filterPreservedWorldbuildingCategoryIds(
     .filter((category) => isLongMigrationEvidenceCategoryId(category.id))
     .sort((left, right) => left.order - right.order)
     .map(({ id }) => id);
-}
-
-export async function createLongMarkdownFileRevision(
-  content: string
-): Promise<LongFileRevision> {
-  if (content === "") {
-    return EMPTY_LONG_MARKDOWN_REVISION;
-  }
-  const bytes = new TextEncoder().encode(content);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  const hash = Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
-  return `v2:${bytes.byteLength}:${hash}` as LongFileRevision;
 }
 
 export async function readLongDocumentFullContent(
@@ -153,10 +134,7 @@ async function cloneCategoryForSync(
   order: number,
   updatedAt: string,
   contents: LongWorldbuildingContentByFileId,
-  createId: (prefix: string) => string,
-  createFileRevision: (
-    content: string
-  ) => LongFileRevision | Promise<LongFileRevision>
+  createId: (prefix: string) => string
 ): Promise<{
   category: LongWorldbuildingCategory;
   writes: LongDocumentWriteProposal[];
@@ -168,13 +146,10 @@ async function cloneCategoryForSync(
   ): Promise<void> => {
     const content = contents[sourceFileId] ?? "";
     if (!content) return;
-    const nextRevision = await createFileRevision(content);
     writes.push({
       proposalId: proposalIdForFile(fileId),
       fileId,
       mode: "create",
-      expectedRevision: null,
-      nextRevision,
       updatedAt,
       content,
       reason: "从其他长篇同步世界观正文"
@@ -254,8 +229,6 @@ export async function buildLongWorldbuildingSyncBatch(
 ): Promise<LongWorldbuildingSyncBatchPlan> {
   const updatedAt = input.updatedAt ?? new Date().toISOString();
   const createId = input.createId ?? createSharedId;
-  const createFileRevision =
-    input.createFileRevision ?? createLongMarkdownFileRevision;
   const sourceCategories = filterSyncableWorldbuildingCategories(
     input.source.worldbuilding
   );
@@ -271,8 +244,7 @@ export async function buildLongWorldbuildingSyncBatch(
   );
   const operations: LongWorkspaceOperation[] = deletable.map((category) => ({
     type: "worldbuilding.delete",
-    id: category.id,
-    cascade: true
+    id: category.id
   }));
   const documentWrites: LongDocumentWriteProposal[] = [];
   const createdIds: string[] = [];
@@ -283,8 +255,7 @@ export async function buildLongWorldbuildingSyncBatch(
       index + 1,
       updatedAt,
       input.contents,
-      createId,
-      createFileRevision
+      createId
     );
     operations.push({
       type: "worldbuilding.create",
@@ -303,7 +274,6 @@ export async function buildLongWorldbuildingSyncBatch(
   }
 
   const batch = LongWorkspaceOperationBatchSchema.parse({
-    baseRevision: input.target.revision,
     updatedAt,
     operations,
     documentWrites

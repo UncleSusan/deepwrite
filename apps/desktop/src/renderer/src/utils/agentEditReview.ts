@@ -99,8 +99,10 @@ export function expectedMutationDurableRevision(
     return createShortWorkspaceContentRevision(currentText);
   }
   return existingProposal.status === "accepted"
-    ? existingProposal.proposedRevision
-    : existingProposal.baseRevision;
+    ? (existingProposal.proposedRevision ??
+        createShortWorkspaceContentRevision(currentText))
+    : (existingProposal.baseRevision ??
+        createShortWorkspaceContentRevision(currentText));
 }
 
 export function resolveAgentEditorMutationText(

@@ -4,6 +4,7 @@ import {
   SessionUserInputResponseAcceptedPayloadSchema,
   SessionPromptAcceptedPayloadSchema,
   createEnvelope,
+  isDeepSeekWebSearchCompatible,
   type AgentProviderRuntimeConfig,
   type CommandEnvelope,
   type CommandResult
@@ -123,6 +124,13 @@ export async function handleSessionCommands(
       const runtimeConfig = await ctx
         .requireModelConfigStore()
         .resolve(command.payload.modelId);
+      if (command.payload.webSearchEnabled === true) {
+        if (!runtimeConfig || !isDeepSeekWebSearchCompatible(runtimeConfig)) {
+          throw new Error(
+            "智能搜索仅支持 Provider 为 DeepSeek，且 API 类型为 OpenAI Responses 或 Anthropic Messages 的模型。"
+          );
+        }
+      }
       const chatAssistantRuntimeContext =
         command.payload.mode === "chat-assistant"
           ? await resolveChatAssistantRuntimeContext(
@@ -144,6 +152,8 @@ export async function handleSessionCommands(
         command.payload.workspaceContext?.libraryWorkspace;
       const learningImitation =
         command.payload.workspaceContext?.learningImitation;
+      const longBookAnalysis =
+        command.payload.workspaceContext?.longBookAnalysis;
       const creativeWorkspace = shortWorkspace ?? scriptWorkspace;
       const creativeWorkspaceType = scriptWorkspace ? "script" : "short";
       const agentProfile = creativeWorkspace
@@ -197,6 +207,11 @@ export async function handleSessionCommands(
             .requireLearningImitationConfigStore()
             .resolve(learningImitation.stageId)
         : undefined;
+      const longBookAnalysisProfile = longBookAnalysis
+        ? await ctx
+            .requireLongBookAnalysisConfigStore()
+            .resolve(longBookAnalysis.presetId)
+        : undefined;
       const { thinkingLevel, temperature } = resolveModelRunSettings(
         runtimeConfig,
         {
@@ -237,7 +252,8 @@ export async function handleSessionCommands(
               ? { subagentRuntimeConfigs }
               : {}),
             ...(libraryAgentProfile ? { libraryAgentProfile } : {}),
-            ...(learningImitationProfile ? { learningImitationProfile } : {})
+            ...(learningImitationProfile ? { learningImitationProfile } : {}),
+            ...(longBookAnalysisProfile ? { longBookAnalysisProfile } : {})
           },
           { id: command.id, context: command.context }
         )

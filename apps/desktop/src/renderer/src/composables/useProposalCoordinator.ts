@@ -51,15 +51,17 @@ import {
 } from "../utils/draftSectionCreationRevision";
 import { findLongWorldbuildingFile } from "../utils/longWorldbuildingFiles";
 import { resolveProvisionalWriteStagingMode } from "../utils/provisionalExpertSectionStaging";
-import {
-  buildLongEditUndoBatch,
-  textEditDiscardSnapshot
-} from "../utils/acceptedEditDiscard";
+import { textEditDiscardSnapshot } from "../utils/acceptedEditDiscard";
 import {
   longCharacterBatchForFiles,
   longWorldbuildingBatchForFile
 } from "./proposal-coordinator/long-file-proposal-batches";
-import { longProjectRevisionMatchesProposalChain } from "./proposal-coordinator/long-project-revision-chain";
+import {
+  holdLongProposalForManualReview,
+  isLongImpactMismatch,
+  moveLongProposalToManualReview,
+  previewLongProposalImpact
+} from "./proposal-coordinator/long-impact-approval";
 import { createPlotStructureProposalLane } from "./proposal-coordinator/plot-structure-lane";
 import { createProposalQueue } from "./proposal-coordinator/queue";
 import {
@@ -328,7 +330,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     proposal: AgentEditProposal
   ): string {
     return expectedDraftSectionCreationRevision(
-      proposal.baseRevision,
+      proposal.baseRevision ?? proposal.id,
       acceptedDraftSectionCreationRevisions.get(
         draftSectionCreationRevisionKey(proposal.runId, proposal.workspaceId)
       )
@@ -346,7 +348,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     acceptedDraftSectionCreationRevisions.set(
       key,
       advanceDraftSectionCreationRevision(
-        proposal.baseRevision,
+        proposal.baseRevision ?? proposal.id,
         currentRevision,
         acceptedDraftSectionCreationRevisions.get(key)
       )
@@ -675,7 +677,8 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
           title: realDocument.title,
           provisionalExpertSection: false,
           baseRevision: proposal.predecessorProposalId
-            ? proposal.baseRevision
+            ? (proposal.baseRevision ??
+              createShortWorkspaceContentRevision(realDocument.content))
             : createShortWorkspaceContentRevision(realDocument.content),
           statusMessage:
             proposal.statusMessage ??
@@ -804,13 +807,13 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       )
     )
       return 0;
-    if (proposal.longWorldbuildingTarget?.file.beforeRevision !== null) {
+    if (proposal.longWorldbuildingTarget) {
       return proposal.predecessorProposalId ? 1 : 2;
     }
     if (
       proposal.longCharacterTarget &&
       proposal.longCharacterTarget.files.some(
-        ({ beforeRevision }) => beforeRevision !== null
+        ({ operation }) => operation !== "create"
       )
     ) {
       return proposal.predecessorProposalId ? 1 : 2;
@@ -889,9 +892,9 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     const seen = new Set<string>();
     while (cursor && !seen.has(cursor.id)) {
       seen.add(cursor.id);
-      compatible.add(cursor.baseRevision);
+      if (cursor.baseRevision) compatible.add(cursor.baseRevision);
       if (cursor.status === "accepting" || cursor.status === "accepted") {
-        compatible.add(cursor.proposedRevision);
+        if (cursor.proposedRevision) compatible.add(cursor.proposedRevision);
       }
       cursor = cursor.predecessorProposalId
         ? conversation.getEditProposal(runId, cursor.predecessorProposalId)
@@ -907,10 +910,10 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     proposal: AgentEditProposal | undefined
   ): string | undefined {
     if (proposal?.status === "rejected") {
-      return "此前版本已被拒绝；为避免把被拒内容随后续全文重新带回，本次变更已阻断。";
+      return "前序修改已被拒绝；为避免把被拒内容随后续全文重新带回，本次变更已阻断。";
     }
     if (proposal?.status === "conflict") {
-      return "此前版本存在冲突，本次后续变更已阻断，未覆盖当前文稿。";
+      return "前序修改存在冲突，本次后续变更已阻断，未覆盖当前文稿。";
     }
     return undefined;
   }
@@ -952,7 +955,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         status: "conflict",
         proposedText: undefined,
         statusMessage:
-          "此前正文版本已被拒绝；该版本继承了被拒内容，因此未写入本地文件。"
+          "前序正文修改已被拒绝；这项后续修改继承了被拒内容，因此未写入本地文件。"
       });
     }
   }
@@ -1742,7 +1745,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         const diff = buildAgentTextDiff(realTarget.content, proposedText);
         const identity = resolveAgentEditProposalGeneration(laneId, existing);
         const applyBaseRevision = identity.coalescesExisting
-          ? existing!.baseRevision
+          ? (existing!.baseRevision ?? event.payload.baseRevision)
           : (existing?.proposedRevision ?? event.payload.baseRevision);
         const noChanges =
           proposedRevision === currentRevision &&
@@ -1903,7 +1906,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       const diff = buildAgentTextDiff(baseText, proposedText);
       const identity = resolveAgentEditProposalGeneration(laneId, existing);
       const applyBaseRevision = identity.coalescesExisting
-        ? existing!.baseRevision
+        ? (existing!.baseRevision ?? event.payload.baseRevision)
         : (existing?.proposedRevision ?? event.payload.baseRevision);
       const noChanges =
         proposedRevision === createShortWorkspaceContentRevision("") &&
@@ -2070,7 +2073,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         summary: event.payload.summary,
         status: "pending",
         baseRevision: identity.coalescesExisting
-          ? existing!.baseRevision
+          ? (existing!.baseRevision ?? event.payload.baseRevision)
           : (existing?.proposedRevision ?? event.payload.baseRevision),
         proposedRevision,
         proposedText,
@@ -2216,7 +2219,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     const diff = buildAgentTextDiff(target.content, proposedText);
     const identity = resolveAgentEditProposalGeneration(laneId, existing);
     const applyBaseRevision = identity.coalescesExisting
-      ? existing!.baseRevision
+      ? (existing!.baseRevision ?? event.payload.baseRevision)
       : (existing?.proposedRevision ?? event.payload.baseRevision);
     const noChanges =
       proposedRevision === currentRevision &&
@@ -2326,8 +2329,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     }
     const generation = existing ? (existing.generation ?? 1) + 1 : 1;
     const proposalId = agentEditProposalGenerationId(laneId, generation);
-    const sourceRevision = `long-plot:${event.payload.baseProjectRevision}:${event.payload.batch.baseRevision}`;
-    const proposedRevision = `${sourceRevision}:${event.payload.toolCallId}`;
     const proposalText = longPlotDesignProposalText(event.payload.batch);
     const diff = buildAgentTextDiff("", proposalText);
     const proposal: AgentEditProposal = {
@@ -2335,7 +2336,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       laneId,
       generation,
       approvalMode: runApprovalMode,
-      sourceBaseRevision: sourceRevision,
       ...(existing ? { predecessorProposalId: existing.id } : {}),
       runId: event.payload.runId,
       workspaceId,
@@ -2344,8 +2344,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       title: "剧情设计变更",
       summary: event.payload.summary,
       status: "pending",
-      baseRevision: sourceRevision,
-      proposedRevision,
       proposedText: proposalText,
       toolCallIds: [event.payload.toolCallId],
       additions: diff.additions,
@@ -2356,8 +2354,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       updatedAt: event.timestamp,
       longPlotDesignTarget: {
         bookId: event.payload.bookId,
-        batch: LongWorkspaceOperationBatchSchema.parse(event.payload.batch),
-        baseProjectRevision: event.payload.baseProjectRevision
+        batch: LongWorkspaceOperationBatchSchema.parse(event.payload.batch)
       }
     };
     sourceConversation.upsertEditProposal(event.payload.runId, proposal);
@@ -2421,16 +2418,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       );
       return;
     }
-    if (existing && file.beforeRevision !== existing.proposedRevision) {
-      const message = "世界观文件的待审批版本链已经变化，本次变更未进入审批。";
-      sourceConversation.markToolConflict(
-        event.payload.runId,
-        event.payload.toolCallId,
-        message
-      );
-      uiMessage.warning(message);
-      return;
-    }
     const creationPredecessor =
       file.operation === "create"
         ? undefined
@@ -2440,15 +2427,12 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
               (proposal) =>
                 proposal.longWorldbuildingTarget?.file.fileId === file.fileId &&
                 proposal.longWorldbuildingTarget.file.operation === "create" &&
-                proposal.longWorldbuildingTarget.file.nextRevision ===
-                  file.beforeRevision &&
                 proposal.status !== "rejected" &&
                 proposal.status !== "conflict"
             );
     const generation = existing ? (existing.generation ?? 1) + 1 : 1;
     const proposalId = agentEditProposalGenerationId(laneId, generation);
     const predecessorProposalId = existing?.id ?? creationPredecessor?.id;
-    const beforeRevision = file.beforeRevision ?? `long-missing:${file.fileId}`;
     const diff = buildAgentTextDiff(file.beforeText, file.afterText);
     const noChanges =
       file.operation !== "create" && file.beforeText === file.afterText;
@@ -2457,7 +2441,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       laneId,
       generation,
       approvalMode: runApprovalMode,
-      sourceBaseRevision: beforeRevision,
       ...(predecessorProposalId ? { predecessorProposalId } : {}),
       runId: event.payload.runId,
       workspaceId,
@@ -2466,8 +2449,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       title: file.title,
       summary: event.payload.summary,
       status: noChanges ? "accepted" : "pending",
-      baseRevision: beforeRevision,
-      proposedRevision: file.nextRevision,
       ...(noChanges ? {} : { proposedText: file.afterText }),
       toolCallIds: [event.payload.toolCallId],
       additions: diff.additions,
@@ -2480,7 +2461,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       longWorldbuildingTarget: {
         bookId: event.payload.bookId,
         batch,
-        baseProjectRevision: event.payload.baseProjectRevision,
         file
       }
     };
@@ -2548,20 +2528,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       );
       return;
     }
-    if (
-      !isCreation &&
-      existing &&
-      primaryFile.beforeRevision !== existing.proposedRevision
-    ) {
-      const message = "人物档案的待审批版本链已经变化，本次变更未进入审批。";
-      sourceConversation.markToolConflict(
-        event.payload.runId,
-        event.payload.toolCallId,
-        message
-      );
-      uiMessage.warning(message);
-      return;
-    }
     const creationPredecessor = isCreation
       ? undefined
       : sourceConversation
@@ -2571,8 +2537,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
               proposal.longCharacterTarget?.files.some(
                 (file) =>
                   file.fileId === primaryFile.fileId &&
-                  file.operation === "create" &&
-                  file.nextRevision === primaryFile.beforeRevision
+                  file.operation === "create"
               ) &&
               proposal.status !== "rejected" &&
               proposal.status !== "conflict"
@@ -2580,12 +2545,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     const generation = existing ? (existing.generation ?? 1) + 1 : 1;
     const proposalId = agentEditProposalGenerationId(laneId, generation);
     const predecessorProposalId = existing?.id ?? creationPredecessor?.id;
-    const beforeRevision = isCreation
-      ? `long-missing:${primaryFile.characterId}`
-      : (primaryFile.beforeRevision ?? `long-missing:${primaryFile.fileId}`);
-    const proposedRevision = isCreation
-      ? `long-character-create:${files.map(({ nextRevision }) => nextRevision).join(":")}`
-      : primaryFile.nextRevision;
     const diff = buildAgentTextDiff(
       isCreation ? "" : primaryFile.beforeText,
       primaryFile.afterText
@@ -2597,7 +2556,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       laneId,
       generation,
       approvalMode: runApprovalMode,
-      sourceBaseRevision: beforeRevision,
       ...(predecessorProposalId ? { predecessorProposalId } : {}),
       runId: event.payload.runId,
       workspaceId,
@@ -2608,8 +2566,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         : primaryFile.title,
       summary: event.payload.summary,
       status: noChanges ? "accepted" : "pending",
-      baseRevision: beforeRevision,
-      proposedRevision,
       ...(!noChanges ? { proposedText: primaryFile.afterText } : {}),
       toolCallIds: [event.payload.toolCallId],
       additions: diff.additions,
@@ -2622,7 +2578,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       longCharacterTarget: {
         bookId: event.payload.bookId,
         batch,
-        baseProjectRevision: event.payload.baseProjectRevision,
         files
       }
     };
@@ -2671,16 +2626,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       );
       return;
     }
-    if (existing && file.beforeRevision !== existing.proposedRevision) {
-      const message = "章节正文的待审批版本链已经变化，本次变更未进入审批。";
-      sourceConversation.markToolConflict(
-        event.payload.runId,
-        event.payload.toolCallId,
-        message
-      );
-      uiMessage.warning(message);
-      return;
-    }
     const generation = existing ? (existing.generation ?? 1) + 1 : 1;
     const proposalId = agentEditProposalGenerationId(laneId, generation);
     const diff = buildAgentTextDiff(file.beforeText, file.afterText);
@@ -2690,7 +2635,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       laneId,
       generation,
       approvalMode: runApprovalMode,
-      sourceBaseRevision: file.beforeRevision,
       ...(existing ? { predecessorProposalId: existing.id } : {}),
       runId: event.payload.runId,
       workspaceId,
@@ -2699,8 +2643,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       title: `${file.chapterTitle} / 正文`,
       summary: event.payload.summary,
       status: noChanges ? "accepted" : "pending",
-      baseRevision: file.beforeRevision,
-      proposedRevision: file.nextRevision,
       ...(noChanges ? {} : { proposedText: file.afterText }),
       toolCallIds: [event.payload.toolCallId],
       additions: diff.additions,
@@ -2713,7 +2655,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       longDraftTarget: {
         bookId: event.payload.bookId,
         batch: event.payload.batch,
-        baseProjectRevision: event.payload.baseProjectRevision,
         file
       }
     };
@@ -3482,7 +3423,8 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       rememberAcceptedDraftSectionCreation(
         proposal,
         currentExpertDraftDirectoryRevision(proposal.workspaceId) ??
-          proposal.baseRevision
+          proposal.baseRevision ??
+          proposal.id
       );
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",
@@ -3721,6 +3663,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     });
     setAgentEditWorkspaceAccepting(proposal.workspaceId, true);
     let applied = false;
+    let attemptedBatch: LongWorkspaceOperationBatch | undefined;
     try {
       if (activeLongBookId.value === target.bookId) {
         await nextTick();
@@ -3728,74 +3671,51 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
           throw new Error("当前长篇编辑内容尚未保存，未覆盖剧情设计。");
         }
       }
-      const latest = await api.getWorkspaceIndex({ bookId: target.bookId });
+      const batch = LongWorkspaceOperationBatchSchema.parse(target.batch);
+      attemptedBatch = batch;
+      let expectedImpact = target.expectedImpact;
+      if (!expectedImpact) {
+        expectedImpact = await previewLongProposalImpact(
+          api,
+          target.bookId,
+          batch,
+          "剧情设计"
+        );
+      }
       if (
-        !longProjectRevisionMatchesProposalChain({
-          proposals: conversation.listEditProposals(request.runId),
-          proposal,
-          baseProjectRevision: target.baseProjectRevision,
-          latestProjectRevision: latest.projectRevision
+        holdLongProposalForManualReview({
+          automatic,
+          hadExpectedImpact: Boolean(target.expectedImpact),
+          batch,
+          confirmation: expectedImpact,
+          conversation,
+          runId: request.runId,
+          proposalId: request.proposalId,
+          patch: {
+            longPlotDesignTarget: { ...target, batch, expectedImpact }
+          },
+          statusMessage:
+            "已读取本次结构与关联影响，请核对下方影响后再次确认保存。",
+          notificationMessage: "请核对剧情设计及关联影响后再次确认保存",
+          removeQueued: removeQueuedAgentEdit,
+          notify: uiMessage.info
         })
       ) {
-        const message =
-          "剧情设计已在审阅期间发生变化，未覆盖最新结构。请基于当前内容重新生成。";
-        conversation.updateEditProposal(request.runId, request.proposalId, {
-          status: "conflict",
-          statusMessage: message
-        });
-        uiMessage.warning(message);
         return;
-      }
-      const batch = LongWorkspaceOperationBatchSchema.parse({
-        ...target.batch,
-        baseRevision: latest.workspaceIndex.revision
-      });
-      const preview = await api.previewOperations({
-        bookId: target.bookId,
-        batch
-      });
-      if (
-        preview.bookId !== target.bookId ||
-        preview.projectRevision !== latest.projectRevision
-      ) {
-        throw new Error(
-          "长篇项目已在审批期间更新，请基于最新剧情设计重新生成。"
-        );
       }
       const result = await api.applyOperations({
         bookId: target.bookId,
         batch: LongWorkspaceOperationBatchSchema.parse({
           ...batch,
-          expectedImpact: preview.preview.impact
-        }),
-        baseProjectRevision: latest.projectRevision
+          expectedImpact
+        })
       });
       applied = true;
-      const longUndoBatch = buildLongEditUndoBatch(batch, preview.preview);
-      conversation.updateEditProposal(request.runId, request.proposalId, {
-        longPlotDesignTarget: {
-          ...target,
-          appliedProjectRevision: result.projectRevision
-        }
-      });
       longBooks.value = replaceLongBookSummary(longBooks.value, result.summary);
       const refreshed = await refreshLongProposalWorkspace(target.bookId);
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",
         proposedText: undefined,
-        ...(longUndoBatch
-          ? {
-              discardSnapshot: {
-                ...proposal.discardSnapshot,
-                appliedProjectRevision: result.projectRevision,
-                longUndoBatch
-              }
-            }
-          : {}),
-        longPlotDesignTarget: {
-          ...target,
-          appliedProjectRevision: result.projectRevision
-        },
         statusMessage: refreshed
           ? `${automatic ? "已自动批准并" : "已接受并"}保存剧情设计。`
           : "剧情设计已保存，但界面刷新失败；请手动刷新长篇工作区。"
@@ -3804,9 +3724,45 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         uiMessage.success("已接受并保存剧情设计");
       }
     } catch (error: unknown) {
+      let currentError = error;
+      if (
+        !applied &&
+        target.expectedImpact &&
+        attemptedBatch &&
+        isLongImpactMismatch(error)
+      ) {
+        try {
+          const expectedImpact = await previewLongProposalImpact(
+            api,
+            target.bookId,
+            attemptedBatch,
+            "剧情设计"
+          );
+          moveLongProposalToManualReview({
+            conversation,
+            runId: request.runId,
+            proposalId: request.proposalId,
+            patch: {
+              longPlotDesignTarget: {
+                ...target,
+                batch: attemptedBatch,
+                expectedImpact
+              }
+            },
+            statusMessage:
+              "关联影响已变化，已更新下方影响；请重新核对并再次确认保存。",
+            notificationMessage: "剧情设计的关联影响已变化，请重新确认",
+            removeQueued: removeQueuedAgentEdit,
+            notify: uiMessage.warning
+          });
+          return;
+        } catch (previewError: unknown) {
+          currentError = previewError;
+        }
+      }
       const message =
-        error instanceof Error
-          ? error.message
+        currentError instanceof Error
+          ? currentError.message
           : "保存剧情设计失败，当前结构保持不变。";
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: applied ? "accepted" : "error",
@@ -3859,13 +3815,14 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         target.file.operation === "create"
           ? automatic
             ? "正在自动批准并创建世界观文件…"
-            : "正在校验目录版本并创建世界观文件…"
+            : "正在创建世界观文件…"
           : automatic
-            ? "正在自动批准、校验版本并保存世界观文件…"
-            : "正在校验版本并保存世界观文件…"
+            ? "正在自动批准并保存世界观文件…"
+            : "正在保存世界观文件…"
     });
     setAgentEditWorkspaceAccepting(proposal.workspaceId, true);
     let applied = false;
+    let attemptedBatch: LongWorkspaceOperationBatch | undefined;
     try {
       if (activeLongBookId.value === target.bookId) {
         await nextTick();
@@ -3880,15 +3837,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         latest.workspaceIndex.worldbuilding,
         target.file.fileId
       );
-      if (currentFile?.revision === target.file.nextRevision) {
-        conversation.updateEditProposal(request.runId, request.proposalId, {
-          status: "accepted",
-          proposedText: undefined,
-          statusMessage: "该世界观文件变更已经存在于本地 Markdown 中。"
-        });
-        await refreshLongProposalWorkspace(target.bookId);
-        return;
-      }
       if (target.file.operation === "create") {
         if (currentFile) {
           const message = "世界观目录已存在同一文件，未重复创建。";
@@ -3899,11 +3847,8 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
           uiMessage.warning(message);
           return;
         }
-      } else if (
-        !currentFile ||
-        currentFile.revision !== target.file.beforeRevision
-      ) {
-        const message = "世界观文件已在审阅期间发生变化，未覆盖最新内容。";
+      } else if (!currentFile) {
+        const message = "目标世界观文件已经不存在，无法保存本次修改。";
         conversation.updateEditProposal(request.runId, request.proposalId, {
           status: "conflict",
           statusMessage: message
@@ -3913,57 +3858,74 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         return;
       }
 
-      const nextOrderByCategory = new Map<string, number>();
-      const batch = LongWorkspaceOperationBatchSchema.parse({
-        ...target.batch,
-        baseRevision: latest.workspaceIndex.revision,
-        operations: target.batch.operations.map((operation) => {
-          if (operation.type !== "worldbuildingItem.create") {
-            return operation;
-          }
-          const category = latest.workspaceIndex.worldbuilding.find(
-            ({ id }) => id === operation.categoryId
-          );
-          if (!category || category.format !== "list") {
-            throw new Error("世界观文件的目标分类已不存在或不再是列表型。");
-          }
-          const nextOrder =
-            (nextOrderByCategory.get(category.id) ?? category.items.length) + 1;
-          nextOrderByCategory.set(category.id, nextOrder);
-          return {
-            ...operation,
-            item: {
-              ...operation.item,
-              order: nextOrder
-            }
-          };
-        })
-      });
-      const preview = await api.previewOperations({
-        bookId: target.bookId,
-        batch
-      });
+      const batch = target.expectedImpact
+        ? LongWorkspaceOperationBatchSchema.parse(target.batch)
+        : LongWorkspaceOperationBatchSchema.parse({
+            ...target.batch,
+            operations: (() => {
+              const nextOrderByCategory = new Map<string, number>();
+              return target.batch.operations.map((operation) => {
+                if (operation.type !== "worldbuildingItem.create") {
+                  return operation;
+                }
+                const category = latest.workspaceIndex.worldbuilding.find(
+                  ({ id }) => id === operation.categoryId
+                );
+                if (!category || category.format !== "list") {
+                  throw new Error(
+                    "世界观文件的目标分类已不存在或不再是列表型。"
+                  );
+                }
+                const nextOrder =
+                  (nextOrderByCategory.get(category.id) ??
+                    category.items.length) + 1;
+                nextOrderByCategory.set(category.id, nextOrder);
+                return {
+                  ...operation,
+                  item: { ...operation.item, order: nextOrder }
+                };
+              });
+            })()
+          });
+      attemptedBatch = batch;
+      let expectedImpact = target.expectedImpact;
+      if (!expectedImpact) {
+        expectedImpact = await previewLongProposalImpact(
+          api,
+          target.bookId,
+          batch,
+          "世界观文件"
+        );
+      }
       if (
-        preview.bookId !== target.bookId ||
-        preview.projectRevision !== latest.projectRevision
+        holdLongProposalForManualReview({
+          automatic,
+          hadExpectedImpact: Boolean(target.expectedImpact),
+          batch,
+          confirmation: expectedImpact,
+          conversation,
+          runId: request.runId,
+          proposalId: request.proposalId,
+          patch: {
+            longWorldbuildingTarget: { ...target, batch, expectedImpact }
+          },
+          statusMessage:
+            "已读取本次文件与关联影响，请核对下方影响后再次确认保存。",
+          notificationMessage: "请核对世界观文件及关联影响后再次确认保存",
+          removeQueued: removeQueuedAgentEdit,
+          notify: uiMessage.info
+        })
       ) {
-        throw new Error("长篇项目已在审批期间更新，请基于最新世界观重新生成。");
+        return;
       }
       const result = await api.applyOperations({
         bookId: target.bookId,
         batch: LongWorkspaceOperationBatchSchema.parse({
           ...batch,
-          expectedImpact: preview.preview.impact
-        }),
-        baseProjectRevision: latest.projectRevision
+          expectedImpact
+        })
       });
       applied = true;
-      conversation.updateEditProposal(request.runId, request.proposalId, {
-        longWorldbuildingTarget: {
-          ...target,
-          appliedProjectRevision: result.projectRevision
-        }
-      });
       longBooks.value = replaceLongBookSummary(longBooks.value, result.summary);
       const refreshed = await refreshLongProposalWorkspace(target.bookId);
       conversation.updateEditProposal(request.runId, request.proposalId, {
@@ -3986,9 +3948,45 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         );
       }
     } catch (error: unknown) {
+      let currentError = error;
+      if (
+        !applied &&
+        target.expectedImpact &&
+        attemptedBatch &&
+        isLongImpactMismatch(error)
+      ) {
+        try {
+          const expectedImpact = await previewLongProposalImpact(
+            api,
+            target.bookId,
+            attemptedBatch,
+            "世界观文件"
+          );
+          moveLongProposalToManualReview({
+            conversation,
+            runId: request.runId,
+            proposalId: request.proposalId,
+            patch: {
+              longWorldbuildingTarget: {
+                ...target,
+                batch: attemptedBatch,
+                expectedImpact
+              }
+            },
+            statusMessage:
+              "关联影响已变化，已更新下方影响；请重新核对并再次确认保存。",
+            notificationMessage: "世界观文件的关联影响已变化，请重新确认",
+            removeQueued: removeQueuedAgentEdit,
+            notify: uiMessage.warning
+          });
+          return;
+        } catch (previewError: unknown) {
+          currentError = previewError;
+        }
+      }
       const message =
-        error instanceof Error
-          ? error.message
+        currentError instanceof Error
+          ? currentError.message
           : "保存世界观文件失败，原文件保持不变。";
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: applied ? "accepted" : "error",
@@ -4043,13 +4041,14 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       statusMessage: isCreation
         ? automatic
           ? "正在自动批准并创建人物档案…"
-          : "正在校验目录版本并创建人物档案…"
+          : "正在创建人物档案…"
         : automatic
-          ? "正在自动批准、校验版本并保存人物档案…"
-          : "正在校验版本并保存人物档案…"
+          ? "正在自动批准并保存人物档案…"
+          : "正在保存人物档案…"
     });
     setAgentEditWorkspaceAccepting(proposal.workspaceId, true);
     let applied = false;
+    let attemptedBatch: LongWorkspaceOperationBatch | undefined;
     try {
       if (activeLongBookId.value === target.bookId) {
         await nextTick();
@@ -4072,20 +4071,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
           [entry.relationships.id, entry.relationships] as const
         ])
       ]);
-      if (
-        target.files.every(
-          (file) =>
-            currentFiles.get(file.fileId)?.revision === file.nextRevision
-        )
-      ) {
-        conversation.updateEditProposal(request.runId, request.proposalId, {
-          status: "accepted",
-          proposedText: undefined,
-          statusMessage: "该人物档案变更已经存在于本地 Markdown 中。"
-        });
-        await refreshLongProposalWorkspace(target.bookId);
-        return;
-      }
       if (isCreation) {
         if (target.files.some((file) => currentFiles.has(file.fileId))) {
           const message = "人物目录已存在同一人物的部分档案，未重复创建。";
@@ -4097,12 +4082,11 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
           return;
         }
       } else {
-        const changed = target.files.find((file) => {
-          const current = currentFiles.get(file.fileId);
-          return !current || current.revision !== file.beforeRevision;
-        });
-        if (changed) {
-          const message = "人物档案已在审阅期间发生变化，未覆盖最新内容。";
+        const missing = target.files.find(
+          (file) => !currentFiles.has(file.fileId)
+        );
+        if (missing) {
+          const message = "目标人物档案已经不存在，无法保存本次修改。";
           conversation.updateEditProposal(request.runId, request.proposalId, {
             status: "conflict",
             statusMessage: message
@@ -4113,52 +4097,67 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         }
       }
 
-      const nextOrderByGroup = new Map<string, number>();
-      const batch = LongWorkspaceOperationBatchSchema.parse({
-        ...target.batch,
-        baseRevision: latest.workspaceIndex.revision,
-        operations: target.batch.operations.map((operation) => {
-          if (operation.type !== "character.create") return operation;
-          const group = operation.character.group;
-          const nextOrder =
-            (nextOrderByGroup.get(group) ??
-              latest.workspaceIndex.characters.filter(
-                (character) => character.group === group
-              ).length) + 1;
-          nextOrderByGroup.set(group, nextOrder);
-          return {
-            ...operation,
-            character: { ...operation.character, order: nextOrder }
-          };
-        })
-      });
-      const preview = await api.previewOperations({
-        bookId: target.bookId,
-        batch
-      });
-      if (
-        preview.bookId !== target.bookId ||
-        preview.projectRevision !== latest.projectRevision
-      ) {
-        throw new Error(
-          "长篇项目已在审批期间更新，请基于最新人物档案重新生成。"
+      const batch = target.expectedImpact
+        ? LongWorkspaceOperationBatchSchema.parse(target.batch)
+        : LongWorkspaceOperationBatchSchema.parse({
+            ...target.batch,
+            operations: (() => {
+              const nextOrderByGroup = new Map<string, number>();
+              return target.batch.operations.map((operation) => {
+                if (operation.type !== "character.create") return operation;
+                const group = operation.character.group;
+                const nextOrder =
+                  (nextOrderByGroup.get(group) ??
+                    latest.workspaceIndex.characters.filter(
+                      (character) => character.group === group
+                    ).length) + 1;
+                nextOrderByGroup.set(group, nextOrder);
+                return {
+                  ...operation,
+                  character: { ...operation.character, order: nextOrder }
+                };
+              });
+            })()
+          });
+      attemptedBatch = batch;
+      let expectedImpact = target.expectedImpact;
+      if (!expectedImpact) {
+        expectedImpact = await previewLongProposalImpact(
+          api,
+          target.bookId,
+          batch,
+          "人物档案"
         );
+      }
+      if (
+        holdLongProposalForManualReview({
+          automatic,
+          hadExpectedImpact: Boolean(target.expectedImpact),
+          batch,
+          confirmation: expectedImpact,
+          conversation,
+          runId: request.runId,
+          proposalId: request.proposalId,
+          patch: {
+            longCharacterTarget: { ...target, batch, expectedImpact }
+          },
+          statusMessage:
+            "已读取本次档案与关联影响，请核对下方影响后再次确认保存。",
+          notificationMessage: "请核对人物档案及关联影响后再次确认保存",
+          removeQueued: removeQueuedAgentEdit,
+          notify: uiMessage.info
+        })
+      ) {
+        return;
       }
       const result = await api.applyOperations({
         bookId: target.bookId,
         batch: LongWorkspaceOperationBatchSchema.parse({
           ...batch,
-          expectedImpact: preview.preview.impact
-        }),
-        baseProjectRevision: latest.projectRevision
+          expectedImpact
+        })
       });
       applied = true;
-      conversation.updateEditProposal(request.runId, request.proposalId, {
-        longCharacterTarget: {
-          ...target,
-          appliedProjectRevision: result.projectRevision
-        }
-      });
       longBooks.value = replaceLongBookSummary(longBooks.value, result.summary);
       const refreshed = await refreshLongProposalWorkspace(target.bookId);
       conversation.updateEditProposal(request.runId, request.proposalId, {
@@ -4178,9 +4177,45 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         );
       }
     } catch (error: unknown) {
+      let currentError = error;
+      if (
+        !applied &&
+        target.expectedImpact &&
+        attemptedBatch &&
+        isLongImpactMismatch(error)
+      ) {
+        try {
+          const expectedImpact = await previewLongProposalImpact(
+            api,
+            target.bookId,
+            attemptedBatch,
+            "人物档案"
+          );
+          moveLongProposalToManualReview({
+            conversation,
+            runId: request.runId,
+            proposalId: request.proposalId,
+            patch: {
+              longCharacterTarget: {
+                ...target,
+                batch: attemptedBatch,
+                expectedImpact
+              }
+            },
+            statusMessage:
+              "关联影响已变化，已更新下方影响；请重新核对并再次确认保存。",
+            notificationMessage: "人物档案的关联影响已变化，请重新确认",
+            removeQueued: removeQueuedAgentEdit,
+            notify: uiMessage.warning
+          });
+          return;
+        } catch (previewError: unknown) {
+          currentError = previewError;
+        }
+      }
       const message =
-        error instanceof Error
-          ? error.message
+        currentError instanceof Error
+          ? currentError.message
           : "保存人物档案失败，原文件保持不变。";
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: applied ? "accepted" : "error",
@@ -4230,11 +4265,12 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     conversation.updateEditProposal(request.runId, request.proposalId, {
       status: "accepting",
       statusMessage: automatic
-        ? "正在自动批准、校验版本并保存章节正文…"
-        : "正在校验版本并保存章节正文…"
+        ? "正在自动批准并保存章节正文…"
+        : "正在保存章节正文…"
     });
     setAgentEditWorkspaceAccepting(proposal.workspaceId, true);
     let applied = false;
+    let attemptedBatch: LongWorkspaceOperationBatch | undefined;
     try {
       if (activeLongBookId.value === target.bookId) {
         await nextTick();
@@ -4255,80 +4291,51 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         uiMessage.warning(message);
         return;
       }
-      if (chapter.body.revision === target.file.nextRevision) {
-        conversation.updateEditProposal(request.runId, request.proposalId, {
-          status: "accepted",
-          proposedText: undefined,
-          statusMessage: "该章节正文变更已经存在于本地 Markdown 中。"
-        });
-        await refreshLongProposalWorkspace(target.bookId);
-        return;
+      const batch = LongWorkspaceOperationBatchSchema.parse(target.batch);
+      attemptedBatch = batch;
+      let expectedImpact = target.expectedImpact;
+      if (!expectedImpact) {
+        expectedImpact = await previewLongProposalImpact(
+          api,
+          target.bookId,
+          batch,
+          "章节正文"
+        );
       }
       if (
-        !longProjectRevisionMatchesProposalChain({
-          proposals: conversation.listEditProposals(request.runId),
-          proposal,
-          baseProjectRevision: target.baseProjectRevision,
-          latestProjectRevision: latest.projectRevision
+        holdLongProposalForManualReview({
+          automatic,
+          hadExpectedImpact: Boolean(target.expectedImpact),
+          batch,
+          confirmation: expectedImpact,
+          conversation,
+          runId: request.runId,
+          proposalId: request.proposalId,
+          patch: {
+            longDraftTarget: { ...target, batch, expectedImpact }
+          },
+          statusMessage:
+            "已读取本次正文与关联影响，请核对下方影响后再次确认保存。",
+          notificationMessage: "请核对章节正文及关联影响后再次确认保存",
+          removeQueued: removeQueuedAgentEdit,
+          notify: uiMessage.info
         })
       ) {
-        const message =
-          "章节正文已在审阅期间发生变化，未覆盖最新内容。请基于当前正文重新生成。";
-        conversation.updateEditProposal(request.runId, request.proposalId, {
-          status: "conflict",
-          statusMessage: message
-        });
-        uiMessage.warning(message);
         return;
-      }
-      if (chapter.body.revision !== target.file.beforeRevision) {
-        const message = "章节正文已在审阅期间发生变化，未覆盖最新内容。";
-        conversation.updateEditProposal(request.runId, request.proposalId, {
-          status: "conflict",
-          statusMessage: message
-        });
-        await refreshLongProposalWorkspace(target.bookId);
-        uiMessage.warning(message);
-        return;
-      }
-      const batch = LongWorkspaceOperationBatchSchema.parse({
-        ...target.batch,
-        baseRevision: latest.workspaceIndex.revision
-      });
-      const preview = await api.previewOperations({
-        bookId: target.bookId,
-        batch
-      });
-      if (
-        preview.bookId !== target.bookId ||
-        preview.projectRevision !== latest.projectRevision
-      ) {
-        throw new Error("长篇项目已在审批期间更新，请基于最新正文重新生成。");
       }
       const result = await api.applyOperations({
         bookId: target.bookId,
         batch: LongWorkspaceOperationBatchSchema.parse({
           ...batch,
-          expectedImpact: preview.preview.impact
-        }),
-        baseProjectRevision: latest.projectRevision
+          expectedImpact
+        })
       });
       applied = true;
-      conversation.updateEditProposal(request.runId, request.proposalId, {
-        longDraftTarget: {
-          ...target,
-          appliedProjectRevision: result.projectRevision
-        }
-      });
       longBooks.value = replaceLongBookSummary(longBooks.value, result.summary);
       const refreshed = await refreshLongProposalWorkspace(target.bookId);
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: "accepted",
         proposedText: undefined,
-        longDraftTarget: {
-          ...target,
-          appliedProjectRevision: result.projectRevision
-        },
         statusMessage: refreshed
           ? `${automatic ? "已自动批准并" : "已接受并"}保存章节正文到本地 Markdown。`
           : "章节正文已保存，但界面刷新失败；请手动刷新长篇工作区。"
@@ -4337,9 +4344,45 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         uiMessage.success("已接受并保存章节正文");
       }
     } catch (error: unknown) {
+      let currentError = error;
+      if (
+        !applied &&
+        target.expectedImpact &&
+        attemptedBatch &&
+        isLongImpactMismatch(error)
+      ) {
+        try {
+          const expectedImpact = await previewLongProposalImpact(
+            api,
+            target.bookId,
+            attemptedBatch,
+            "章节正文"
+          );
+          moveLongProposalToManualReview({
+            conversation,
+            runId: request.runId,
+            proposalId: request.proposalId,
+            patch: {
+              longDraftTarget: {
+                ...target,
+                batch: attemptedBatch,
+                expectedImpact
+              }
+            },
+            statusMessage:
+              "关联影响已变化，已更新下方影响；请重新核对并再次确认保存。",
+            notificationMessage: "章节正文的关联影响已变化，请重新确认",
+            removeQueued: removeQueuedAgentEdit,
+            notify: uiMessage.warning
+          });
+          return;
+        } catch (previewError: unknown) {
+          currentError = previewError;
+        }
+      }
       const message =
-        error instanceof Error
-          ? error.message
+        currentError instanceof Error
+          ? currentError.message
           : "保存章节正文失败，原文件保持不变。";
       conversation.updateEditProposal(request.runId, request.proposalId, {
         status: applied ? "accepted" : "error",
@@ -4378,7 +4421,8 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       reservation &&
       proposal.status === "accepting" &&
       proposal.decisionToken === reservation.decisionToken &&
-      proposal.proposedRevision === reservation.expectedProposedRevision
+      (proposal.proposedRevision ?? proposal.id) ===
+        reservation.expectedProposedRevision
     );
     if (reservation && !reserved) {
       return;
@@ -4461,7 +4505,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
         predecessor.status === "error"
       ) {
         const message =
-          "前一版智能体修改未能落盘，本版依赖已阻断，没有覆盖当前文稿。";
+          "前序智能体修改未能落盘，当前这项依赖已阻断，没有覆盖当前文稿。";
         conversation.updateEditProposal(request.runId, request.proposalId, {
           status: "conflict",
           proposedText: undefined,
@@ -4472,7 +4516,7 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
       if (predecessor.status !== "accepted") {
         conversation.updateEditProposal(request.runId, request.proposalId, {
           status: "pending",
-          statusMessage: "正在等待前一版修改完成落盘…"
+          statusMessage: "正在等待前序修改完成落盘…"
         });
         return;
       }
@@ -5119,12 +5163,6 @@ export function useProposalCoordinator(context: ProposalCoordinatorContext) {
     discardAgentEdit: (
       ...args: Parameters<typeof acceptedEditDiscard.discardAgentEdit>
     ) => invokeWhileActive(() => acceptedEditDiscard.discardAgentEdit(...args)),
-    discardLongAgentEdit: (
-      ...args: Parameters<typeof acceptedEditDiscard.discardLongAgentEdit>
-    ) =>
-      invokeWhileActive(() =>
-        acceptedEditDiscard.discardLongAgentEdit(...args)
-      ),
     scheduleQueuedAgentEdits: (
       ...args: Parameters<typeof scheduleQueuedAgentEdits>
     ) => {

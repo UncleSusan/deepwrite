@@ -45,6 +45,7 @@ const MODULE_META: Record<ModelUsageModule, { label: string; detail: string }> =
     "skill-library": { label: "技能库", detail: "技能库对话与处理" },
     "material-library": { label: "素材库", detail: "素材库对话与处理" },
     "learning-imitation": { label: "学习仿写", detail: "学习和仿写流程" },
+    "long-book-analysis": { label: "长篇拆书", detail: "长篇拆书分析流程" },
     "subagent-authoring": { label: "子智能体", detail: "子智能体生成与执行" },
     "assistant-chat": { label: "聊天助手", detail: "独立聊天助手" },
     "model-test": { label: "模型测试", detail: "模型连接测试" },

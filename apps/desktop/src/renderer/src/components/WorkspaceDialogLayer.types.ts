@@ -15,6 +15,7 @@ import type {
   LongChooseContinuationImportSourceResult,
   LongChooseLegacySyncSourceResult,
   LongImportContinuationInput,
+  LongWorkspaceImpactConfirmation,
   LongLegacySyncModule,
   LongManuscriptExportSection,
   LongWorkspaceIndexSnapshot,
@@ -38,7 +39,11 @@ import type {
   BookResourceDialogMode,
   ResourceTreeNode
 } from "../types/workspace";
-import type { LongStructureMutationCompletion } from "../types/longWorkspace";
+import type {
+  LongStructureMutationCompletion,
+  LongWorldbuildingSyncCompletion,
+  LongWorldbuildingSyncRequest
+} from "../types/longWorkspace";
 import type { LongWorldbuildingSyncBookOption } from "../utils/longWorldbuildingSync";
 
 export interface DialogMutationCompletion {
@@ -152,14 +157,6 @@ export interface LegacySyncDialogModule {
   pending: boolean;
 }
 
-export interface LongRollbackDialogModule {
-  kind: "long-rollback";
-  bookTitle: string;
-  chapterTitle: string;
-  commitSequence: number;
-  pending: boolean;
-}
-
 export interface LongStructureDialogModule {
   kind: "long-structure";
   bookTitle: string;
@@ -200,6 +197,7 @@ export interface CreateLongChapterCardDialogModule {
 export interface DeleteLongDraftDialogModule {
   kind: "delete-long-draft";
   sectionTitle: string;
+  description: string;
   pending: boolean;
 }
 
@@ -213,6 +211,7 @@ export interface DeleteLongTreeDialogModule {
 
 export interface CreateLongVolumeDialogModule {
   kind: "create-long-volume";
+  source: "book-line" | "draft";
   pending: boolean;
 }
 
@@ -318,7 +317,6 @@ export type WorkspaceDialogModule =
   | BookTransferDialogModule
   | ContinuationImportDialogModule
   | LegacySyncDialogModule
-  | LongRollbackDialogModule
   | LongStructureDialogModule
   | CreateLongCharacterDialogModule
   | CreateLongWorldbuildingItemDialogModule
@@ -352,7 +350,6 @@ export const WORKSPACE_DIALOG_KINDS = [
   "book-transfer",
   "continuation-import",
   "legacy-sync",
-  "long-rollback",
   "long-structure",
   "create-long-character",
   "create-long-worldbuilding-item",
@@ -406,9 +403,11 @@ export interface WorkspaceDialogLayerEmits {
   confirmContinuationImport: [input: LongImportContinuationInput];
   closeLegacySync: [];
   confirmLegacySync: [modules: LongLegacySyncModule[]];
-  closeLongRollback: [];
-  confirmLongRollback: [];
   closeLongStructure: [];
+  previewLongStructureMutation: [
+    batch: LongWorkspaceOperationBatch,
+    completion: (impact?: LongWorkspaceImpactConfirmation) => void
+  ];
   longStructureMutation: [
     batch: LongWorkspaceOperationBatch,
     completion: LongStructureMutationCompletion
@@ -418,8 +417,8 @@ export interface WorkspaceDialogLayerEmits {
     completion: LongStructureMutationCompletion
   ];
   syncLongWorldbuilding: [
-    payload: { sourceBookId: string; sourceTitle: string },
-    completion: LongStructureMutationCompletion
+    payload: LongWorldbuildingSyncRequest,
+    completion: LongWorldbuildingSyncCompletion
   ];
   closeCreateLongCharacter: [];
   submitCreateLongCharacter: [input: { name: string; aliases: string[] }];

@@ -33,6 +33,7 @@ import type {
   LongDraftSectionDeleteTarget,
   LongPlotPointCreateTarget,
   LongTreeItemDeleteTarget,
+  LongVolumeCreateTarget,
   LongWorldbuildingItemCreateTarget
 } from "../stores/longWorkspaceStore";
 
@@ -40,9 +41,6 @@ type DialogModule<Kind extends WorkspaceDialogKind> = Extract<
   WorkspaceDialogModule,
   { kind: Kind }
 >;
-type LongRollbackCommit =
-  LongWorkspaceIndexSnapshot["ledger"]["commits"][number];
-
 export const WORKSPACE_DIALOG_PRIORITY = [
   "startup-alert",
   "save-conflict",
@@ -50,7 +48,6 @@ export const WORKSPACE_DIALOG_PRIORITY = [
   "delete-expert-section",
   "continuation-import",
   "legacy-sync",
-  "long-rollback",
   "create-long-character",
   "create-long-worldbuilding-item",
   "create-long-plot-point",
@@ -105,7 +102,7 @@ export interface WorkspaceDialogLongStructureState {
   chapterCardCreation: Readonly<Ref<LongChapterCardCreateTarget | null>>;
   draftDeletion: Readonly<Ref<LongDraftSectionDeleteTarget | null>>;
   treeDeletion: Readonly<Ref<LongTreeItemDeleteTarget | null>>;
-  volumeCreation: Readonly<Ref<Readonly<{ bookId: string }> | null>>;
+  volumeCreation: Readonly<Ref<LongVolumeCreateTarget | null>>;
   dialogOpen: Readonly<Ref<boolean>>;
   agentsMd: Readonly<Ref<string | null>>;
   agentsMdPending: Readonly<Ref<boolean>>;
@@ -119,10 +116,6 @@ export interface WorkspaceDialogLongLifecycleState {
   legacyPreview: Readonly<Ref<DialogModule<"legacy-sync">["preview"]>>;
   legacyResult: Readonly<Ref<DialogModule<"legacy-sync">["result"]>>;
   mutationPending: Readonly<Ref<boolean>>;
-  rollbackDialogOpen: Readonly<Ref<boolean>>;
-  rollbackCommit: Readonly<Ref<LongRollbackCommit | null | undefined>>;
-  rollbackChapterTitle: Readonly<Ref<string>>;
-  rollbackPending: Readonly<Ref<boolean>>;
   activeBookSummary: Readonly<Ref<LongBookSummary | null>>;
   activeBookId: Readonly<Ref<string | null>>;
   workspaceIndex: Readonly<Ref<LongWorkspaceIndexSnapshot | null>>;
@@ -244,19 +237,6 @@ export function useWorkspaceDialogModuleCoordinator(
       };
     }
 
-    if (options.longLifecycle.rollbackDialogOpen.value) {
-      const rollbackCommit = options.longLifecycle.rollbackCommit.value;
-      if (rollbackCommit) {
-        return {
-          kind: "long-rollback",
-          bookTitle: options.longLifecycle.activeBookSummary.value?.title ?? "",
-          chapterTitle: options.longLifecycle.rollbackChapterTitle.value,
-          commitSequence: rollbackCommit.sequence,
-          pending: options.longLifecycle.rollbackPending.value
-        };
-      }
-    }
-
     const characterCreation = options.longStructure.characterCreation.value;
     if (characterCreation) {
       return {
@@ -301,6 +281,7 @@ export function useWorkspaceDialogModuleCoordinator(
       return {
         kind: "delete-long-draft",
         sectionTitle: draftDeletion.title,
+        description: draftDeletion.description,
         pending: options.longLifecycle.bookActionPending.value
       };
     }
@@ -316,9 +297,11 @@ export function useWorkspaceDialogModuleCoordinator(
       };
     }
 
-    if (options.longStructure.volumeCreation.value) {
+    const volumeCreation = options.longStructure.volumeCreation.value;
+    if (volumeCreation) {
       return {
         kind: "create-long-volume",
+        source: volumeCreation.source,
         pending: options.longLifecycle.bookActionPending.value
       };
     }

@@ -57,7 +57,6 @@ const emit = defineEmits<{
   rejectLongProposal: [eventId: string];
   retryLongProposalPreview: [eventId: string];
   locateLongProposal: [eventId: string];
-  discardLongProposal: [eventId: string];
 }>();
 
 const hasStreamingAssistant = computed(() =>
@@ -176,7 +175,6 @@ watch(
         @reject-long-proposal="emit('rejectLongProposal', $event)"
         @retry-long-proposal-preview="emit('retryLongProposalPreview', $event)"
         @locate-long-proposal="emit('locateLongProposal', $event)"
-        @discard-long-proposal="emit('discardLongProposal', $event)"
         @request-edit="requestEdit"
         @cancel-edit="cancelEdit"
       />

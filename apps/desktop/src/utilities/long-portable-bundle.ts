@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import {
+  LONG_WORKSPACE_DELETED_LATEST_HANDOFF_SUMMARY,
   LongContinuityProjectionSchema,
-  LongLedgerCommitRecordSchema,
   LongProjectManifestSchema,
   LongWorkspaceFileReferenceSchema,
   LongWorkspaceIndexSnapshotSchema,
@@ -12,7 +12,6 @@ import {
   longWorldbuildingOverviewContentPath,
   longWorldbuildingOverviewFileId,
   parseLongWorldbuildingMarkdownList,
-  type LongContinuityHandoff,
   type LongContinuityProjection,
   type LongLedgerCommitRecord,
   type LongLedgerCommitIndexEntry,
@@ -21,6 +20,10 @@ import {
   type LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
 import { assertLongV4LedgerFileAudit } from "./long-ledger-v4-audit";
+import {
+  parseLongLedgerCommitRecord,
+  stripLegacyLongVersionMetadata
+} from "./long-version-metadata";
 
 export const LONG_PORTABLE_BUNDLE_SCHEMA =
   "deepwrite.long-book.portable" as const;
@@ -46,7 +49,6 @@ export interface LongPortableBundleFile {
   id: string;
   path: string;
   kind: "markdown" | "ledger-record";
-  revision: string;
   sha256: string;
   content: string;
 }
@@ -80,18 +82,6 @@ function sha256(content: string | Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
-function contentRevision(content: string): string {
-  return `v2:${Buffer.byteLength(content, "utf8")}:${sha256(content)}`;
-}
-
-function revisionMatchesContent(revision: string, content: string): boolean {
-  const bytes = Buffer.from(content, "utf8");
-  const match = /^(v1|v2):(\d+):([0-9a-f]+)$/u.exec(revision);
-  if (!match || Number(match[2]) !== bytes.byteLength) return false;
-  const digest = sha256(bytes);
-  return match[1] === "v1" ? digest.startsWith(match[3]!) : digest === match[3];
-}
-
 function continuityFactKey(
   value: Pick<
     LongContinuityProjection["facts"][number],
@@ -114,38 +104,6 @@ function sameContinuityEntity(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function serializeContinuityHandoff(handoff: LongContinuityHandoff): string {
-  const bullets = (items: readonly string[]): string =>
-    items.length === 0
-      ? "- 无"
-      : items
-          .map(
-            (item) =>
-              `- ${item.replace(/\r\n?/gu, "\n").replace(/\n/gu, "\n  ")}`
-          )
-          .join("\n");
-  return [
-    "# 下一章交接",
-    "",
-    "## 摘要",
-    "",
-    handoff.summary,
-    "",
-    "## 必须承接",
-    "",
-    bullets(handoff.mustCarry),
-    "",
-    "## 下一章约束",
-    "",
-    bullets(handoff.nextChapterConstraints),
-    "",
-    "## 未闭合事项",
-    "",
-    bullets(handoff.openLoops),
-    ""
-  ].join("\n");
-}
-
 function replayContinuityProjection(
   records: readonly LongLedgerCommitRecord[]
 ): LongContinuityProjection {
@@ -161,66 +119,61 @@ function replayContinuityProjection(
   const knowledgeIndexByKey = new Map<string, number>();
   const openLoopIndexById = new Map<string, number>();
   for (const record of records) {
-    if (record.schemaVersion !== 3) continue;
-    for (const change of record.factChanges) {
-      const factKey = continuityFactKey(change.after);
-      const idIndex = factIndexById.get(change.after.factId);
-      const keyIndex = factIndexByKey.get(factKey);
-      if (
-        idIndex !== keyIndex ||
-        (change.before === null
-          ? idIndex !== undefined
-          : idIndex === undefined ||
-            !sameContinuityEntity(projection.facts[idIndex], change.before))
-      ) {
-        throw new Error(`连续性事实变更链不一致：${change.after.factId}。`);
+    const replaysTypedContinuity = record.schemaVersion === 3;
+    if (replaysTypedContinuity) {
+      for (const change of record.factChanges) {
+        const factKey = continuityFactKey(change.after);
+        const idIndex = factIndexById.get(change.after.factId);
+        const keyIndex = factIndexByKey.get(factKey);
+        if (
+          idIndex !== undefined &&
+          keyIndex !== undefined &&
+          idIndex !== keyIndex
+        ) {
+          throw new Error(`连续性事实变更链不一致：${change.after.factId}。`);
+        }
+        const existingIndex = idIndex ?? keyIndex;
+        if (existingIndex === undefined) {
+          const nextIndex = projection.facts.length;
+          projection.facts.push({ ...change.after });
+          factIndexById.set(change.after.factId, nextIndex);
+          factIndexByKey.set(factKey, nextIndex);
+        } else {
+          const previous = projection.facts[existingIndex]!;
+          factIndexByKey.delete(continuityFactKey(previous));
+          projection.facts[existingIndex] = { ...change.after };
+          factIndexById.set(change.after.factId, existingIndex);
+          factIndexByKey.set(factKey, existingIndex);
+        }
       }
-      if (idIndex === undefined) {
-        const nextIndex = projection.facts.length;
-        projection.facts.push({ ...change.after });
-        factIndexById.set(change.after.factId, nextIndex);
-        factIndexByKey.set(factKey, nextIndex);
-      } else {
-        projection.facts[idIndex] = { ...change.after };
+      for (const change of record.knowledgeChanges) {
+        const key = continuityKnowledgeKey(change.after);
+        const index = knowledgeIndexByKey.get(key);
+        if (index === undefined) {
+          knowledgeIndexByKey.set(key, projection.knowledge.length);
+          projection.knowledge.push({ ...change.after });
+        } else {
+          projection.knowledge[index] = { ...change.after };
+        }
       }
-    }
-    for (const change of record.knowledgeChanges) {
-      const key = continuityKnowledgeKey(change.after);
-      const index = knowledgeIndexByKey.get(key);
-      if (
-        change.before === null
-          ? index !== undefined
-          : index === undefined ||
-            !sameContinuityEntity(projection.knowledge[index], change.before)
-      ) {
-        throw new Error(`连续性认知变更链不一致：${key}。`);
-      }
-      if (index === undefined) {
-        knowledgeIndexByKey.set(key, projection.knowledge.length);
-        projection.knowledge.push({ ...change.after });
-      } else {
-        projection.knowledge[index] = { ...change.after };
-      }
-    }
-    for (const change of record.openLoopChanges) {
-      const index = openLoopIndexById.get(change.after.loopId);
-      if (
-        change.before === null
-          ? index !== undefined
-          : index === undefined ||
-            !sameContinuityEntity(projection.openLoops[index], change.before)
-      ) {
-        throw new Error(
-          `连续性未闭合事项变更链不一致：${change.after.loopId}。`
-        );
-      }
-      if (index === undefined) {
-        openLoopIndexById.set(change.after.loopId, projection.openLoops.length);
-        projection.openLoops.push({ ...change.after });
-      } else {
-        projection.openLoops[index] = { ...change.after };
+      for (const change of record.openLoopChanges) {
+        const index = openLoopIndexById.get(change.after.loopId);
+        if (index === undefined) {
+          openLoopIndexById.set(
+            change.after.loopId,
+            projection.openLoops.length
+          );
+          projection.openLoops.push({ ...change.after });
+        } else {
+          projection.openLoops[index] = { ...change.after };
+        }
       }
     }
+    const isCleanupHandoffWatermark =
+      record.schemaVersion === 2 &&
+      record.chapterOutputs.handoff.summary ===
+        LONG_WORKSPACE_DELETED_LATEST_HANDOFF_SUMMARY;
+    if (!replaysTypedContinuity && !isCleanupHandoffWatermark) continue;
     projection.throughCommitId = record.id;
     projection.latestHandoff = {
       ...record.chapterOutputs.handoff,
@@ -302,16 +255,11 @@ function validateManifestIndexPair(
   if (manifest.id !== index.bookId) {
     throw new Error("长篇清单与工作区索引的 bookId 不一致。");
   }
-  if (manifest.revision !== index.revision) {
-    throw new Error("长篇清单与工作区索引的项目 revision 不一致。");
-  }
   if (
-    !revisionMatchesContent(
-      manifest.workspaceIndexFile.revision,
-      serializeJson(index)
-    )
+    manifest.updatedAt !== index.updatedAt ||
+    manifest.workspaceIndexFile.updatedAt !== index.updatedAt
   ) {
-    throw new Error("长篇清单中的工作区索引 revision 与索引内容不一致。");
+    throw new Error("长篇清单与工作区索引的更新时间不一致。");
   }
 }
 
@@ -326,7 +274,7 @@ function validateLedgerRecord(
   } catch {
     throw new Error(`账本记录 ${expectedCommitId} 不是有效 JSON。`);
   }
-  const record = LongLedgerCommitRecordSchema.parse(raw);
+  const record = parseLongLedgerCommitRecord(raw);
   if (record.bookId !== expectedBookId || record.id !== expectedCommitId) {
     throw new Error(`账本记录 ${expectedCommitId} 的身份与索引不一致。`);
   }
@@ -349,7 +297,7 @@ export function assertLongLedgerRecordMatchesIndex(
   index: LongWorkspaceIndexSnapshot,
   entry: LongLedgerCommitIndexEntry,
   record: LongLedgerCommitRecord,
-  recordContent?: string
+  _recordContent?: string
 ): void {
   const indexedPosition = index.ledger.commits.findIndex(
     (candidate) => candidate.id === entry.id
@@ -360,11 +308,9 @@ export function assertLongLedgerRecordMatchesIndex(
   const importCheckpointMatches =
     entry.mode === "import_checkpoint" &&
     record.schemaVersion === 1 &&
-    !record.reversible &&
     record.placementChanges.length === 0 &&
     record.foreshadowingBeatChanges.length === 0 &&
     record.foreshadowingThreadChanges.length === 0 &&
-    record.fileChanges.length === 0 &&
     record.continuityFiles.length === 0 &&
     record.factChanges.length === 0 &&
     record.knowledgeChanges.length === 0 &&
@@ -380,8 +326,6 @@ export function assertLongLedgerRecordMatchesIndex(
     record.sequence !== entry.sequence ||
     record.chapterCardId !== entry.chapterCardId ||
     record.committedAt !== entry.committedAt ||
-    record.reversible !== entry.reversible ||
-    record.sourceWorkspaceRevision !== entry.sourceRevision ||
     !modeMatches ||
     chapter?.commitId !== entry.id ||
     !sameIdSet(
@@ -391,9 +335,7 @@ export function assertLongLedgerRecordMatchesIndex(
     !sameIdSet(
       entry.foreshadowingBeatIds,
       record.foreshadowingBeatChanges.map(({ beatId }) => beatId)
-    ) ||
-    (recordContent !== undefined &&
-      !revisionMatchesContent(entry.recordFile.revision, recordContent))
+    )
   ) {
     throw new Error(`账本记录 ${entry.id} 与工作区索引不一致。`);
   }
@@ -402,7 +344,6 @@ export function assertLongLedgerRecordMatchesIndex(
 export function assertLongLedgerRecordChain(
   index: LongWorkspaceIndexSnapshot,
   records: readonly LongLedgerCommitRecord[],
-  finalProjectRevision = index.revision,
   continuityFileContents?: ReadonlyMap<string, string>
 ): void {
   if (records.length !== index.ledger.commits.length) {
@@ -413,53 +354,6 @@ export function assertLongLedgerRecordChain(
   );
   if (recordsById.size !== records.length) {
     throw new Error("连续性账本包含重复记录身份。");
-  }
-  if (finalProjectRevision !== index.revision) {
-    throw new Error("连续性账本的工作区与项目末态 revision 不一致。");
-  }
-
-  const continuityFiles = new Map<
-    string,
-    {
-      reference: LongWorkspaceFileReference;
-      role:
-        | "relationships"
-        | "current-state"
-        | "history"
-        | "chapter-character-state"
-        | "chapter-handoff";
-      chapterCardId?: string;
-    }
-  >();
-  for (const entry of index.characterFiles) {
-    continuityFiles.set(entry.relationships.id, {
-      reference: entry.relationships,
-      role: "relationships"
-    });
-  }
-  for (const chapter of index.chapters) {
-    continuityFiles.set(chapter.characterState.id, {
-      reference: chapter.characterState,
-      role: "chapter-character-state",
-      chapterCardId: chapter.chapterCardId
-    });
-    continuityFiles.set(chapter.handoff.id, {
-      reference: chapter.handoff,
-      role: "chapter-handoff",
-      chapterCardId: chapter.chapterCardId
-    });
-    for (const entry of chapter.characterContinuity) {
-      continuityFiles.set(entry.currentState.id, {
-        reference: entry.currentState,
-        role: "current-state",
-        chapterCardId: chapter.chapterCardId
-      });
-      continuityFiles.set(entry.history.id, {
-        reference: entry.history,
-        role: "history",
-        chapterCardId: chapter.chapterCardId
-      });
-    }
   }
   const characterSubjectIds = new Set(index.characters.map(({ id }) => id));
   const worldSubjectIds = new Set(index.worldbuilding.map(({ id }) => id));
@@ -479,39 +373,14 @@ export function assertLongLedgerRecordChain(
       ...thread.beats.map(({ id }) => id)
     ])
   );
-  const lastFileState = new Map<
-    string,
-    LongLedgerCommitRecord["fileChanges"][number]["after"]
-  >();
-  let previousRecord: LongLedgerCommitRecord | undefined;
   const orderedRecords: LongLedgerCommitRecord[] = [];
   for (const entry of index.ledger.commits) {
     const record = recordsById.get(entry.id);
     if (!record) throw new Error(`连续性账本缺少记录：${entry.id}。`);
     assertLongLedgerRecordMatchesIndex(index, entry, record);
-    if (
-      record.sourceWorkspaceRevision !== record.sourceProjectRevision ||
-      record.committedWorkspaceRevision !== record.committedProjectRevision ||
-      record.committedWorkspaceRevision > index.revision ||
-      record.committedProjectRevision > finalProjectRevision ||
-      (previousRecord !== undefined &&
-        (record.sourceWorkspaceRevision <
-          previousRecord.committedWorkspaceRevision ||
-          record.sourceProjectRevision <
-            previousRecord.committedProjectRevision)) ||
-      record.previousChapterCommitId !== null
-    ) {
-      throw new Error(
-        `连续性账本 revision 或章节回滚前态不一致：${record.id}。`
-      );
-    }
-    previousRecord = record;
     orderedRecords.push(record);
     assertLongV4LedgerFileAudit(index, entry, record, continuityFileContents);
     if (record.schemaVersion === 3) {
-      const changedFileIds = new Set(
-        record.fileChanges.map(({ fileId }) => fileId)
-      );
       for (const { after: fact } of record.factChanges) {
         const subjectExists =
           fact.domain === "character" || fact.domain === "relationship"
@@ -526,87 +395,7 @@ export function assertLongLedgerRecordChain(
             `v3 连续性事实包含孤立 subjectId：${fact.factId} / ${fact.subjectId}。`
           );
         }
-        if (fact.domain !== "character" && fact.domain !== "relationship") {
-          continue;
-        }
-        if (changedFileIds.size === 0) {
-          throw new Error(
-            `v3 连续性事实缺少人物物化文件变更：${fact.factId}。`
-          );
-        }
       }
-      const chapter = index.chapters.find(
-        ({ chapterCardId }) => chapterCardId === record.chapterCardId
-      );
-      const characterStateChange = record.fileChanges.find(
-        ({ fileId }) => fileId === chapter?.characterState.id
-      );
-      const handoffChange = record.fileChanges.find(
-        ({ fileId }) => fileId === chapter?.handoff.id
-      );
-      if (
-        !chapter ||
-        !characterStateChange ||
-        characterStateChange.mode !== "replace" ||
-        characterStateChange.after.content !==
-          record.chapterOutputs.characterState ||
-        !handoffChange ||
-        handoffChange.mode !== "replace" ||
-        handoffChange.after.content !==
-          serializeContinuityHandoff(record.chapterOutputs.handoff)
-      ) {
-        throw new Error(`v3 连续性账本缺少可信的章节输出变更：${record.id}。`);
-      }
-    }
-    for (const change of record.fileChanges) {
-      const file = continuityFiles.get(change.fileId);
-      if (!file && record.schemaVersion <= 3) {
-        if (
-          !revisionMatchesContent(
-            change.before.revision,
-            change.before.content
-          ) ||
-          !revisionMatchesContent(change.after.revision, change.after.content)
-        ) {
-          throw new Error(`连续性账本文件变更链不一致：${change.fileId}。`);
-        }
-        continue;
-      }
-      const previous = lastFileState.get(change.fileId);
-      const chapterOutput =
-        file?.role === "chapter-character-state" ||
-        file?.role === "chapter-handoff";
-      if (
-        !file ||
-        file.reference.path !== change.path ||
-        (chapterOutput &&
-          (record.schemaVersion !== 3 ||
-            file.chapterCardId !== record.chapterCardId)) ||
-        (file.role === "history" && change.mode !== "append") ||
-        (file.role !== "history" && change.mode !== "replace") ||
-        !revisionMatchesContent(
-          change.before.revision,
-          change.before.content
-        ) ||
-        !revisionMatchesContent(change.after.revision, change.after.content) ||
-        (change.mode === "append" &&
-          !change.after.content.startsWith(change.before.content)) ||
-        (previous !== undefined &&
-          (previous.content !== change.before.content ||
-            previous.revision !== change.before.revision))
-      ) {
-        throw new Error(`连续性账本文件变更链不一致：${change.fileId}。`);
-      }
-      lastFileState.set(change.fileId, change.after);
-    }
-  }
-  for (const [fileId, state] of lastFileState) {
-    const indexed = continuityFiles.get(fileId)!.reference;
-    if (
-      !revisionMatchesContent(state.revision, state.content) ||
-      indexed.revision !== state.revision
-    ) {
-      throw new Error(`连续性账本末态与索引不一致：${fileId}。`);
     }
   }
   const replayedProjection = replayContinuityProjection(orderedRecords);
@@ -614,77 +403,54 @@ export function assertLongLedgerRecordChain(
     throw new Error("连续性账本类型化投影与记录链不一致。");
   }
 
-  const placementState = new Map(
-    index.plot.narrativePlacements.map((placement) => [
-      placement.id,
-      { status: placement.status, commitId: placement.commitId }
-    ])
-  );
-  const beatState = new Map(
-    index.plot.foreshadowing.flatMap((thread) =>
-      thread.beats.map(
-        (beat) =>
-          [beat.id, { status: beat.status, commitId: beat.commitId }] as const
-      )
-    )
-  );
-  const threadState = new Map(
-    index.plot.foreshadowing.map((thread) => [thread.id, thread.status])
-  );
-  const touchedPlacements = new Set<string>();
-  const touchedBeats = new Set<string>();
-  for (const record of [...orderedRecords].reverse()) {
+  const latestPlacements = new Map<
+    string,
+    { status: string; commitId: string | null }
+  >();
+  const latestBeats = new Map<
+    string,
+    { status: string; commitId: string | null }
+  >();
+  const latestThreads = new Map<string, string>();
+  for (const record of orderedRecords) {
     for (const change of record.placementChanges) {
-      const current = placementState.get(change.placementId);
-      if (
-        !current ||
-        current.status !== change.after.status ||
-        current.commitId !== change.after.commitId
-      ) {
-        throw new Error(
-          `连续性账本叙事落点回滚链不一致：${change.placementId}。`
-        );
-      }
-      placementState.set(change.placementId, { ...change.before });
-      touchedPlacements.add(change.placementId);
+      latestPlacements.set(change.placementId, { ...change.after });
     }
     for (const change of record.foreshadowingBeatChanges) {
-      const current = beatState.get(change.beatId);
-      if (
-        !current ||
-        current.status !== change.after.status ||
-        current.commitId !== change.after.commitId
-      ) {
-        throw new Error(`连续性账本伏笔节拍回滚链不一致：${change.beatId}。`);
-      }
-      beatState.set(change.beatId, { ...change.before });
-      touchedBeats.add(change.beatId);
+      latestBeats.set(change.beatId, { ...change.after });
     }
     for (const change of record.foreshadowingThreadChanges) {
-      if (threadState.get(change.foreshadowingId) !== change.after) {
-        throw new Error(
-          `连续性账本伏笔线回滚链不一致：${change.foreshadowingId}。`
-        );
-      }
-      threadState.set(change.foreshadowingId, change.before);
+      latestThreads.set(change.foreshadowingId, change.after);
     }
   }
-  for (const placementId of touchedPlacements) {
-    const state = placementState.get(placementId)!;
+  for (const [placementId, state] of latestPlacements) {
+    const current = index.plot.narrativePlacements.find(
+      ({ id }) => id === placementId
+    );
     if (
-      state.commitId !== null ||
-      (state.status !== "planned" && state.status !== "written")
+      !current ||
+      current.status !== state.status ||
+      current.commitId !== state.commitId
     ) {
-      throw new Error(`连续性账本叙事落点缺少可信回滚前态：${placementId}。`);
+      throw new Error(`连续性账本叙事落点末态不一致：${placementId}。`);
     }
   }
-  for (const beatId of touchedBeats) {
-    const state = beatState.get(beatId)!;
+  for (const [beatId, state] of latestBeats) {
+    const current = index.plot.foreshadowing
+      .flatMap(({ beats }) => beats)
+      .find(({ id }) => id === beatId);
     if (
-      state.commitId !== null ||
-      (state.status !== "planned" && state.status !== "written")
+      !current ||
+      current.status !== state.status ||
+      current.commitId !== state.commitId
     ) {
-      throw new Error(`连续性账本伏笔节拍缺少可信回滚前态：${beatId}。`);
+      throw new Error(`连续性账本伏笔节拍末态不一致：${beatId}。`);
+    }
+  }
+  for (const [threadId, status] of latestThreads) {
+    const current = index.plot.foreshadowing.find(({ id }) => id === threadId);
+    if (!current || current.status !== status) {
+      throw new Error(`连续性账本伏笔线末态不一致：${threadId}。`);
     }
   }
 }
@@ -790,11 +556,9 @@ function normalizeLegacyPortableWorldbuilding(
     if (
       aggregate.kind !== "markdown" ||
       aggregate.path !== legacyFile.path ||
-      aggregate.revision !== legacyFile.revision ||
       typeof aggregate.sha256 !== "string" ||
       typeof aggregate.content !== "string" ||
-      aggregate.sha256 !== sha256(aggregate.content) ||
-      !revisionMatchesContent(legacyFile.revision, aggregate.content)
+      aggregate.sha256 !== sha256(aggregate.content)
     ) {
       throw new Error(
         `旧版世界观分类 ${categoryId} 的聚合文件完整性校验失败。`
@@ -804,18 +568,15 @@ function normalizeLegacyPortableWorldbuilding(
     const items = parseLongWorldbuildingMarkdownList(aggregate.content).map(
       (item, itemIndex) => {
         const path = longWorldbuildingItemContentPath(categoryId, item.id);
-        const revision = contentRevision(item.content);
         const file = {
           id: longWorldbuildingItemFileId(item.id),
           path,
-          revision,
           updatedAt: legacyFile.updatedAt
         };
         files.push({
           id: file.id,
           path,
           kind: "markdown",
-          revision,
           sha256: sha256(item.content),
           content: item.content
         });
@@ -829,18 +590,15 @@ function normalizeLegacyPortableWorldbuilding(
     );
     files = files.filter((rawFile) => rawFile !== matching[0]);
     const overviewPath = longWorldbuildingOverviewContentPath(categoryId);
-    const overviewRevision = contentRevision("");
     const overview = {
       id: longWorldbuildingOverviewFileId(categoryId),
       path: overviewPath,
-      revision: overviewRevision,
       updatedAt: legacyFile.updatedAt
     };
     files.push({
       id: overview.id,
       path: overviewPath,
       kind: "markdown",
-      revision: overviewRevision,
       sha256: sha256(""),
       content: ""
     });
@@ -906,13 +664,11 @@ function normalizeLegacyPortableChapterContinuity(
       isRecord(existing) && typeof existing.content === "string"
         ? existing.content
         : "";
-    const revision = contentRevision(content);
     if (!existing) {
       files.push({
         id,
         path,
         kind: "markdown",
-        revision,
         sha256: sha256(content),
         content
       });
@@ -922,7 +678,6 @@ function normalizeLegacyPortableChapterContinuity(
       foreshadowingChanges: {
         id,
         path,
-        revision,
         updatedAt:
           typeof body.updatedAt === "string"
             ? body.updatedAt
@@ -958,41 +713,26 @@ export function parseLongPortableExportBundle(
   ) {
     throw new Error("长篇可移植包的 manifest 或 index SHA-256 校验失败。");
   }
+  const manifestValue = stripLegacyLongVersionMetadata(
+    manifestEntry.value
+  ).value;
+  const indexValue = stripLegacyLongVersionMetadata(indexEntry.value).value;
   const normalizedWorldbuilding = normalizeLegacyPortableWorldbuilding(
-    indexEntry.value,
+    indexValue,
     bundle.files
   );
   const normalizedContinuity = normalizeLegacyPortableChapterContinuity(
     normalizedWorldbuilding.index,
     normalizedWorldbuilding.files
   );
-  let manifest = LongProjectManifestSchema.parse(manifestEntry.value);
+  const manifest = LongProjectManifestSchema.parse(manifestValue);
   const index = LongWorkspaceIndexSnapshotSchema.parse(
     normalizedContinuity.index
   );
-  if (
-    manifest.id !== index.bookId ||
-    manifest.revision !== index.revision ||
-    !revisionMatchesContent(
-      manifest.workspaceIndexFile.revision,
-      rawIndexContent
-    )
-  ) {
+  if (manifest.id !== index.bookId) {
     throw new Error("长篇清单与可移植包原始索引不一致。");
   }
   const normalizedIndexContent = serializeJson(index);
-  if (normalizedIndexContent !== rawIndexContent) {
-    manifest = LongProjectManifestSchema.parse({
-      ...manifest,
-      workspaceIndexFile: {
-        ...manifest.workspaceIndexFile,
-        revision: `v2:${Buffer.byteLength(
-          normalizedIndexContent,
-          "utf8"
-        )}:${sha256(normalizedIndexContent)}`
-      }
-    });
-  }
   validateManifestIndexPair(manifest, index);
   if (bundle.bookId !== manifest.id) {
     throw new Error("长篇可移植包顶层 bookId 与 manifest 不一致。");
@@ -1015,7 +755,6 @@ export function parseLongPortableExportBundle(
     if (
       typeof file.id !== "string" ||
       typeof file.path !== "string" ||
-      typeof file.revision !== "string" ||
       typeof file.sha256 !== "string" ||
       typeof file.content !== "string" ||
       (file.kind !== "markdown" && file.kind !== "ledger-record") ||
@@ -1035,7 +774,6 @@ export function parseLongPortableExportBundle(
     seenPaths.add(pathKey);
     if (
       file.path !== expectedFile.reference.path ||
-      file.revision !== expectedFile.reference.revision ||
       file.kind !== expectedFile.kind
     ) {
       throw new Error(`长篇可移植包中文件 ${file.id} 与索引不一致。`);
@@ -1054,12 +792,10 @@ export function parseLongPortableExportBundle(
     ) {
       throw new Error("长篇可移植包的文件内容超过安全上限。");
     }
-    if (
-      sha256(bytes) !== file.sha256 ||
-      !revisionMatchesContent(file.revision, file.content)
-    ) {
+    if (sha256(bytes) !== file.sha256) {
       throw new Error(`长篇可移植包中文件 ${file.id} 完整性校验失败。`);
     }
+    let content = file.content;
     if (file.kind === "ledger-record") {
       const record = validateLedgerRecord(
         file.content,
@@ -1071,14 +807,14 @@ export function parseLongPortableExportBundle(
       )!;
       assertLongLedgerRecordMatchesIndex(index, entry, record, file.content);
       ledgerRecords.push(record);
+      content = serializeJson(record);
     }
     return {
       id: file.id,
       path: file.path,
       kind: file.kind,
-      revision: file.revision,
-      sha256: file.sha256,
-      content: file.content
+      sha256: sha256(content),
+      content
     } satisfies LongPortableBundleFile;
   });
   if (seenIds.size !== expectedById.size) {
@@ -1089,12 +825,7 @@ export function parseLongPortableExportBundle(
       .filter(({ kind }) => kind === "markdown")
       .map(({ id, content }) => [id, content] as const)
   );
-  assertLongLedgerRecordChain(
-    index,
-    ledgerRecords,
-    manifest.revision,
-    continuityFileContents
-  );
+  assertLongLedgerRecordChain(index, ledgerRecords, continuityFileContents);
   const agentsMd =
     typeof bundle.agentsMd === "string" ? bundle.agentsMd : undefined;
   return {

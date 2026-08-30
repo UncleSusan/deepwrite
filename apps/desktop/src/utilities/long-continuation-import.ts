@@ -26,7 +26,6 @@ import {
   longWorldbuildingOverviewFileId,
   type LongContinuationImportEncoding,
   type LongContinuationImportScan,
-  type LongFileRevision,
   type LongProjectManifest,
   type LongWorkspaceFileReference,
   type LongWorkspaceIndexSnapshot
@@ -94,7 +93,6 @@ export interface ContinuationImportDocument {
   path: string;
   kind: "markdown" | "json";
   content: string;
-  revision: LongFileRevision;
 }
 
 export interface ContinuationImportPlan {
@@ -115,11 +113,6 @@ function serializeJson(value: unknown): string {
 
 function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
-}
-
-function fileRevision(content: string): LongFileRevision {
-  const bytes = Buffer.from(content, "utf8");
-  return `v2:${bytes.byteLength}:${sha256(bytes)}` as LongFileRevision;
 }
 
 function storageKey(id: string): string {
@@ -565,15 +558,13 @@ export async function createContinuationImportPlan(
     const reference = {
       id: fileId,
       path,
-      revision: fileRevision(content),
       updatedAt: importedAt
     } as LongWorkspaceFileReference;
     documents.push({
       fileId,
       path,
       kind,
-      content,
-      revision: reference.revision
+      content
     });
     return reference;
   };
@@ -667,19 +658,10 @@ export async function createContinuationImportPlan(
           chapterCardId: chapterId,
           committedAt: importedAt,
           commitMessage: `续写导入检查点 #${sequence}`,
-          reversible: false,
-          sourceWorkspaceRevision: sequence - 1,
-          committedWorkspaceRevision: sequence,
-          sourceProjectRevision: sequence - 1,
-          committedProjectRevision: sequence,
-          previousCommittedThroughChapterId:
-            commits.at(-1)?.chapterCardId ?? null,
           committedThroughChapterId: chapterId,
-          previousChapterCommitId: null,
           placementChanges: [],
           foreshadowingBeatChanges: [],
-          foreshadowingThreadChanges: [],
-          fileChanges: []
+          foreshadowingThreadChanges: []
         });
         const recordContent = serializeJson(record);
         const recordFile = addDocument(
@@ -694,8 +676,6 @@ export async function createContinuationImportPlan(
           sequence,
           chapterCardId: chapterId,
           committedAt: importedAt,
-          reversible: false,
-          sourceRevision: sequence - 1,
           placementIds: [],
           foreshadowingBeatIds: [],
           recordFile
@@ -718,7 +698,6 @@ export async function createContinuationImportPlan(
   const checkpointCount = commits.length;
   const index = LongWorkspaceIndexSnapshotSchema.parse({
     schemaVersion: 1,
-    revision: checkpointCount,
     bookId,
     updatedAt: importedAt,
     bookLine,
@@ -755,10 +734,8 @@ export async function createContinuationImportPlan(
     }
   });
   const validatedIndex = LongWorkspaceIndexSnapshotSchema.parse(index);
-  const indexContent = serializeJson(validatedIndex);
   const manifest = LongProjectManifestSchema.parse({
     schemaVersion: 1,
-    revision: checkpointCount,
     kind: "deepwrite.long-book",
     id: bookId,
     title: input.title,
@@ -772,7 +749,6 @@ export async function createContinuationImportPlan(
     workspaceIndexFile: {
       id: LONG_WORKSPACE_INDEX_FILE_ID,
       path: LONG_WORKSPACE_INDEX_PATH,
-      revision: fileRevision(indexContent),
       updatedAt: importedAt
     }
   });

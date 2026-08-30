@@ -21,8 +21,8 @@ function firstDocumentWrite(details: unknown) {
   return write;
 }
 
-describe("unified long-form tools: shared proposal revisions", () => {
-  it("shares parent-child proposal revisions while isolating read evidence", async () => {
+describe("unified long-form tools: shared pending proposals", () => {
+  it("shares parent-child pending content while isolating read evidence", async () => {
     const index = fixtureStoryPlotIndex();
     const executor = storyPlotExecutor(index);
     const sharedState = createLongWorkspaceToolSharedState();
@@ -68,7 +68,8 @@ describe("unified long-form tools: shared proposal revisions", () => {
     );
     const childWrite = firstDocumentWrite(childProposal.details);
 
-    expect(childWrite.expectedRevision).toBe(parentWrite.nextRevision);
-    expect(childWrite.expectedRevision).not.toBe(parentWrite.expectedRevision);
+    expect(parentWrite.content).toContain("月湖死剧");
+    expect(childWrite.content).toContain("蒸馏擦肩");
+    expect(childWrite.content).not.toContain("月湖死剧");
   });
 });

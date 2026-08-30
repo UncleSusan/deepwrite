@@ -75,7 +75,6 @@ import {
   LongReadDocumentResultSchema,
   LongReadAgentsMdResultSchema,
   LongRemoveBookResultSchema,
-  LongRollbackLastCommitResultSchema,
   LongSearchResultSchema,
   LongWorkspaceIndexResultSchema,
   LongWriteChapterResultSchema,
@@ -123,6 +122,7 @@ import {
 } from "./legacy-library-import-batch";
 import { AppearanceService } from "./appearance-service";
 import { AgentTeamConfigStore } from "./agent-team-config-store";
+import { resolveAgentTeamRuntime } from "./agent-team-run-mode";
 import {
   downloadAgentTeamPackage,
   installAgentTeamPackage
@@ -139,10 +139,7 @@ import { SoftwareTokenUsageReporter } from "./software-token-usage-reporter";
 import { LearningImitationConfigStore } from "./learning-imitation-config-store";
 import { LibraryAgentConfigStore } from "./library-agent-config-store";
 import { LongAgentConfigStore } from "./long-agent-config-store";
-import {
-  assertModelRunSettings,
-  resolveModelRunSettings
-} from "./model-run-settings";
+import { resolveModelRunSettings } from "./model-run-settings";
 import {
   applyNativeAppearanceChrome,
   resolveNativeBackgroundColor
@@ -175,6 +172,8 @@ import { createMainWindowStartupGate } from "./main-window-startup-gate";
 import { resolveDeepWriteAppMode } from "./app-run-mode";
 import { handleModelCommands } from "./ipc/model-commands";
 import { handleAppearanceCommands } from "./ipc/appearance-commands";
+import { LongBookAnalysisConfigStore } from "./extras/long-book-analysis/config-store";
+import { handleLongBookAnalysisCommands } from "./extras/long-book-analysis/commands";
 import {
   installAppearanceFontProtocolHandler,
   registerAppearanceFontScheme
@@ -208,6 +207,7 @@ let generalSettingsStore: GeneralSettingsStore | undefined;
 let chatAssistantProjectConfigStore:
   ChatAssistantProjectConfigStore | undefined;
 let learningImitationConfigStore: LearningImitationConfigStore | undefined;
+let longBookAnalysisConfigStore: LongBookAnalysisConfigStore | undefined;
 let libraryAgentConfigStore: LibraryAgentConfigStore | undefined;
 let longAgentConfigStore: LongAgentConfigStore | undefined;
 let cachedAppearanceSettings: AppearanceSettings =
@@ -304,6 +304,8 @@ type AgentEventEnvelope = Extract<
       | "tool.call_requested"
       | "tool.execution_completed"
       | "learning_imitation.result_updated"
+      | "long_book_analysis.note_updated"
+      | "long_book_analysis.result_updated"
       | "subagent_authoring.draft_updated"
       | "library.editor_mutation"
       | "workspace.editor_mutation"
@@ -332,6 +334,8 @@ function isAgentEvent(event: SystemEventEnvelope): event is AgentEventEnvelope {
     event.type === "tool.call_requested" ||
     event.type === "tool.execution_completed" ||
     event.type === "learning_imitation.result_updated" ||
+    event.type === "long_book_analysis.note_updated" ||
+    event.type === "long_book_analysis.result_updated" ||
     event.type === "subagent_authoring.draft_updated" ||
     event.type === "library.editor_mutation" ||
     event.type === "workspace.editor_mutation" ||
@@ -871,6 +875,7 @@ function usageModuleForPrompt(
       : "material-library";
   }
   if (context.learningImitation) return "learning-imitation";
+  if (context.longBookAnalysis) return "long-book-analysis";
   if (context.subagentAuthoring) return "subagent-authoring";
   return "unknown";
 }
@@ -959,6 +964,13 @@ function requireLearningImitationConfigStore(): LearningImitationConfigStore {
     throw new Error("学习仿写设置存储尚未初始化。");
   }
   return learningImitationConfigStore;
+}
+
+function requireLongBookAnalysisConfigStore(): LongBookAnalysisConfigStore {
+  if (!longBookAnalysisConfigStore) {
+    throw new Error("长篇拆书分析设置存储尚未初始化。");
+  }
+  return longBookAnalysisConfigStore;
 }
 
 function requireWorkspaceDirectoryStore(): WorkspaceDirectoryStore {
@@ -1389,6 +1401,19 @@ function registerIpc(): void {
         return appearanceCommandResult;
       }
 
+      const longBookAnalysisCommandResult =
+        await handleLongBookAnalysisCommands(
+          {
+            dialog,
+            getMainWindow: requireMainWindow,
+            configStore: requireLongBookAnalysisConfigStore
+          },
+          command
+        );
+      if (longBookAnalysisCommandResult) {
+        return longBookAnalysisCommandResult;
+      }
+
       if (command.type === "generalSettings.list") {
         try {
           const snapshot = GeneralSettingsSnapshotSchema.parse(
@@ -1648,8 +1673,6 @@ function registerIpc(): void {
               "long.applyLegacySyncAtPath",
               {
                 bookId: command.payload.bookId,
-                expectedProjectRevision:
-                  command.payload.expectedProjectRevision,
                 modules: command.payload.modules,
                 sourcePath: registration.sourcePath,
                 expectedFingerprint: registration.sourceFingerprint
@@ -2023,7 +2046,6 @@ function registerIpc(): void {
         command.type === "long.applyOperations" ||
         command.type === "long.writeChapter" ||
         command.type === "long.commitChapter" ||
-        command.type === "long.rollbackLastCommit" ||
         command.type === "long.unregister" ||
         command.type === "long.delete"
       ) {
@@ -2070,11 +2092,6 @@ function registerIpc(): void {
               break;
             case "long.commitChapter":
               payload = LongCommitChapterResultSchema.parse(result.payload);
-              break;
-            case "long.rollbackLastCommit":
-              payload = LongRollbackLastCommitResultSchema.parse(
-                result.payload
-              );
               break;
             case "long.unregister":
             case "long.delete":
@@ -2939,6 +2956,8 @@ function registerIpc(): void {
             command.payload.workspaceContext?.libraryWorkspace;
           const learningImitation =
             command.payload.workspaceContext?.learningImitation;
+          const longBookAnalysis =
+            command.payload.workspaceContext?.longBookAnalysis;
           const creativeWorkspace = shortWorkspace ?? scriptWorkspace;
           const creativeWorkspaceType = scriptWorkspace ? "script" : "short";
           const agentProfile = creativeWorkspace
@@ -2952,41 +2971,30 @@ function registerIpc(): void {
                 longWorkspace.activeAgentId
               )
             : undefined;
-          const subagentDefinitions = agentProfile
-            ? await requireAgentTeamConfigStore().resolve(
-                creativeWorkspaceType,
-                agentProfile.id
-              )
-            : longAgentProfile
-              ? await requireAgentTeamConfigStore().resolve(
-                  "long",
-                  longAgentProfile.id
-                )
-              : undefined;
-          const subagentRuntimeConfigs: Record<
-            string,
-            AgentProviderRuntimeConfig
-          > = {};
-          if (subagentDefinitions?.length) {
-            for (const definition of subagentDefinitions) {
-              if (definition.modelMode !== "custom" || !definition.modelId) {
-                continue;
+          const { subagentDefinitions, subagentRuntimeConfigs } =
+            await resolveAgentTeamRuntime(
+              command.payload.agentTeamMode,
+              agentProfile
+                ? {
+                    workspaceType: creativeWorkspaceType,
+                    parentAgentId: agentProfile.id
+                  }
+                : longAgentProfile
+                  ? {
+                      workspaceType: "long",
+                      parentAgentId: longAgentProfile.id
+                    }
+                  : undefined,
+              {
+                resolveDefinitions: (workspaceType, parentAgentId) =>
+                  requireAgentTeamConfigStore().resolve(
+                    workspaceType,
+                    parentAgentId
+                  ),
+                resolveModel: (modelId) =>
+                  requireModelConfigStore().resolve(modelId)
               }
-              const resolved =
-                subagentRuntimeConfigs[definition.modelId] ??
-                (await requireModelConfigStore().resolve(definition.modelId));
-              if (!resolved) {
-                throw new Error(
-                  `子智能体「${definition.name}」配置的模型不存在，请刷新模型配置后重试。`
-                );
-              }
-              assertModelRunSettings(resolved, {
-                thinkingLevel: definition.thinkingLevel,
-                temperature: definition.temperature
-              });
-              subagentRuntimeConfigs[definition.modelId] = resolved;
-            }
-          }
+            );
           const libraryAgentProfile = libraryWorkspace
             ? await requireLibraryAgentConfigStore().resolve(
                 libraryWorkspace.domain
@@ -2997,6 +3005,11 @@ function registerIpc(): void {
                 learningImitation.stageId
               )
             : undefined;
+          const longBookAnalysisProfile = longBookAnalysis
+            ? await requireLongBookAnalysisConfigStore().resolve(
+                longBookAnalysis.presetId
+              )
+            : undefined;
           const { thinkingLevel, temperature } = resolveModelRunSettings(
             runtimeConfig,
             {
@@ -3005,6 +3018,7 @@ function registerIpc(): void {
             }
           );
           const {
+            agentTeamMode: _requestedAgentTeamMode,
             thinkingLevel: _requestedThinkingLevel,
             temperature: _requestedTemperature,
             ...promptPayload
@@ -3039,7 +3053,8 @@ function registerIpc(): void {
                 ...(libraryAgentProfile ? { libraryAgentProfile } : {}),
                 ...(learningImitationProfile
                   ? { learningImitationProfile }
-                  : {})
+                  : {}),
+                ...(longBookAnalysisProfile ? { longBookAnalysisProfile } : {})
               },
               { id: command.id, context: command.context }
             )
@@ -3311,6 +3326,7 @@ if (!hasSingleInstanceLock) {
     learningImitationConfigStore = new LearningImitationConfigStore(
       userDataPath
     );
+    longBookAnalysisConfigStore = new LongBookAnalysisConfigStore(userDataPath);
     workspaceDirectoryStore = new WorkspaceDirectoryStore(userDataPath);
     appearanceService = new AppearanceService(userDataPath);
     installAppearanceFontProtocolHandler(appearanceService);

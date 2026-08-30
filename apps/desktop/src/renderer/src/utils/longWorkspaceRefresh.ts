@@ -1,8 +1,3 @@
-export interface LongWorkspaceRevisionPair {
-  workspaceRevision: number;
-  projectRevision: number;
-}
-
 export interface LongWorkspaceRefreshClock {
   begin(bookId: string): number;
   invalidate(bookId: string): void;
@@ -27,26 +22,4 @@ export function createLongWorkspaceRefreshClock(): LongWorkspaceRefreshClock {
       return clocks.get(bookId) === requestId;
     }
   };
-}
-
-export function isMonotonicLongWorkspaceRefresh(
-  current: LongWorkspaceRevisionPair | null,
-  incoming: LongWorkspaceRevisionPair
-): boolean {
-  return (
-    current === null ||
-    (incoming.workspaceRevision >= current.workspaceRevision &&
-      incoming.projectRevision >= current.projectRevision)
-  );
-}
-
-export function hasReachedLongWorkspaceRevisionTarget(
-  current: LongWorkspaceRevisionPair | null,
-  target: LongWorkspaceRevisionPair
-): boolean {
-  return (
-    current !== null &&
-    current.workspaceRevision >= target.workspaceRevision &&
-    current.projectRevision >= target.projectRevision
-  );
 }

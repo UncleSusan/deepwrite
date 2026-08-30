@@ -25,10 +25,9 @@ describe("LongLegacySyncDialog", () => {
     expect(appSource).toContain('@confirm-legacy-sync="confirmLegacySync"');
     expect(longBookLifecycleSource).toContain("api.chooseLegacySyncSource()");
     expect(longBookLifecycleSource).toContain("api.applyLegacySync({");
-    expect(longBookLifecycleSource).toContain(
-      "expectedProjectRevision: summary.projectRevision"
-    );
+    expect(longBookLifecycleSource).toContain("previewId: preview.previewId");
     expect(longBookLifecycleSource).toContain("modules: [...modules]");
+    expect(longBookLifecycleSource).not.toContain("expectedProjectRevision");
     expect(longBookLifecycleSource).toContain(
       "await session.saveActiveEditorChanges()"
     );

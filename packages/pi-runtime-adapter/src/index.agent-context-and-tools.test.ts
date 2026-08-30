@@ -241,12 +241,10 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
           bookId: "longbook-child",
           agentId: "long",
           batch: {
-            baseRevision: 3,
             updatedAt: "2026-07-26T12:00:00.000Z",
             operations: [],
             documentWrites: []
           },
-          baseProjectRevision: 5,
           summary: "更新世界规则"
         }
       },
@@ -258,7 +256,6 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
           bookId: "longbook-child",
           agentId: "long",
           batch: {
-            baseRevision: 3,
             updatedAt: "2026-07-26T12:00:00.000Z",
             operations: [],
             documentWrites: [
@@ -267,14 +264,11 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
                 fileId: "long.worldbuilding.world_rules",
                 content: "新规则",
                 mode: "replace",
-                expectedRevision: "v1:0:00000000",
-                nextRevision: "v1:3:12345678",
                 updatedAt: "2026-07-26T12:00:00.000Z",
                 reason: "更新世界规则文件"
               }
             ]
           },
-          baseProjectRevision: 5,
           summary: "更新世界规则文件",
           files: [
             {
@@ -284,9 +278,7 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
               title: "世界规则",
               operation: "edit",
               beforeText: "旧规则",
-              afterText: "新规则",
-              beforeRevision: "v1:0:00000000",
-              nextRevision: "v1:3:12345678"
+              afterText: "新规则"
             }
           ]
         }
@@ -299,7 +291,6 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
           bookId: "longbook-child",
           agentId: "long",
           batch: {
-            baseRevision: 3,
             updatedAt: "2026-07-26T12:00:00.000Z",
             operations: [],
             documentWrites: [
@@ -308,14 +299,11 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
                 fileId: "file_chapter_one:continuity:foreshadowing-changes",
                 content: "蜡封伏笔已种下。",
                 mode: "replace",
-                expectedRevision: "v1:0:00000000",
-                nextRevision: "v1:8:12345678",
                 updatedAt: "2026-07-26T12:00:00.000Z",
                 reason: "记录伏笔变化"
               }
             ]
           },
-          baseProjectRevision: 5,
           summary: "记录伏笔变化",
           files: [
             {
@@ -328,9 +316,7 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
               title: "第一章 / 伏笔变化",
               operation: "edit",
               beforeText: "无变化。",
-              afterText: "蜡封伏笔已种下。",
-              beforeRevision: "v1:0:00000000",
-              nextRevision: "v1:8:12345678"
+              afterText: "蜡封伏笔已种下。"
             }
           ]
         }
@@ -343,7 +329,6 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
           bookId: "longbook-child",
           agentId: "long",
           batch: {
-            baseRevision: 3,
             updatedAt: "2026-07-26T12:00:00.000Z",
             operations: [],
             documentWrites: [
@@ -352,14 +337,11 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
                 fileId: "file_chapter_one:body",
                 content: "正文",
                 mode: "replace",
-                expectedRevision: "v1:0:00000000",
-                nextRevision: "v1:2:00000000",
                 updatedAt: "2026-07-26T12:00:00.000Z",
                 reason: "写入第一章"
               }
             ]
           },
-          baseProjectRevision: 5,
           file: {
             chapterCardId: "chapter_one",
             chapterTitle: "第一章",
@@ -367,9 +349,7 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
             filePath: "long/chapters/chapter_one/body.md",
             operation: "create",
             beforeText: "",
-            afterText: "正文",
-            beforeRevision: "v1:0:00000000",
-            nextRevision: "v1:2:00000000"
+            afterText: "正文"
           },
           summary: "写入第一章"
         }
@@ -384,11 +364,6 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
           input: {
             bookId: "longbook-child",
             chapterCardId: "chapter_one",
-            chapterFileRevisions: {
-              body: "v1:0:00000000",
-              characterState: "v1:0:00000000",
-              handoff: "v1:0:00000000"
-            },
             commitMessage: "提交第一章",
             chapterSummary: {
               timeline: "时间线",
@@ -447,9 +422,7 @@ describe("DeepWrite Pi runtime adapter: agent-context-and-tools", () => {
                 nextChapterConstraints: ["追兵仍在场。"],
                 openLoops: ["loop_alice_return"]
               }
-            },
-            baseWorkspaceRevision: 3,
-            baseProjectRevision: 5
+            }
           },
           summary: "提交第一章连续性"
         }

@@ -1,3 +1,4 @@
+import { parseAgentConversationPersistenceSnapshot as parseExtractedPersistenceSnapshot } from "./agent-conversation/parse";
 import {
   createDeferredApi,
   createEditProposal,
@@ -190,6 +191,8 @@ describe("agent conversation controller: proposal-persistence", () => {
       approvalMode: "auto-approve",
       predecessorProposalId: "proposal_0",
       sourceBaseRevision: "v1:5:22222222",
+      baseRevision: "v1:4:11111111",
+      proposedRevision: "v1:5:22222222",
       decisionToken: "commit-token-2",
       hunks: [
         {
@@ -206,6 +209,66 @@ describe("agent conversation controller: proposal-persistence", () => {
     ).not.toHaveProperty("proposedText");
     expect(restored.hasPendingEditReview.value).toBe(true);
     restored.dispose();
+  });
+
+  it("rejects non-long persisted proposals without required revisions", () => {
+    const storage = createMemoryStorage();
+    const persistenceKey = "conversation-short-missing-revisions-test";
+    const controller = useAgentConversation({
+      api: () => undefined,
+      ...storage.options(persistenceKey)
+    });
+    const incompleteProposal = createEditProposal();
+    delete incompleteProposal.baseRevision;
+    delete incompleteProposal.proposedRevision;
+    controller.upsertEditProposal("run_edit_1", incompleteProposal);
+    controller.dispose();
+
+    expect(
+      parseExtractedPersistenceSnapshot(storage.getItem(persistenceKey))
+    ).toBeUndefined();
+    const restored = useAgentConversation({
+      api: () => undefined,
+      ...storage.options(persistenceKey)
+    });
+    expect(
+      restored.getEditProposal("run_edit_1", "proposal_1")
+    ).toBeUndefined();
+    restored.dispose({ clearPersistence: true });
+  });
+
+  it("preserves conflict state for persisted non-long proposals", () => {
+    const storage = createMemoryStorage();
+    const persistenceKey = "conversation-short-conflict-proposal-test";
+    const controller = useAgentConversation({
+      api: () => undefined,
+      ...storage.options(persistenceKey)
+    });
+    controller.upsertEditProposal(
+      "run_edit_1",
+      createEditProposal({
+        status: "conflict",
+        statusMessage: "文档版本冲突"
+      })
+    );
+    controller.dispose();
+
+    expect(
+      parseExtractedPersistenceSnapshot(storage.getItem(persistenceKey))
+        ?.conversations[0]?.messages[0]?.editProposals?.[0]
+    ).toMatchObject({
+      status: "conflict",
+      statusMessage: "文档版本冲突"
+    });
+    const restored = useAgentConversation({
+      api: () => undefined,
+      ...storage.options(persistenceKey)
+    });
+    expect(restored.getEditProposal("run_edit_1", "proposal_1")).toMatchObject({
+      status: "conflict",
+      statusMessage: "文档版本冲突"
+    });
+    restored.dispose({ clearPersistence: true });
   });
 
   it("persists safe-discard snapshots for accepted library overview edits", () => {
@@ -258,6 +321,242 @@ describe("agent conversation controller: proposal-persistence", () => {
         message: "上次舍弃未确认完成；重试前会重新校验当前版本。"
       }
     });
+    restored.dispose();
+  });
+
+  it("ignores legacy discard snapshots and states on long-form proposals", () => {
+    const storage = createMemoryStorage();
+    const persistenceKey = "conversation-long-discard-retirement-test";
+    const controller = useAgentConversation({
+      api: () => undefined,
+      ...storage.options(persistenceKey)
+    });
+    controller.upsertEditProposal(
+      "run_edit_1",
+      createEditProposal({
+        stageId: "long-plot-design",
+        workspaceId: "long:longbook_test",
+        status: "accepted",
+        proposedText: undefined,
+        longPlotDesignTarget: {
+          bookId: "longbook_test",
+          batch: {
+            updatedAt: "2026-08-25T00:00:00.000Z",
+            operations: [{ type: "worldbuilding.delete", id: "world_rules" }],
+            documentWrites: []
+          }
+        },
+        discardSnapshot: {
+          beforeText: "旧长篇内容",
+          beforeTitle: "旧标题"
+        },
+        discardState: {
+          status: "discarding",
+          message: "旧版舍弃中",
+          updatedAt: "2026-08-25T00:00:02.000Z"
+        }
+      })
+    );
+    controller.dispose();
+
+    const restored = useAgentConversation({
+      api: () => undefined,
+      ...storage.options(persistenceKey)
+    });
+    const proposal = restored.getEditProposal("run_edit_1", "proposal_1");
+    expect(proposal).toMatchObject({
+      stageId: "long-plot-design",
+      longPlotDesignTarget: { bookId: "longbook_test" }
+    });
+    expect(proposal).not.toHaveProperty("discardSnapshot");
+    expect(proposal).not.toHaveProperty("discardState");
+    restored.dispose();
+  });
+
+  it("restores legacy long proposals after retiring version metadata", () => {
+    const storage = createMemoryStorage();
+    const persistenceKey = "conversation-legacy-long-proposal-test";
+    const timestamp = "2026-08-25T00:00:00.000Z";
+    const impactSummary = {
+      createdEntityIds: [],
+      updatedEntityIds: [],
+      deletedEntityIds: [],
+      createdFileIds: [],
+      deletedFileIds: [],
+      documentWriteProposalIds: ["proposal_legacy_body"]
+    };
+    const legacyProposal = {
+      ...createEditProposal({
+        workspaceId: "long:longbook_test",
+        stageId: "long-draft",
+        documentId: "file_chapter_test:body",
+        title: "第一章 / 正文"
+      }),
+      sourceBaseRevision: 8,
+      baseRevision: 8,
+      proposedRevision: 9,
+      status: "conflict",
+      statusMessage:
+        "long conflict: stale expected revision; 文稿版本已经变化。",
+      longDraftTarget: {
+        bookId: "longbook_test",
+        baseProjectRevision: 8,
+        appliedProjectRevision: 9,
+        expectedImpact: impactSummary,
+        rollbackSnapshot: { revision: 8 },
+        rollbackSnapshots: [{ projectRevision: 8 }],
+        longUndoBatch: { baseRevision: 8 },
+        batch: {
+          baseRevision: 8,
+          updatedAt: timestamp,
+          operations: [],
+          documentWrites: [
+            {
+              proposalId: "proposal_legacy_body",
+              fileId: "file_chapter_test:body",
+              content: "新正文",
+              mode: "replace",
+              expectedRevision: "v2:8:bbbbbbbb",
+              nextRevision: "v2:9:cccccccc",
+              updatedAt: timestamp,
+              reason: "旧版正文写入"
+            }
+          ],
+          expectedImpact: impactSummary,
+          reversible: true,
+          undoBatch: { baseRevision: 8 },
+          before: { revision: 8 },
+          fileChanges: [{ nextRevision: "v2:9:cccccccc" }]
+        },
+        file: {
+          chapterCardId: "chapter_test",
+          chapterTitle: "第一章",
+          fileId: "file_chapter_test:body",
+          filePath: "long/chapters/chapter_test/body.md",
+          operation: "edit",
+          beforeText: "旧正文",
+          afterText: "新正文",
+          beforeRevision: "v2:8:bbbbbbbb",
+          nextRevision: "v2:9:cccccccc",
+          rollbackState: { revision: 8 }
+        }
+      },
+      discardSnapshot: {
+        beforeText: "旧正文",
+        appliedProjectRevision: 9,
+        longUndoBatch: { baseRevision: 8 }
+      },
+      discardState: {
+        status: "discarding",
+        message: "旧版舍弃中",
+        updatedAt: timestamp
+      }
+    };
+    const legacySnapshot = {
+      version: 1,
+      activeSessionId: "session_legacy_long",
+      conversations: [
+        {
+          sessionId: "session_legacy_long",
+          messages: [
+            {
+              id: "assistant_legacy_long",
+              role: "assistant",
+              content: "旧版长篇建议",
+              createdAt: timestamp,
+              runId: "run_edit_1",
+              status: "completed",
+              editProposals: [legacyProposal]
+            }
+          ],
+          draft: "",
+          approvalMode: "request-approval",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          temperature: 0.7
+        }
+      ]
+    };
+    storage.setItem(persistenceKey, legacySnapshot);
+
+    const parsedByExtractedParser =
+      parseExtractedPersistenceSnapshot(legacySnapshot);
+    const extractedProposal =
+      parsedByExtractedParser?.conversations[0]?.messages[0]
+        ?.editProposals?.[0];
+    expect(extractedProposal).toMatchObject({
+      stageId: "long-draft",
+      status: "pending",
+      longDraftTarget: { bookId: "longbook_test" }
+    });
+    expect(extractedProposal).not.toHaveProperty("sourceBaseRevision");
+    expect(extractedProposal).not.toHaveProperty("baseRevision");
+    expect(extractedProposal).not.toHaveProperty("proposedRevision");
+    expect(extractedProposal).not.toHaveProperty("discardSnapshot");
+    expect(extractedProposal).not.toHaveProperty("discardState");
+    expect(extractedProposal).not.toHaveProperty("statusMessage");
+    expect(
+      extractedProposal?.longDraftTarget?.batch.documentWrites[0]
+    ).not.toHaveProperty("expectedRevision");
+
+    const restored = useAgentConversation({
+      api: () => undefined,
+      ...storage.options(persistenceKey)
+    });
+    const proposal = restored.getEditProposal("run_edit_1", "proposal_1");
+    expect(proposal).toMatchObject({
+      stageId: "long-draft",
+      status: "pending",
+      longDraftTarget: {
+        bookId: "longbook_test",
+        batch: {
+          documentWrites: [
+            {
+              proposalId: "proposal_legacy_body",
+              content: "新正文",
+              mode: "replace"
+            }
+          ]
+        },
+        file: {
+          chapterCardId: "chapter_test",
+          beforeText: "旧正文",
+          afterText: "新正文"
+        }
+      }
+    });
+    expect(proposal).not.toHaveProperty("sourceBaseRevision");
+    expect(proposal).not.toHaveProperty("baseRevision");
+    expect(proposal).not.toHaveProperty("proposedRevision");
+    expect(proposal).not.toHaveProperty("discardSnapshot");
+    expect(proposal).not.toHaveProperty("discardState");
+    expect(proposal).not.toHaveProperty("statusMessage");
+    expect(proposal?.longDraftTarget).not.toHaveProperty("baseProjectRevision");
+    expect(proposal?.longDraftTarget).not.toHaveProperty(
+      "appliedProjectRevision"
+    );
+    expect(proposal?.longDraftTarget).not.toHaveProperty("expectedImpact");
+    expect(proposal?.longDraftTarget).not.toHaveProperty("rollbackSnapshot");
+    expect(proposal?.longDraftTarget).not.toHaveProperty("longUndoBatch");
+    expect(proposal?.longDraftTarget?.batch).not.toHaveProperty("baseRevision");
+    expect(proposal?.longDraftTarget?.batch).not.toHaveProperty(
+      "expectedImpact"
+    );
+    expect(proposal?.longDraftTarget?.batch).not.toHaveProperty("reversible");
+    expect(proposal?.longDraftTarget?.batch).not.toHaveProperty("undoBatch");
+    expect(proposal?.longDraftTarget?.batch).not.toHaveProperty("before");
+    expect(proposal?.longDraftTarget?.batch).not.toHaveProperty("fileChanges");
+    expect(
+      proposal?.longDraftTarget?.batch.documentWrites[0]
+    ).not.toHaveProperty("expectedRevision");
+    expect(
+      proposal?.longDraftTarget?.batch.documentWrites[0]
+    ).not.toHaveProperty("nextRevision");
+    expect(proposal?.longDraftTarget?.file).not.toHaveProperty(
+      "beforeRevision"
+    );
+    expect(proposal?.longDraftTarget?.file).not.toHaveProperty("nextRevision");
+    expect(proposal?.longDraftTarget?.file).not.toHaveProperty("rollbackState");
     restored.dispose();
   });
 
@@ -413,15 +712,10 @@ describe("agent conversation controller: proposal-persistence", () => {
         stageId: "long-worldbuilding",
         documentId: file.id,
         title: "记忆代价",
-        baseRevision: `long-missing:${file.id}`,
-        proposedRevision: file.revision,
         proposedText: "",
         longWorldbuildingTarget: {
           bookId: "longbook_test",
-          baseProjectRevision: 11,
-          appliedProjectRevision: 12,
           batch: {
-            baseRevision: 7,
             updatedAt: "2026-07-30T12:00:00.000Z",
             operations: [
               {
@@ -445,9 +739,7 @@ describe("agent conversation controller: proposal-persistence", () => {
             title: "记忆代价",
             operation: "create",
             beforeText: "",
-            afterText: "",
-            beforeRevision: null,
-            nextRevision: file.revision
+            afterText: ""
           }
         }
       })
@@ -463,12 +755,9 @@ describe("agent conversation controller: proposal-persistence", () => {
         ?.longWorldbuildingTarget
     ).toMatchObject({
       bookId: "longbook_test",
-      baseProjectRevision: 11,
-      appliedProjectRevision: 12,
       file: {
         itemId: "worlditem_memory",
-        operation: "create",
-        beforeRevision: null
+        operation: "create"
       },
       batch: {
         operations: [{ type: "worldbuildingItem.create" }],
@@ -497,15 +786,10 @@ describe("agent conversation controller: proposal-persistence", () => {
         stageId: "long-character",
         documentId: file.id,
         title: "林岚 / 核心档案",
-        baseRevision: file.revision,
-        proposedRevision: "v1:4:12345678",
         proposedText: "新的核心档案",
         longCharacterTarget: {
           bookId: "longbook_test",
-          baseProjectRevision: 11,
-          appliedProjectRevision: 12,
           batch: {
-            baseRevision: 7,
             updatedAt: "2026-07-30T12:00:00.000Z",
             operations: [],
             documentWrites: [
@@ -514,8 +798,6 @@ describe("agent conversation controller: proposal-persistence", () => {
                 fileId: file.id,
                 content: "新的核心档案",
                 mode: "replace",
-                expectedRevision: file.revision,
-                nextRevision: "v1:4:12345678",
                 updatedAt: "2026-07-30T12:00:00.000Z",
                 reason: "更新人物核心档案"
               }
@@ -531,9 +813,7 @@ describe("agent conversation controller: proposal-persistence", () => {
               title: "林岚 / 核心档案",
               operation: "edit",
               beforeText: "旧的核心档案",
-              afterText: "新的核心档案",
-              beforeRevision: file.revision,
-              nextRevision: "v1:4:12345678"
+              afterText: "新的核心档案"
             }
           ]
         }
@@ -549,8 +829,6 @@ describe("agent conversation controller: proposal-persistence", () => {
       restored.getEditProposal("run_edit_1", "proposal_1")?.longCharacterTarget
     ).toMatchObject({
       bookId: "longbook_test",
-      baseProjectRevision: 11,
-      appliedProjectRevision: 12,
       files: [
         {
           characterId: "character_memory",
@@ -576,15 +854,10 @@ describe("agent conversation controller: proposal-persistence", () => {
         stageId: "long-plot-design",
         documentId: "plot-design",
         title: "剧情设计变更",
-        baseRevision: "long-plot:11:7",
-        proposedRevision: "long-plot:11:7:tool_edit_1",
         proposedText: "创建第二卷",
         longPlotDesignTarget: {
           bookId: "longbook_test",
-          baseProjectRevision: 11,
-          appliedProjectRevision: 12,
           batch: {
-            baseRevision: 7,
             updatedAt: "2026-07-30T12:00:00.000Z",
             operations: [
               {
@@ -612,8 +885,6 @@ describe("agent conversation controller: proposal-persistence", () => {
       restored.getEditProposal("run_edit_1", "proposal_1")?.longPlotDesignTarget
     ).toMatchObject({
       bookId: "longbook_test",
-      baseProjectRevision: 11,
-      appliedProjectRevision: 12,
       batch: {
         operations: [
           {
@@ -641,14 +912,10 @@ describe("agent conversation controller: proposal-persistence", () => {
         stageId: "long-plot-design",
         documentId: "plot-design",
         title: "剧情设计变更",
-        baseRevision: "long-plot:11:7",
-        proposedRevision: "long-plot:11:7:tool_edit_1",
         proposedText: "创建第二卷",
         longPlotDesignTarget: {
           bookId: "longbook_test",
-          baseProjectRevision: 11,
           batch: {
-            baseRevision: 7,
             updatedAt: "2026-07-30T12:00:00.000Z",
             operations: [
               {
@@ -669,7 +936,7 @@ describe("agent conversation controller: proposal-persistence", () => {
     controller.updateEditProposal("run_edit_1", "proposal_1", {
       status: "accepted",
       proposedText: undefined,
-      statusMessage: "已自动批准并保存剧情设计。"
+      statusMessage: "已自动批准并保存剧情设计；conversion 已完成。"
     });
     expect(
       controller.capturePersistenceSnapshot().conversations[0]?.messages[0]
@@ -677,7 +944,7 @@ describe("agent conversation controller: proposal-persistence", () => {
       editProposals: [
         {
           status: "accepted",
-          statusMessage: "已自动批准并保存剧情设计。",
+          statusMessage: "已自动批准并保存剧情设计；conversion 已完成。",
           longPlotDesignTarget: { bookId: "longbook_test" }
         }
       ]
@@ -690,6 +957,7 @@ describe("agent conversation controller: proposal-persistence", () => {
     });
     expect(restored.getEditProposal("run_edit_1", "proposal_1")).toMatchObject({
       status: "accepted",
+      statusMessage: "已自动批准并保存剧情设计；conversion 已完成。",
       longPlotDesignTarget: { bookId: "longbook_test" }
     });
     expect(

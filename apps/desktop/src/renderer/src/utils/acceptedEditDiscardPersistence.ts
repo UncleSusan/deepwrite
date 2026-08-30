@@ -1,4 +1,3 @@
-import { LongWorkspaceOperationBatchSchema } from "@deepwrite/contracts";
 import type { AgentEditProposal } from "../types/conversation";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -22,11 +21,6 @@ export function parseStoredDiscardSnapshot(
   ) {
     return undefined;
   }
-  const longUndoBatch =
-    value.longUndoBatch === undefined
-      ? undefined
-      : LongWorkspaceOperationBatchSchema.safeParse(value.longUndoBatch);
-  if (longUndoBatch && !longUndoBatch.success) return undefined;
   return {
     ...(typeof value.beforeText === "string"
       ? { beforeText: value.beforeText }
@@ -39,8 +33,7 @@ export function parseStoredDiscardSnapshot(
       : {}),
     ...(typeof value.appliedProjectRevision === "number"
       ? { appliedProjectRevision: value.appliedProjectRevision }
-      : {}),
-    ...(longUndoBatch?.success ? { longUndoBatch: longUndoBatch.data } : {})
+      : {})
   };
 }
 

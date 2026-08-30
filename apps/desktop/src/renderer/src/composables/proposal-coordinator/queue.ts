@@ -27,6 +27,19 @@ function unexpectedQueueErrorMessage(error: unknown): string {
   return `审批保存队列执行异常：${detail}。本项已暂停，可重试；后续独立任务将继续。`;
 }
 
+function proposalQueueToken(proposal: AgentEditProposal): string {
+  return proposal.proposedRevision ?? proposal.id;
+}
+
+function proposalQueueBaseToken(proposal: AgentEditProposal): string {
+  return (
+    proposal.baseRevision ??
+    proposal.predecessorProposalId ??
+    proposal.laneId ??
+    proposal.id
+  );
+}
+
 export function createProposalQueue(options: ProposalQueueOptions) {
   const queuedAgentEdits = new Map<string, QueuedAgentEdit>();
   const deferredAgentEditKeys = new Set<string>();
@@ -107,7 +120,8 @@ export function createProposalQueue(options: ProposalQueueOptions) {
 
     const key = queueKey(sessionId, runId, proposalId);
     const existing = queuedAgentEdits.get(key);
-    if (existing?.expectedProposedRevision === proposal.proposedRevision) {
+    const proposedToken = proposalQueueToken(proposal);
+    if (existing?.expectedProposedRevision === proposedToken) {
       if (scheduleImmediately) {
         scheduleQueuedAgentEdits((queued) => queued === existing);
       }
@@ -119,8 +133,9 @@ export function createProposalQueue(options: ProposalQueueOptions) {
     const staged = stageAgentEditProposalRevision(
       createAgentEditProposalRevisionLane<AgentEditProposal>({
         targetKey: proposal.laneId ?? proposal.id,
-        durableRevision: proposal.baseRevision,
-        overlayRevision: proposal.sourceBaseRevision ?? proposal.baseRevision,
+        durableRevision: proposalQueueBaseToken(proposal),
+        overlayRevision:
+          proposal.sourceBaseRevision ?? proposalQueueBaseToken(proposal),
         generation: Math.max(0, (proposal.generation ?? 1) - 1)
       }),
       {
@@ -128,8 +143,8 @@ export function createProposalQueue(options: ProposalQueueOptions) {
           proposal.approvalMode ??
           (automatic ? "auto-approve" : "request-approval"),
         sourceBaseRevision:
-          proposal.sourceBaseRevision ?? proposal.baseRevision,
-        proposedRevision: proposal.proposedRevision,
+          proposal.sourceBaseRevision ?? proposalQueueBaseToken(proposal),
+        proposedRevision: proposedToken,
         proposal
       }
     );
@@ -154,7 +169,7 @@ export function createProposalQueue(options: ProposalQueueOptions) {
       proposalId,
       workspaceId: proposal.workspaceId,
       automatic,
-      expectedProposedRevision: proposal.proposedRevision,
+      expectedProposedRevision: proposedToken,
       decisionToken,
       snapshot: started.snapshot
     };
@@ -174,7 +189,7 @@ export function createProposalQueue(options: ProposalQueueOptions) {
       queued.snapshot.token === queued.decisionToken &&
       queued.snapshot.proposal.id === queued.proposalId &&
       queued.snapshot.proposedRevision === queued.expectedProposedRevision &&
-      current.proposedRevision === queued.expectedProposedRevision &&
+      proposalQueueToken(current) === queued.expectedProposedRevision &&
       (current.status === "pending" ||
         current.status === "error" ||
         (current.status === "accepting" &&
@@ -187,7 +202,7 @@ export function createProposalQueue(options: ProposalQueueOptions) {
     queued: QueuedAgentEdit,
     current: AgentEditProposal
   ): boolean {
-    if (current.proposedRevision !== queued.expectedProposedRevision) {
+    if (proposalQueueToken(current) !== queued.expectedProposedRevision) {
       return false;
     }
     if (current.status === "accepting") {
@@ -263,7 +278,8 @@ export function createProposalQueue(options: ProposalQueueOptions) {
           queued.proposalId
         );
         if (
-          failed?.proposedRevision === queued.expectedProposedRevision &&
+          failed &&
+          proposalQueueToken(failed) === queued.expectedProposedRevision &&
           (failed.status === "accepting" || failed.status === "pending")
         ) {
           queued.conversation.updateEditProposal(

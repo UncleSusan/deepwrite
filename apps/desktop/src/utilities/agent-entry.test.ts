@@ -90,7 +90,7 @@ describe("Agent Utility prompt forwarding", () => {
     captured.runtimeEvents.length = 0;
   });
 
-  it("forwards web search only for a chat-assistant prompt", async () => {
+  it("forwards web search for a chat-assistant prompt", async () => {
     await import("./agent-entry");
     const command = CommandEnvelopeSchema.parse(
       createEnvelope(
@@ -145,6 +145,38 @@ describe("Agent Utility prompt forwarding", () => {
       webSearchEnabled: true
     });
     expect(captured.startInputs[0]?.subagentRuntimeConfigs).toBeUndefined();
+  });
+
+  it("forwards workspace web search from the command payload", async () => {
+    await import("./agent-entry");
+    const command = CommandEnvelopeSchema.parse(
+      createEnvelope(
+        "agent.prompt",
+        {
+          sessionId: "session-workspace-web-search",
+          message: "查一下近期同类题材",
+          webSearchEnabled: true
+        },
+        {
+          id: "command-workspace-web-search",
+          context: {
+            correlationId: "correlation-workspace-web-search",
+            sessionId: "session-workspace-web-search"
+          }
+        }
+      )
+    );
+
+    await expect(
+      captured.commandHandler!(command, vi.fn())
+    ).resolves.toMatchObject({
+      status: "accepted"
+    });
+    await vi.waitFor(() => expect(captured.startInputs).toHaveLength(1));
+
+    expect(captured.startInputs[0]).toMatchObject({
+      webSearchEnabled: true
+    });
   });
 
   it("forwards scriptAgentProfile from the command payload into streamPrompt", async () => {
@@ -286,11 +318,8 @@ describe("Agent Utility prompt forwarding", () => {
               title: "长篇测试",
               activeRoot: "worldbuilding",
               activeAgentId: "long",
-              workspaceRevision: 0,
-              projectRevision: 0,
               navigation: {
                 schemaVersion: 1,
-                revision: 0,
                 bookId: "longbook_forwarding",
                 updatedAt: "2026-07-26T10:00:00.000Z",
                 counts: {
@@ -542,7 +571,6 @@ describe("Agent Utility prompt forwarding", () => {
           ...payloadBase,
           agentId: "long",
           batch: {
-            baseRevision: 2,
             updatedAt: "2026-07-26T12:00:00.000Z",
             operations: [
               {
@@ -552,8 +580,7 @@ describe("Agent Utility prompt forwarding", () => {
               }
             ],
             documentWrites: []
-          },
-          baseProjectRevision: 3
+          }
         }
       },
       {
@@ -563,7 +590,6 @@ describe("Agent Utility prompt forwarding", () => {
           ...payloadBase,
           agentId: "long",
           batch: {
-            baseRevision: 2,
             updatedAt: "2026-07-26T12:00:00.000Z",
             operations: [
               {
@@ -576,7 +602,6 @@ describe("Agent Utility prompt forwarding", () => {
                   file: {
                     id: "file_worlditem_memory:content",
                     path: "long/worldbuilding/world_rules/items/worlditem_memory.md",
-                    revision: "v1:0:00000000",
                     updatedAt: "2026-07-26T12:00:00.000Z"
                   }
                 }
@@ -584,7 +609,6 @@ describe("Agent Utility prompt forwarding", () => {
             ],
             documentWrites: []
           },
-          baseProjectRevision: 3,
           files: [
             {
               categoryId: "world_rules",
@@ -595,9 +619,7 @@ describe("Agent Utility prompt forwarding", () => {
               title: "记忆代价",
               operation: "create",
               beforeText: "",
-              afterText: "",
-              beforeRevision: null,
-              nextRevision: "v1:0:00000000"
+              afterText: ""
             }
           ]
         }
@@ -609,7 +631,6 @@ describe("Agent Utility prompt forwarding", () => {
           ...payloadBase,
           agentId: "long",
           batch: {
-            baseRevision: 2,
             updatedAt: "2026-07-26T12:00:00.000Z",
             operations: [],
             documentWrites: [
@@ -618,14 +639,11 @@ describe("Agent Utility prompt forwarding", () => {
                 fileId: longChapterBodyFileId("chapter_one"),
                 content: "正文",
                 mode: "replace",
-                expectedRevision: "v1:0:00000000",
-                nextRevision: "v1:2:00000000",
                 updatedAt: "2026-07-26T12:00:00.000Z",
                 reason: "完成第一章"
               }
             ]
           },
-          baseProjectRevision: 3,
           file: {
             chapterCardId: "chapter_one",
             chapterTitle: "第一章",
@@ -633,9 +651,7 @@ describe("Agent Utility prompt forwarding", () => {
             filePath: longChapterFilePath("chapter_one", "body.md"),
             operation: "create",
             beforeText: "",
-            afterText: "正文",
-            beforeRevision: "v1:0:00000000",
-            nextRevision: "v1:2:00000000"
+            afterText: "正文"
           }
         }
       },
@@ -649,11 +665,6 @@ describe("Agent Utility prompt forwarding", () => {
             mode: "structured",
             bookId: "longbook_proposals",
             chapterCardId: "chapter_one",
-            chapterFileRevisions: {
-              body: "v1:0:00000000",
-              characterState: "v1:0:00000000",
-              handoff: "v1:0:00000000"
-            },
             commitMessage: "提交第一章连续性",
             chapterSummary: {
               timeline: "第一天。",
@@ -703,9 +714,7 @@ describe("Agent Utility prompt forwarding", () => {
                 nextChapterConstraints: [],
                 openLoops: []
               }
-            },
-            baseWorkspaceRevision: 2,
-            baseProjectRevision: 3
+            }
           }
         }
       }
@@ -746,8 +755,7 @@ describe("Agent Utility prompt forwarding", () => {
       payload: {
         sessionId: "session-long-proposals",
         runId: "run-long-proposals",
-        bookId: "longbook_proposals",
-        baseProjectRevision: 3
+        bookId: "longbook_proposals"
       }
     });
   });

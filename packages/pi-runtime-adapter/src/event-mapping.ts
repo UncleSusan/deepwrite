@@ -7,6 +7,7 @@ import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Usage } from "@earendil-works/pi-ai";
 import type { AgentTurnAttempt } from "./agent-turn-retry";
 import { isLearningImitationToolDetails } from "./learning-imitation-tools";
+import { isLongBookAnalysisToolDetails } from "./long-book-analysis/tools";
 import { isLibraryAgentToolDetails } from "./library-agent-tools";
 import { isLongAgentToolDetails } from "./long-agent-tools";
 import type { AgentRunInput, AgentRuntimeEvent } from "./runtime-types";
@@ -405,6 +406,34 @@ export function toRuntimeEvents(
           runtime
         }
       });
+    } else if (isLongBookAnalysisToolDetails(details)) {
+      events.push(
+        details.kind === "long-book-analysis-note"
+          ? {
+              type: "long_book_analysis.note_updated",
+              runId: input.runId,
+              sessionId: input.sessionId,
+              payload: {
+                toolCallId: event.toolCallId,
+                jobId: details.jobId,
+                unitId: details.unitId,
+                note: details.note,
+                runtime
+              }
+            }
+          : {
+              type: "long_book_analysis.result_updated",
+              runId: input.runId,
+              sessionId: input.sessionId,
+              payload: {
+                toolCallId: event.toolCallId,
+                jobId: details.jobId,
+                unitId: details.unitId,
+                result: details.result,
+                runtime
+              }
+            }
+      );
     } else if (isSubagentAuthoringToolDetails(details)) {
       events.push({
         type: "subagent_authoring.draft_updated",
@@ -427,7 +456,6 @@ export function toRuntimeEvents(
             bookId: details.bookId,
             agentId: details.agentId,
             batch: details.batch,
-            baseProjectRevision: details.baseProjectRevision,
             summary: details.summary,
             runtime
           }
@@ -442,7 +470,6 @@ export function toRuntimeEvents(
             bookId: details.bookId,
             agentId: details.agentId,
             batch: details.batch,
-            baseProjectRevision: details.baseProjectRevision,
             summary: details.summary,
             files: details.files,
             runtime
@@ -458,7 +485,6 @@ export function toRuntimeEvents(
             bookId: details.bookId,
             agentId: details.agentId,
             batch: details.batch,
-            baseProjectRevision: details.baseProjectRevision,
             summary: details.summary,
             files: details.files,
             runtime
@@ -474,7 +500,6 @@ export function toRuntimeEvents(
             bookId: details.bookId,
             agentId: details.agentId,
             batch: details.batch,
-            baseProjectRevision: details.baseProjectRevision,
             summary: details.summary,
             files: details.files,
             runtime
@@ -490,7 +515,6 @@ export function toRuntimeEvents(
             bookId: details.bookId,
             agentId: details.agentId,
             batch: details.batch,
-            baseProjectRevision: details.baseProjectRevision,
             file: details.file,
             summary: details.summary,
             runtime

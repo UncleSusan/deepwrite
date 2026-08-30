@@ -3,22 +3,13 @@ import { computed } from "vue";
 import type {
   LongContinuityFileChange,
   LongContinuityFileRole,
-  LongWorkspaceEntityChange,
   LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
 import type { LongWorkspaceProposalItem } from "../composables/useLongWorkspaceProposals";
 import { buildAgentTextDiff } from "../utils/agentTextDiff";
-import { longCharacterFiles } from "../utils/longCharacterFiles";
-import { longWorldbuildingFiles } from "../utils/longWorldbuildingFiles";
 import AppIcon from "./AppIcon.vue";
-import ApprovalDiscardButton from "./ApprovalDiscardButton.vue";
 import LongLedgerFinalizationCard from "./LongLedgerFinalizationCard.vue";
-import {
-  approvalDiscardStatusLabel,
-  approvalDiscardStatusMessage,
-  approvalDiscardVisualStatus,
-  shouldShowApprovalDiscardButton
-} from "./approvalDiscardPresentation";
+import LongProposalImpactDetails from "./LongProposalImpactDetails.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -26,12 +17,10 @@ const props = withDefaults(
     workspaceIndex?: LongWorkspaceIndexSnapshot | null;
     embedded?: boolean;
     conversationCard?: boolean;
-    discardableEventIds?: readonly string[];
   }>(),
   {
     embedded: false,
-    conversationCard: false,
-    discardableEventIds: () => []
+    conversationCard: false
   }
 );
 
@@ -40,7 +29,6 @@ const emit = defineEmits<{
   reject: [eventId: string];
   retryPreview: [eventId: string];
   locate: [eventId: string];
-  discard: [eventId: string];
 }>();
 
 const pendingCount = computed(
@@ -259,8 +247,6 @@ function proposalAction(item: LongWorkspaceProposalItem): string {
 }
 
 function proposalStatusText(item: LongWorkspaceProposalItem): string {
-  const discardLabel = approvalDiscardStatusLabel(item.discardState);
-  if (discardLabel) return discardLabel;
   if (item.event.type === "long.ledger_commit_proposal") {
     if (item.status === "accepted") return "已归档";
     if (item.status === "waiting") return "等待前序文件";
@@ -281,7 +267,7 @@ function proposalStatusText(item: LongWorkspaceProposalItem): string {
     return item.approvalMode === "auto-approve"
       ? "自动保存失败"
       : item.errorRetryable === false
-        ? "需要重新生成"
+        ? "无法应用"
         : "应用失败";
   }
   return item.approvalMode === "auto-approve" ? "等待自动保存" : "等待确认";
@@ -299,8 +285,6 @@ function contentProposalVisualStatus(
 }
 
 function contentProposalStatusLabel(item: LongWorkspaceProposalItem): string {
-  const discardLabel = approvalDiscardStatusLabel(item.discardState);
-  if (discardLabel) return discardLabel;
   if (item.status === "accepted") return "已接受";
   if (item.status === "error") {
     return item.errorPhase === "preview" ? "校验未通过" : "应用失败";
@@ -327,8 +311,6 @@ function contentProposalDiffStats(item: LongWorkspaceProposalItem): {
 }
 
 function contentProposalStatusMessage(item: LongWorkspaceProposalItem): string {
-  const discardMessage = approvalDiscardStatusMessage(item.discardState);
-  if (discardMessage) return discardMessage;
   if (item.status === "accepted") {
     return item.approvalMode === "auto-approve"
       ? "已自动批准并保存到本地 Markdown。"
@@ -336,21 +318,18 @@ function contentProposalStatusMessage(item: LongWorkspaceProposalItem): string {
   }
   if (item.status === "error") {
     if (item.errorPhase === "preview") {
-      return (
-        item.error ??
-        "变更未通过审批前校验，尚未应用。请关闭本提案并基于最新内容重新生成。"
-      );
+      return item.error ?? "暂时无法读取变更影响，内容尚未保存。";
     }
-    return item.error ?? "变更未能应用，可重试接受并保存或拒绝。";
+    return item.error ?? "变更未能保存，可再次保存或拒绝。";
   }
   if (item.status === "waiting") {
     return "正在等待前序文件创建或写入完成，随后继续校验。";
   }
   if (item.status === "previewing") {
-    return "正在校验文件身份、原文与最新版本……";
+    return "正在读取文件与变更影响……";
   }
   if (item.status === "submitting") {
-    return "正在校验版本、应用变更并保存……";
+    return "正在应用变更并保存……";
   }
   return item.approvalMode === "auto-approve"
     ? "已加入实时自动保存队列。"
@@ -379,12 +358,12 @@ function contentProposalAcceptDisabled(
 function contentProposalAcceptLabel(item: LongWorkspaceProposalItem): string {
   if (item.status === "submitting") return "保存中…";
   if (item.status === "error" && item.errorRetryable === false) {
-    return "需重新生成提案";
+    return "无法保存";
   }
   return item.status === "error"
     ? item.errorPhase === "preview"
-      ? "重新校验并保存"
-      : "重试接受并保存"
+      ? "重新读取并保存"
+      : "再次保存"
     : "接受并保存";
 }
 
@@ -399,44 +378,28 @@ function usesEditProposalSurface(item: LongWorkspaceProposalItem): boolean {
 function proposalVisualStatus(
   item: LongWorkspaceProposalItem
 ): "pending" | "accepting" | "accepted" | "rejected" | "conflict" | "error" {
-  return (
-    approvalDiscardVisualStatus(item.discardState) ??
-    contentProposalVisualStatus(item)
-  );
+  return contentProposalVisualStatus(item);
 }
 
 function structureProposalStatusMessage(
   item: LongWorkspaceProposalItem
 ): string {
-  const discardMessage = approvalDiscardStatusMessage(item.discardState);
-  if (discardMessage) return discardMessage;
   if (item.status === "accepted") return "结构变更已应用并保存到本机。";
   if (item.status === "error") {
     if (item.errorPhase === "preview") {
-      return (
-        item.error ??
-        "结构提案未通过审批前校验，尚未应用。请关闭本提案并让智能体基于最新结构重新生成。"
-      );
+      return item.error ?? "暂时无法读取结构影响，变更尚未应用。";
     }
     return item.error ?? "结构变更未能应用，可重新预览后重试或拒绝。";
   }
   if (item.status === "previewing") {
-    return "正在核验当前结构、版本与影响范围……";
+    return "正在读取当前结构与影响范围……";
   }
   if (item.status === "submitting") {
-    return "正在校验版本并应用结构变更……";
+    return "正在应用结构变更……";
   }
   return item.approvalMode === "auto-approve"
     ? "已加入实时自动保存队列。"
     : "接受后将应用到当前书籍的结构并自动保存到本机。";
-}
-
-function showDiscardButton(item: LongWorkspaceProposalItem): boolean {
-  return shouldShowApprovalDiscardButton(
-    props.discardableEventIds.includes(item.event.id),
-    item.status === "accepted",
-    item.discardState
-  );
 }
 
 function structureProposalAcceptDisabled(
@@ -454,7 +417,7 @@ function structureProposalAcceptDisabled(
 function structureProposalAcceptLabel(item: LongWorkspaceProposalItem): string {
   if (item.status === "submitting") return "应用中…";
   if (item.status === "error" && item.errorRetryable === false) {
-    return "需重新生成提案";
+    return "无法应用";
   }
   return item.status === "error"
     ? item.errorPhase === "preview"
@@ -467,97 +430,6 @@ function diffLineMark(type: "context" | "addition" | "deletion"): string {
   if (type === "addition") return "+";
   if (type === "deletion") return "−";
   return " ";
-}
-
-function structureImpactTotal(item: LongWorkspaceProposalItem): number {
-  const impact = item.preview?.impact;
-  if (!impact) return 0;
-  return (
-    impact.createdEntityIds.length +
-    impact.updatedEntityIds.length +
-    impact.deletedEntityIds.length
-  );
-}
-
-const workspaceFilePaths = computed(() => {
-  const index = props.workspaceIndex;
-  const entries: Array<readonly [string, string]> = [];
-  if (!index) return new Map(entries);
-  entries.push([index.bookLine.id, index.bookLine.path]);
-  for (const file of longWorldbuildingFiles(index.worldbuilding)) {
-    entries.push([file.id, file.path]);
-  }
-  for (const file of longCharacterFiles(index)) {
-    entries.push([file.id, file.path]);
-  }
-  for (const chapter of index.chapters) {
-    entries.push(
-      [chapter.body.id, chapter.body.path],
-      [chapter.card.id, chapter.card.path],
-      [chapter.characterState.id, chapter.characterState.path],
-      [chapter.handoff.id, chapter.handoff.path],
-      [chapter.foreshadowingChanges.id, chapter.foreshadowingChanges.path]
-    );
-    if (chapter.worldReveals) {
-      entries.push([chapter.worldReveals.id, chapter.worldReveals.path]);
-    }
-    for (const continuity of chapter.characterContinuity) {
-      entries.push(
-        [continuity.currentState.id, continuity.currentState.path],
-        [continuity.history.id, continuity.history.path]
-      );
-    }
-  }
-  for (const commit of index.ledger.commits) {
-    entries.push([commit.recordFile.id, commit.recordFile.path]);
-  }
-  return new Map(entries);
-});
-
-function proposalFilePath(
-  item: LongWorkspaceProposalItem,
-  fileId: string
-): string {
-  const previewed = item.preview?.fileIntents.find(
-    ({ file }) => file.id === fileId
-  );
-  if (previewed) return previewed.file.path;
-  return workspaceFilePaths.value.get(fileId) ?? fileId;
-}
-
-const entityKindLabels: Record<LongWorkspaceEntityChange["kind"], string> = {
-  "worldbuilding-category": "世界观分类",
-  "worldbuilding-item": "世界观条目",
-  character: "人物",
-  volume: "卷",
-  arc: "剧情弧",
-  "chapter-card": "章卡",
-  "story-event": "故事事件",
-  "story-plot": "故事情节",
-  "event-connection": "事件连接",
-  "narrative-placement": "叙事落点",
-  "foreshadowing-thread": "伏笔线",
-  "foreshadowing-beat": "伏笔节拍"
-};
-
-function entityActionLabel(
-  action: LongWorkspaceEntityChange["action"]
-): string {
-  switch (action) {
-    case "create":
-      return "新建实体";
-    case "update":
-      return "更新实体";
-    case "delete":
-      return "删除实体";
-  }
-}
-
-function entitySnapshotText(
-  value:
-    LongWorkspaceEntityChange["before"] | LongWorkspaceEntityChange["after"]
-): string {
-  return value === null ? "（不存在）" : JSON.stringify(value, null, 2);
 }
 </script>
 
@@ -593,10 +465,7 @@ function entitySnapshotText(
               : 'long-proposal-card'
         "
         :data-proposal-type="item.event.type"
-        :aria-busy="
-          item.status === 'submitting' ||
-          item.discardState?.status === 'discarding'
-        "
+        :aria-busy="item.status === 'submitting'"
       >
         <LongLedgerFinalizationCard
           v-if="item.event.type === 'long.ledger_commit_proposal'"
@@ -684,11 +553,6 @@ function entitySnapshotText(
                 >
                   跳转到目标文件
                 </button>
-                <ApprovalDiscardButton
-                  v-if="showDiscardButton(item)"
-                  :discarding="item.discardState?.status === 'discarding'"
-                  @discard="emit('discard', item.event.id)"
-                />
               </div>
               <p>{{ item.event.payload.summary }}</p>
             </div>
@@ -833,117 +697,11 @@ function entitySnapshotText(
           </footer>
         </template>
 
-        <div
+        <LongProposalImpactDetails
           v-if="item.event.type === 'long.mutation_proposal' && item.preview"
-          class="long-proposal-impact"
-        >
-          <span>
-            <strong>{{ item.event.payload.batch.operations.length }}</strong>
-            结构操作
-          </span>
-          <span>
-            <strong>{{ structureImpactTotal(item) }}</strong>
-            实体受影响
-          </span>
-          <span>
-            <strong>{{ item.preview.fileIntents.length }}</strong>
-            文件增删
-          </span>
-          <span>
-            <strong>{{ item.preview.documentWrites.length }}</strong>
-            文档写入
-          </span>
-        </div>
-        <details
-          v-if="item.event.type === 'long.mutation_proposal' && item.preview"
-          class="long-proposal-details"
-          :open="
-            item.preview.impact.deletedEntityIds.length > 0 ||
-            item.preview.impact.deletedFileIds.length > 0
-          "
-        >
-          <summary>查看具体影响</summary>
-          <div
-            v-if="item.preview.entityChanges.length"
-            class="long-proposal-detail-group long-proposal-entity-list"
-          >
-            <strong>
-              实体完整前后快照（{{ item.preview.entityChanges.length }}）
-            </strong>
-            <details
-              v-for="change in item.preview.entityChanges"
-              :key="`${change.action}:${change.kind}:${change.id}`"
-              class="long-proposal-entity-change"
-              :class="{ 'is-danger': change.action === 'delete' }"
-            >
-              <summary>
-                {{ entityActionLabel(change.action) }} ·
-                {{ entityKindLabels[change.kind] }} ·
-                {{ change.id }}
-              </summary>
-              <div class="long-proposal-entity-diff">
-                <section>
-                  <strong>变更前</strong>
-                  <pre>{{ entitySnapshotText(change.before) }}</pre>
-                </section>
-                <section>
-                  <strong>变更后</strong>
-                  <pre>{{ entitySnapshotText(change.after) }}</pre>
-                </section>
-              </div>
-            </details>
-          </div>
-          <div
-            v-if="item.preview.impact.deletedFileIds.length"
-            class="long-proposal-detail-group is-danger"
-          >
-            <strong>
-              删除文件引用（{{ item.preview.impact.deletedFileIds.length }}）
-            </strong>
-            <code v-for="id in item.preview.impact.deletedFileIds" :key="id">{{
-              id
-            }}</code>
-          </div>
-          <div
-            v-if="item.preview.fileIntents.length"
-            class="long-proposal-detail-group"
-          >
-            <strong>文件操作</strong>
-            <span
-              v-for="intent in item.preview.fileIntents"
-              :key="`${intent.action}:${intent.file.id}`"
-              :class="{ 'is-danger': intent.action === 'delete' }"
-            >
-              {{ intent.action === "delete" ? "删除引用" : "新建" }} ·
-              {{ intent.file.path }} ·
-              {{ intent.reason }}
-            </span>
-          </div>
-          <div
-            v-if="item.preview.documentWrites.length"
-            class="long-proposal-detail-group long-proposal-write-list"
-          >
-            <strong>文档写入内容</strong>
-            <details
-              v-for="write in item.preview.documentWrites"
-              :key="write.proposalId"
-              class="long-proposal-content"
-            >
-              <summary>
-                {{ proposalFilePath(item, write.fileId) }} · {{ write.mode }} ·
-                {{ write.expectedRevision ?? "新文件" }} →
-                {{ write.nextRevision }}
-              </summary>
-              <span>{{ write.reason }}</span>
-              <textarea
-                readonly
-                spellcheck="false"
-                :aria-label="`${proposalFilePath(item, write.fileId)}拟写内容`"
-                :value="write.content"
-              />
-            </details>
-          </div>
-        </details>
+          :item="item"
+          :workspace-index="workspaceIndex"
+        />
 
         <footer
           v-if="
@@ -1130,166 +888,6 @@ function entitySnapshotText(
   line-height: 1.55;
 }
 
-.long-proposal-impact {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.long-proposal-impact span {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
-  padding: 4px 6px;
-  border-radius: 7px;
-  background: var(--surface-main);
-  color: var(--text-tertiary);
-  font-size: 0.607143rem;
-}
-
-.long-proposal-impact strong {
-  color: var(--text-primary);
-  font-size: 0.678571rem;
-}
-
-.long-proposal-details {
-  padding: 6px 8px;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 8px;
-  background: var(--surface-main);
-  font-size: 0.642857rem;
-}
-
-.long-proposal-details summary {
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.long-proposal-details[open] summary {
-  margin-bottom: 7px;
-}
-
-.long-proposal-detail-group {
-  display: grid;
-  gap: 4px;
-  max-height: 150px;
-  padding: 6px;
-  overflow: auto;
-  border-radius: 7px;
-  background: var(--surface-muted);
-  color: var(--text-secondary);
-}
-
-.long-proposal-detail-group + .long-proposal-detail-group {
-  margin-top: 5px;
-}
-
-.long-proposal-detail-group strong {
-  color: var(--text-primary);
-}
-
-.long-proposal-detail-group code,
-.long-proposal-detail-group span {
-  overflow-wrap: anywhere;
-  color: var(--text-tertiary);
-  font-family: var(--code-font);
-  font-size: var(--code-font-size);
-}
-
-.long-proposal-write-list {
-  max-height: none;
-}
-
-.long-proposal-entity-list {
-  max-height: 360px;
-}
-
-.long-proposal-entity-change {
-  padding: 5px 6px;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 6px;
-  background: var(--surface-main);
-}
-
-.long-proposal-entity-change > summary {
-  overflow-wrap: anywhere;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-family: var(--code-font);
-  font-size: var(--code-font-size);
-}
-
-.long-proposal-entity-change.is-danger > summary {
-  color: var(--danger);
-}
-
-.long-proposal-entity-diff {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.long-proposal-entity-diff section {
-  min-width: 0;
-}
-
-.long-proposal-entity-diff pre {
-  max-height: 240px;
-  margin: 4px 0 0;
-  padding: 6px;
-  overflow: auto;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 6px;
-  background: var(--surface-raised);
-  color: var(--text-primary);
-  font-family: var(--code-font);
-  font-size: var(--code-font-size);
-  line-height: 1.45;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.long-proposal-content {
-  padding: 5px 6px;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 6px;
-  background: var(--surface-main);
-}
-
-.long-proposal-content summary {
-  overflow-wrap: anywhere;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-family: var(--code-font);
-  font-size: var(--code-font-size);
-}
-
-.long-proposal-content[open] summary {
-  margin-bottom: 5px;
-}
-
-.long-proposal-content textarea {
-  display: block;
-  width: 100%;
-  min-height: 132px;
-  max-height: 320px;
-  resize: vertical;
-  padding: 7px;
-  overflow: auto;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 6px;
-  background: var(--surface-raised);
-  color: var(--text-primary);
-  font-family: var(--code-font);
-  font-size: var(--code-font-size);
-  line-height: 1.55;
-}
-
-.long-proposal-detail-group.is-danger strong,
-.long-proposal-detail-group .is-danger {
-  color: var(--danger);
-}
-
 .long-edit-diff-file + .long-edit-diff-file {
   border-top: 1px solid var(--theme-line-soft);
 }
@@ -1340,11 +938,5 @@ function entitySnapshotText(
 
 :global(html[data-theme="dark"] .long-proposal-primary) {
   background: var(--accent);
-}
-
-@media (max-width: 42rem) {
-  .long-proposal-entity-diff {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 </style>

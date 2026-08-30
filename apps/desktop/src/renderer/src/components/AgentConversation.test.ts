@@ -7,6 +7,8 @@ import {
 import rendererStyles from "virtual:deepwrite-renderer-styles";
 import conversationSource from "./AgentConversation.vue?raw";
 import composerSource from "./ConversationComposer.vue?raw";
+import teamModeSource from "./AgentTeamModeSelect.vue?raw";
+import thinkingSelectSource from "./ConversationThinkingSelect.vue?raw";
 import composerLogicSource from "../composables/useConversationComposer.ts?raw";
 import attachmentLogicSource from "../composables/useConversationAttachments.ts?raw";
 import userInputCardSource from "./AgentUserInputCard.vue?raw";
@@ -18,10 +20,33 @@ import presentationSource from "./conversationToolPresentation.ts?raw";
 import proposalCardSource from "./AgentEditProposalCard.vue?raw";
 import discardButtonSource from "./ApprovalDiscardButton.vue?raw";
 import writingWorkspaceSource from "./WritingWorkspaceModule.vue?raw";
+import longWorkspaceSource from "./LongWorkspaceModule.vue?raw";
 import subagentSource from "./SubagentRunList.vue?raw";
 import subagentPresentationSource from "./subagentRunPresentation.ts?raw";
 
 describe("AgentConversation edit proposal placement", () => {
+  it("places the creative agent mode selector immediately before approval", () => {
+    const modeSelectIndex = composerSource.indexOf("<AgentTeamModeSelect");
+    const approvalSelectIndex = composerSource.indexOf(
+      ':model-value="approvalMode"',
+      modeSelectIndex
+    );
+
+    expect(modeSelectIndex).toBeGreaterThan(-1);
+    expect(approvalSelectIndex).toBeGreaterThan(modeSelectIndex);
+    expect(composerSource).toContain('v-if="agentWorkspaceType && agentId"');
+    expect(teamModeSource).toContain('label: "普通模式"');
+    expect(teamModeSource).toContain('label: "团队模式"');
+    expect(teamModeSource).toContain("disabled: !availability.value.available");
+    expect(teamModeSource).toContain('emit("update:modelValue", "normal")');
+    expect(writingWorkspaceSource).toContain(
+      ':agent-team-mode="conversationController.agentTeamMode.value"'
+    );
+    expect(longWorkspaceSource).toContain(
+      ':agent-team-mode="conversationController.agentTeamMode.value"'
+    );
+  });
+
   it("uses one composer card for agent questions and cross-stage confirmation", () => {
     expect(conversationSource).toContain("<AgentUserInputCard");
     expect(conversationSource).toContain('v-if="userInputRequest"');
@@ -99,6 +124,9 @@ describe("AgentConversation edit proposal placement", () => {
     expect(writingWorkspaceSource).toContain(
       "@discard-edit-proposal=\"emit('discardEditProposal', $event)\""
     );
+    expect(longWorkspaceSource).not.toContain("discardEditProposal");
+    expect(longWorkspaceSource).not.toContain("discardLongProposal");
+    expect(presentationSource).not.toContain("longApprovalCanDiscard");
   });
 
   it("places structured long proposals in the matching assistant turn", () => {
@@ -611,6 +639,25 @@ describe("AgentConversation edit proposal placement", () => {
     expect(presentationSource).toContain("message.content || message.thinking");
     expect(presentationSource).toContain(
       "message.toolCalls?.length || message.subagentRuns?.length"
+    );
+  });
+
+  it("configures DeepSeek web search inside the thinking-level popup", () => {
+    expect(composerSource).toContain("<ConversationThinkingSelect");
+    expect(thinkingSelectSource).toContain('aria-label="联网"');
+    expect(thinkingSelectSource).toContain(':aria-pressed="webSearchEnabled"');
+    expect(thinkingSelectSource).toContain(
+      ':disabled="responding || !webSearchAvailable"'
+    );
+    expect(thinkingSelectSource).toContain("emit('toggleWebSearch'");
+    expect(conversationSource).toContain(
+      "@toggle-web-search=\"emit('toggleWebSearch', $event)\""
+    );
+    expect(writingWorkspaceSource).toContain(
+      '@toggle-web-search="conversationController.selectWebSearchEnabled($event)"'
+    );
+    expect(longWorkspaceSource).toContain(
+      "conversationController.selectWebSearchEnabled($event)"
     );
   });
 });

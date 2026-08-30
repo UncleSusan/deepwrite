@@ -25,6 +25,7 @@ export const GeneralSettingsSchema = z.object({
   autoSave: z.boolean(),
   language: AppLanguageSchema,
   showInMenuBar: z.boolean(),
+  showContextUsage: z.boolean().default(true),
   workspacePaneLayout: WorkspacePaneLayoutSchema.default("agent-editor"),
   defaultTextViewMode: TextViewModeSchema.default("edit")
 });
@@ -45,6 +46,7 @@ export function createDefaultGeneralSettings(): GeneralSettings {
     autoSave: true,
     language: "auto",
     showInMenuBar: true,
+    showContextUsage: true,
     workspacePaneLayout: "agent-editor",
     defaultTextViewMode: "edit"
   };

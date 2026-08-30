@@ -1,11 +1,16 @@
 import { computed } from "vue";
-import type { LongWorkspaceOperationBatch } from "@deepwrite/contracts";
+import type {
+  LongWorkspaceImpactConfirmation,
+  LongWorkspaceOperationBatch
+} from "@deepwrite/contracts";
 import {
   isLongMigrationEvidenceCategoryId,
   type LongStructureMutationCompletion
 } from "../types/longWorkspace";
 import type { ResourceTreeNode } from "../types/workspace";
 import type { LongWorldbuildingSyncBookOption } from "../utils/longWorldbuildingSync";
+import { longDeletionDescription } from "../utils/longDeletionImpact";
+import { longImpactConfirmationDescription } from "../utils/longImpactConfirmation";
 import { createLongStructureCreate } from "./long-structure-transactions/create";
 import { createLongStructureDelete } from "./long-structure-transactions/delete";
 import { createLongStructureLease } from "./long-structure-transactions/lease";
@@ -33,8 +38,8 @@ function loadLongStructureMutationModule() {
 }
 
 /**
- * Owns long-form structure CRUD and its durable preview/CAS/apply transaction.
- * Continuity rollback, generic long navigation, approvals and conversations
+ * Owns long-form structure CRUD and its durable preview/apply transaction.
+ * Continuity recovery, generic long navigation, approvals and conversations
  * deliberately remain outside this boundary.
  */
 export function useLongStructureTransactionsCoordinator(
@@ -113,6 +118,43 @@ export function useLongStructureTransactionsCoordinator(
     await handleLongStructureMutation(expectedBookId, batch, completion);
   }
 
+  async function previewActiveLongStructureMutation(
+    batch: LongWorkspaceOperationBatch,
+    completion: (impact?: LongWorkspaceImpactConfirmation) => void
+  ): Promise<void> {
+    const expectedBookId = state.activeBookId.value;
+    const expectedIndex = state.workspaceIndex.value;
+    if (!expectedBookId || !expectedIndex) {
+      options.notifications.warning("当前长篇结构尚未就绪。");
+      completion();
+      return;
+    }
+    await lease.runTracked(async () => {
+      try {
+        const impact = await sync.previewLongStructureImpact(
+          expectedBookId,
+          batch
+        );
+        if (
+          state.activeBookId.value !== expectedBookId ||
+          state.workspaceIndex.value !== expectedIndex
+        ) {
+          completion();
+          return;
+        }
+        completion(impact);
+      } catch (error: unknown) {
+        if (lease.isDisposed()) return;
+        options.notifications.warning(
+          error instanceof Error
+            ? error.message
+            : "无法读取这次结构修改的关联影响。"
+        );
+        completion();
+      }
+    });
+  }
+
   async function handleLongDraftSectionAction(
     action: "move-up" | "move-down" | "delete",
     node: ResourceTreeNode
@@ -144,13 +186,38 @@ export function useLongStructureTransactionsCoordinator(
         return;
       }
       if (action === "delete") {
-        lease.cancelDialogRequests();
-        state.draftSectionDeleteTarget.value = {
-          bookId,
-          chapterCardId,
-          volumeId: chapter.volumeId,
-          title: chapter.title
-        };
+        try {
+          const { createLongStructureMutationBuilder } =
+            await loadLongStructureMutationModule();
+          const batch =
+            createLongStructureMutationBuilder(index).deleteChapter(
+              chapterCardId
+            );
+          const expectedImpact = await sync.previewLongStructureImpact(
+            bookId,
+            batch
+          );
+          if (lease.isDisposed() || state.workspaceIndex.value !== index)
+            return;
+          lease.cancelDialogRequests();
+          state.draftSectionDeleteTarget.value = {
+            bookId,
+            chapterCardId,
+            volumeId: chapter.volumeId,
+            title: chapter.title,
+            description: longImpactConfirmationDescription(
+              expectedImpact,
+              longDeletionDescription(index, "chapterCard", chapterCardId)
+            ),
+            expectedImpact
+          };
+        } catch (error: unknown) {
+          if (!lease.isDisposed()) {
+            options.notifications.warning(
+              error instanceof Error ? error.message : "无法预览小节删除影响。"
+            );
+          }
+        }
         return;
       }
       await lease.withMutation(
@@ -224,9 +291,12 @@ export function useLongStructureTransactionsCoordinator(
     createLongChapterCard: created.createLongChapterCard,
     handleLongStructureMutation,
     handleActiveLongStructureMutation,
+    previewActiveLongStructureMutation,
     handleLongWorldbuildingSync: sync.handleLongWorldbuildingSync,
     deleteActiveLongNavigationStructure:
       deletion.deleteActiveLongNavigationStructure,
+    previewActiveLongNavigationStructure:
+      deletion.previewActiveLongNavigationStructure,
     createLongCharacter: created.createLongCharacter,
     closeLongStructureDialog: lease.closeLongStructureDialog,
     closeLongCharacterCreate: lease.closeLongCharacterCreate,

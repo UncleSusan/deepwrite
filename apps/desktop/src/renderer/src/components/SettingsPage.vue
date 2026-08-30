@@ -62,6 +62,7 @@ const props = defineProps<{
   autoApproveCrossStageOperations: boolean;
   autoSaveEnabled: boolean;
   language: AppLanguage;
+  showContextUsage: boolean;
   showInMenuBar: boolean;
   workspacePaneLayout: WorkspacePaneLayout;
   defaultTextViewMode: TextViewMode;
@@ -102,6 +103,7 @@ const emit = defineEmits<{
   updateAutoApproveCrossStageOperations: [enabled: boolean];
   updateAutoSave: [enabled: boolean];
   updateLanguage: [language: AppLanguage];
+  updateShowContextUsage: [enabled: boolean];
   updateShowInMenuBar: [enabled: boolean];
   updateWorkspacePaneLayout: [layout: WorkspacePaneLayout];
   updateDefaultTextViewMode: [mode: TextViewMode];
@@ -344,6 +346,7 @@ async function selectCategory(id: string): Promise<void> {
           :auto-approve-cross-stage-operations="autoApproveCrossStageOperations"
           :auto-save-enabled="autoSaveEnabled"
           :language="language"
+          :show-context-usage="showContextUsage"
           :show-in-menu-bar="showInMenuBar"
           :workspace-pane-layout="workspacePaneLayout"
           :default-text-view-mode="defaultTextViewMode"
@@ -353,6 +356,7 @@ async function selectCategory(id: string): Promise<void> {
           "
           @update-auto-save="emit('updateAutoSave', $event)"
           @update-language="emit('updateLanguage', $event)"
+          @update-show-context-usage="emit('updateShowContextUsage', $event)"
           @update-show-in-menu-bar="emit('updateShowInMenuBar', $event)"
           @update-workspace-pane-layout="
             emit('updateWorkspacePaneLayout', $event)

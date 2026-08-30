@@ -15,7 +15,6 @@ import {
   LongReadAgentsMdResultSchema,
   LongReadDocumentResultSchema,
   LongRemoveBookResultSchema,
-  LongRollbackLastCommitResultSchema,
   LongSearchResultSchema,
   LongWorkspaceIndexResultSchema,
   LongWriteAgentsMdResultSchema,
@@ -237,7 +236,6 @@ export async function handleLongCommands(
           "long.applyLegacySyncAtPath",
           {
             bookId: command.payload.bookId,
-            expectedProjectRevision: command.payload.expectedProjectRevision,
             modules: command.payload.modules,
             sourcePath: registration.sourcePath,
             expectedFingerprint: registration.sourceFingerprint
@@ -409,7 +407,6 @@ export async function handleLongCommands(
     command.type === "long.applyOperations" ||
     command.type === "long.writeChapter" ||
     command.type === "long.commitChapter" ||
-    command.type === "long.rollbackLastCommit" ||
     command.type === "long.unregister" ||
     command.type === "long.delete"
   ) {
@@ -456,9 +453,6 @@ export async function handleLongCommands(
           break;
         case "long.commitChapter":
           payload = LongCommitChapterResultSchema.parse(result.payload);
-          break;
-        case "long.rollbackLastCommit":
-          payload = LongRollbackLastCommitResultSchema.parse(result.payload);
           break;
         case "long.unregister":
         case "long.delete":

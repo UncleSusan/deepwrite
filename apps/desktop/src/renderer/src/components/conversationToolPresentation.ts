@@ -6,10 +6,7 @@ import type {
 import type { IconName } from "../types/workspace";
 import type { LongWorkspaceProposalItem } from "../composables/useLongWorkspaceProposals";
 import { writeToolText } from "../utils/agentWriteToolPreview";
-import {
-  agentApprovalCanDiscard,
-  longApprovalCanDiscard
-} from "../utils/acceptedEditDiscard";
+import { agentApprovalCanDiscard } from "../utils/acceptedEditDiscard";
 
 export function workspaceToolLabel(name: string): string {
   const labels: Record<string, string> = {
@@ -115,7 +112,6 @@ export type ApprovalCardItem =
       type: "long-proposal";
       createdAt: string;
       toolCallIds: string[];
-      canDiscard: boolean;
       item: LongWorkspaceProposalItem;
     };
 
@@ -239,7 +235,6 @@ export function approvalItemsForMessage(
     type: "long-proposal",
     createdAt: item.event.timestamp,
     toolCallIds: [item.event.payload.toolCallId],
-    canDiscard: longApprovalCanDiscard(message, item),
     item
   }));
   return [...editItems, ...longItems].sort(compareApprovalCards);

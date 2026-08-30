@@ -42,6 +42,19 @@ describe("agent run preferences", () => {
       parseAgentModelSelection(
         JSON.stringify({
           selectedModelId: "writer",
+          thinkingLevel: "high",
+          webSearchEnabled: true
+        })
+      )
+    ).toEqual({
+      selectedModelId: "writer",
+      thinkingLevel: "high",
+      webSearchEnabled: true
+    });
+    expect(
+      parseAgentModelSelection(
+        JSON.stringify({
+          selectedModelId: "writer",
           thinkingLevel: "not valid"
         })
       )
@@ -170,14 +183,14 @@ describe("agent run preferences", () => {
     expect(
       parseAgentRunPreferences(JSON.stringify({ [scope]: preference }))
     ).toEqual({
-      [scope]: preference
+      [scope]: { ...preference, agentTeamMode: "normal" }
     });
     expect(
       parseAgentRunPreferences(JSON.stringify({ [`${scope}x`]: preference }))
     ).toEqual({});
   });
 
-  it("keeps only project-scoped temperature and approval choices", () => {
+  it("keeps project-scoped temperature, approval and team choices", () => {
     expect(
       parseAgentRunPreferences(
         JSON.stringify({
@@ -185,7 +198,8 @@ describe("agent run preferences", () => {
             selectedModelId: "writer",
             thinkingLevel: "high",
             temperature: 1.2,
-            approvalMode: "auto-approve"
+            approvalMode: "auto-approve",
+            agentTeamMode: "team"
           },
           "book:book-two": {
             selectedModelId: "plain-writer",
@@ -198,11 +212,13 @@ describe("agent run preferences", () => {
     ).toEqual({
       "book:book-one": {
         temperature: 1.2,
-        approvalMode: "auto-approve"
+        approvalMode: "auto-approve",
+        agentTeamMode: "team"
       },
       "book:book-two": {
         temperature: 0.6,
-        approvalMode: "request-approval"
+        approvalMode: "request-approval",
+        agentTeamMode: "normal"
       }
     });
   });
@@ -223,6 +239,11 @@ describe("agent run preferences", () => {
             temperature: 0.7,
             approvalMode: "always"
           },
+          "book:bad-team-mode": {
+            temperature: 0.7,
+            approvalMode: "request-approval",
+            agentTeamMode: "automatic"
+          },
           "book:out-of-range-temperature": {
             temperature: 2.1,
             approvalMode: "request-approval"
@@ -232,7 +253,8 @@ describe("agent run preferences", () => {
     ).toEqual({
       "book:valid": {
         temperature: 0.7,
-        approvalMode: "request-approval"
+        approvalMode: "request-approval",
+        agentTeamMode: "normal"
       }
     });
     expect(parseAgentRunPreferences("not-json")).toEqual({});

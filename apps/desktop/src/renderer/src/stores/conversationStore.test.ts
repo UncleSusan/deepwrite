@@ -26,11 +26,15 @@ function controller(name: string) {
   const approvalMode = ref<"request-approval" | "auto-approve">(
     "request-approval"
   );
+  const agentTeamMode = ref<"normal" | "team">("normal");
+  const webSearchEnabled = ref(false);
   const applyRunSettings = vi.fn((settings) => {
     selectedModelId.value = settings.selectedModelId;
     thinkingLevel.value = settings.thinkingLevel as "medium" | "high";
     temperature.value = settings.temperature;
     approvalMode.value = settings.approvalMode;
+    agentTeamMode.value = settings.agentTeamMode ?? "normal";
+    webSearchEnabled.value = settings.webSearchEnabled === true;
   });
   const dispose = vi.fn();
   return {
@@ -38,6 +42,8 @@ function controller(name: string) {
     thinkingLevel,
     temperature,
     approvalMode,
+    agentTeamMode,
+    webSearchEnabled,
     applyRunSettings,
     dispose
   } as unknown as AgentConversationController & {
@@ -89,23 +95,35 @@ describe("conversation store", () => {
     store.registerController("second", "book:two", second);
 
     store.setSessionAgentModelSelection(
-      { selectedModelId: "global-model", thinkingLevel: "high" },
+      {
+        selectedModelId: "global-model",
+        thinkingLevel: "high",
+        webSearchEnabled: true
+      },
       { persist: false }
     );
     expect(first.selectedModelId.value).toBe("global-model");
     expect(second.selectedModelId.value).toBe("global-model");
+    expect(first.webSearchEnabled.value).toBe(true);
+    expect(second.webSearchEnabled.value).toBe(true);
 
     store.setAgentRunPreferences(
       "book:one",
-      { temperature: 1.1, approvalMode: "auto-approve" },
+      {
+        temperature: 1.1,
+        approvalMode: "auto-approve",
+        agentTeamMode: "team"
+      },
       { persist: false }
     );
     expect(first.temperature.value).toBe(1.1);
     expect(first.approvalMode.value).toBe("auto-approve");
+    expect(first.agentTeamMode.value).toBe("team");
     expect(second.temperature.value).toBe(0.7);
     expect(store.agentRunPreferences["book:one"]).toEqual({
       temperature: 1.1,
-      approvalMode: "auto-approve"
+      approvalMode: "auto-approve",
+      agentTeamMode: "team"
     });
 
     const hydrating = controller("hydrating");

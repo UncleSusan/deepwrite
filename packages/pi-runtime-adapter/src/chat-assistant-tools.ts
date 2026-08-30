@@ -560,8 +560,6 @@ function buildLongProjectTools(input: {
     title: input.book.title,
     activeRoot: "plot_design" as const,
     activeAgentId: "long" as const,
-    workspaceRevision: input.book.projectRevision,
-    projectRevision: input.book.projectRevision,
     navigation: input.book.navigation
   };
   const tools = buildLongWorkspaceTools({

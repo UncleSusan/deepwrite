@@ -776,9 +776,6 @@ describe("DeepWrite Pi runtime adapter: provider-streaming", () => {
       activeRoot: "worldbuilding",
       activeAgentId: profile.id,
       activeFileId: "file_faction_watch:content",
-      activeFileRevision: "v1:3:1234abcd",
-      workspaceRevision: 3,
-      projectRevision: 5,
       worldbuildingDirectory: {
         categories: [
           {
@@ -811,7 +808,6 @@ describe("DeepWrite Pi runtime adapter: provider-streaming", () => {
       },
       navigation: {
         schemaVersion: 1,
-        revision: 3,
         bookId: "longbook_world_history",
         updatedAt: "2026-07-30T10:00:00.000Z",
         counts: {
@@ -890,7 +886,7 @@ describe("DeepWrite Pi runtime adapter: provider-streaming", () => {
       "【当前阶段信息与要求】"
     );
     expect(String(userMessages?.[0]?.content)).toContain(
-      "【长篇结构导航（发送时快照；条目正文与最新修订请通过工具读取）】"
+      "【长篇结构导航（发送时快照；条目正文与最新内容请通过工具读取）】"
     );
     expect(String(userMessages?.[0]?.content)).toContain(
       "全书共 1 卷、0 个剧情点、0 张章卡、0 条故事情节、0 个故事事件、0 条伏笔线"

@@ -32,7 +32,7 @@ export function buildListTool(ctx: LongToolContext): AgentTool {
       if (!readableRoots.has(LONG_STAGE_ROOTS[stage])) {
         throw new Error(`当前智能体无权读取 ${stage} 阶段。`);
       }
-      const { index } = await loadIndex(signal);
+      const index = await loadIndex(signal);
       const lines =
         stage === "worldbuilding"
           ? worldbuildingScopeLines(index, scopeId)

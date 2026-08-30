@@ -149,7 +149,6 @@ describe("Write Claw selective long sync", () => {
       bookId: target.book.id,
       sourcePath,
       expectedFingerprint: preview.sourceFingerprint,
-      expectedProjectRevision: target.summary.projectRevision,
       modules: ["worldbuilding", "characters", "plot"]
     });
     expect(first.imported).toEqual(preview.counts);
@@ -187,7 +186,6 @@ describe("Write Claw selective long sync", () => {
       bookId: target.book.id,
       sourcePath,
       expectedFingerprint: preview.sourceFingerprint,
-      expectedProjectRevision: first.projectRevision,
       modules: ["worldbuilding", "characters", "plot"]
     });
     expect(Object.values(second.imported).every((count) => count === 0)).toBe(
@@ -203,7 +201,6 @@ describe("Write Claw selective long sync", () => {
       bookId: target.book.id,
       sourcePath,
       expectedFingerprint: preview.sourceFingerprint,
-      expectedProjectRevision: target.summary.projectRevision,
       modules: ["plot"]
     });
     const snapshot = await service.getWorkspaceIndex({

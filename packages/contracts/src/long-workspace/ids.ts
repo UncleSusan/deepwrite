@@ -237,21 +237,10 @@ export type LongProjectRelativePath = z.infer<
   typeof LongProjectRelativePathSchema
 >;
 
-export const LongFileRevisionSchema = z
-  .string()
-  // Current revisions contain at most a safe-integer byte count and a
-  // 64-character SHA-256. Bound the wire value before applying the regexp so
-  // an untrusted command cannot turn this small token into an unbounded
-  // allocation/scanning surface.
-  .max(96)
-  .regex(/^(?:v1:\d+:[0-9a-f]{8}|v2:\d+:[0-9a-f]{64})$/);
-export type LongFileRevision = z.infer<typeof LongFileRevisionSchema>;
-
 export const LongWorkspaceFileReferenceSchema = z
   .object({
     id: LongFileIdSchema,
     path: LongProjectRelativePathSchema,
-    revision: LongFileRevisionSchema,
     updatedAt: LongTimestampSchema
   })
   .strict();
@@ -367,9 +356,6 @@ export function longLedgerCommitFileId(commitId: string): string {
   return `file_${commitId}:ledger`;
 }
 
-export const EMPTY_LONG_MARKDOWN_REVISION =
-  "v2:0:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" as LongFileRevision;
-
 export const LongChapterBodyStatusSchema = z.enum(["empty", "written"]);
 export type LongChapterBodyStatus = z.infer<typeof LongChapterBodyStatusSchema>;
 
@@ -435,7 +421,6 @@ export function createEmptyLongMarkdownFileReference(
   return LongMarkdownFileReferenceSchema.parse({
     id,
     path,
-    revision: EMPTY_LONG_MARKDOWN_REVISION,
     updatedAt
   });
 }

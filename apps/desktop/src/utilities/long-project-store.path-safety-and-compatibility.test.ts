@@ -3,7 +3,6 @@ import {
   LONG_WORKSPACE_INDEX_PATH,
   createEmptyLongMarkdownFileReference,
   createFixture,
-  createLongFileRevision,
   describe,
   expect,
   firstChapterFiles,
@@ -22,7 +21,7 @@ import {
 } from "./long-project-store.test-support";
 
 describe("LongProjectStore: path-safety-and-compatibility", () => {
-  it("reports actual revisions on the first lazy read after an external edit", async () => {
+  it("reads and directly overwrites the latest external edit", async () => {
     const { projectStore, created } = await createFixture("external");
     const initialBody = firstChapterFiles(created.book).body;
     await writeFile(
@@ -31,28 +30,21 @@ describe("LongProjectStore: path-safety-and-compatibility", () => {
       "utf8"
     );
 
-    const opened = await projectStore.openBook(created.projectDirectory);
-    expect(firstChapterFiles(opened.book).body.revision).toBe(
-      initialBody.revision
-    );
+    await projectStore.openBook(created.projectDirectory);
     const read = await projectStore.readDocument(created.projectDirectory, {
       fileId: initialBody.id
     });
     expect(read.content).toBe("外部编辑器写入的正文");
-    expect(read.revision).not.toBe(initialBody.revision);
 
     await expect(
       projectStore.writeDocument(created.projectDirectory, {
         fileId: initialBody.id,
-        content: "确认外部版本后继续写",
-        expectedFileRevision: read.revision,
-        expectedWorkspaceRevision: opened.book.workspaceIndex.revision,
-        expectedProjectRevision: opened.book.projectRevision!
+        content: "基于最新内容继续写"
       })
-    ).resolves.toMatchObject({
-      workspaceRevision: 1,
-      projectRevision: 1
-    });
+    ).resolves.toMatchObject({ fileId: initialBody.id });
+    await expect(
+      readFile(join(created.projectDirectory, initialBody.path), "utf8")
+    ).resolves.toBe("基于最新内容继续写");
   });
 
   it("recovers an interrupted project transaction before opening", async () => {
@@ -114,15 +106,11 @@ describe("LongProjectStore: path-safety-and-compatibility", () => {
     const previousManifestContent = await readFile(manifestPath, "utf8");
     const previousIndexContent = await readFile(indexPath, "utf8");
     const previousManifest = JSON.parse(previousManifestContent) as {
-      revision: number;
-      workspaceIndexFile: {
-        revision: string;
-        updatedAt: string;
-      };
+      workspaceIndexFile: { updatedAt: string };
       updatedAt: string;
+      [key: string]: unknown;
     };
     const previousIndex = JSON.parse(previousIndexContent) as {
-      revision: number;
       updatedAt: string;
       [key: string]: unknown;
     };
@@ -130,7 +118,8 @@ describe("LongProjectStore: path-safety-and-compatibility", () => {
     const nextIndexContent = `${JSON.stringify(
       {
         ...previousIndex,
-        revision: previousIndex.revision + 1,
+        revision: 41,
+        chapterFileRevisions: { body: "v1:legacy" },
         updatedAt: migratedAt
       },
       null,
@@ -139,11 +128,11 @@ describe("LongProjectStore: path-safety-and-compatibility", () => {
     const nextManifestContent = `${JSON.stringify(
       {
         ...previousManifest,
-        revision: previousManifest.revision + 1,
+        revision: 42,
         updatedAt: migratedAt,
         workspaceIndexFile: {
           ...previousManifest.workspaceIndexFile,
-          revision: createLongFileRevision(nextIndexContent),
+          revision: "v1:legacy",
           updatedAt: migratedAt
         }
       },
@@ -220,14 +209,11 @@ describe("LongProjectStore: path-safety-and-compatibility", () => {
     );
 
     const opened = await projectStore.openBook(created.projectDirectory);
-    expect(opened.book.projectRevision).toBe(previousManifest.revision + 1);
-    expect(opened.book.workspaceIndex.revision).toBe(
-      previousIndex.revision + 1
+    expect(opened.book.workspaceIndex.updatedAt).toBe(migratedAt);
+    expect(await readFile(indexPath, "utf8")).not.toMatch(
+      /"(?:revision|[^"]*Revisions)"\s*:/u
     );
-    await expect(readFile(indexPath, "utf8")).resolves.toBe(nextIndexContent);
-    await expect(readFile(manifestPath, "utf8")).resolves.toBe(
-      nextManifestContent
-    );
+    expect(await readFile(manifestPath, "utf8")).not.toMatch(/"revision"\s*:/u);
     await expect(
       lstat(join(created.projectDirectory, ".deepwrite", "transaction.json"))
     ).rejects.toMatchObject({ code: "ENOENT" });
@@ -300,7 +286,6 @@ describe("LongProjectStore: path-safety-and-compatibility", () => {
     );
     await projectStore.applyWorkspaceOperations(created.projectDirectory, {
       batch: {
-        baseRevision: 0,
         updatedAt: FIXED_NOW,
         operations: [
           {
@@ -315,12 +300,10 @@ describe("LongProjectStore: path-safety-and-compatibility", () => {
           }
         ],
         documentWrites: []
-      },
-      expectedProjectRevision: 0
+      }
     });
 
     const indexPath = join(created.projectDirectory, LONG_WORKSPACE_INDEX_PATH);
-    const manifestPath = join(created.projectDirectory, "deepwrite.json");
     const index = JSON.parse(await readFile(indexPath, "utf8")) as {
       worldbuilding: Array<{
         items: Array<{ file: { path: string } }>;
@@ -329,16 +312,7 @@ describe("LongProjectStore: path-safety-and-compatibility", () => {
     index.worldbuilding[0]!.items[0]!.file.path =
       "long/chapters/rogue-worldbuilding.md";
     const indexContent = `${JSON.stringify(index, null, 2)}\n`;
-    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
-      workspaceIndexFile: { revision: string };
-    };
-    manifest.workspaceIndexFile.revision = createLongFileRevision(indexContent);
     await writeFile(indexPath, indexContent, "utf8");
-    await writeFile(
-      manifestPath,
-      `${JSON.stringify(manifest, null, 2)}\n`,
-      "utf8"
-    );
 
     await expect(
       projectStore.openBook(created.projectDirectory)
@@ -353,41 +327,38 @@ describe("LongProjectStore: path-safety-and-compatibility", () => {
     const legacyPath = `long/worldbuilding/${projectTransactionContentSha256(
       categoryId
     ).slice(0, 32)}/content.md`;
-    const result = await projectStore.applyWorkspaceOperations(
-      created.projectDirectory,
-      {
-        batch: {
-          baseRevision: 0,
-          updatedAt: FIXED_NOW,
-          operations: [
-            {
-              type: "worldbuilding.create",
-              category: {
-                id: categoryId,
-                title: "旧版哈希路径",
-                order: created.book.workspaceIndex.worldbuilding.length + 1,
-                format: "text",
-                contentAuthority: "markdown",
-                file: createEmptyLongMarkdownFileReference(
-                  longWorldbuildingFileId(categoryId),
-                  legacyPath,
-                  FIXED_NOW
-                )
-              }
+    await projectStore.applyWorkspaceOperations(created.projectDirectory, {
+      batch: {
+        updatedAt: FIXED_NOW,
+        operations: [
+          {
+            type: "worldbuilding.create",
+            category: {
+              id: categoryId,
+              title: "旧版哈希路径",
+              order: created.book.workspaceIndex.worldbuilding.length + 1,
+              format: "text",
+              contentAuthority: "markdown",
+              file: createEmptyLongMarkdownFileReference(
+                longWorldbuildingFileId(categoryId),
+                legacyPath,
+                FIXED_NOW
+              )
             }
-          ],
-          documentWrites: []
-        },
-        expectedProjectRevision: 0
+          }
+        ],
+        documentWrites: []
       }
-    );
+    });
 
     await expect(
       projectStore.openBook(created.projectDirectory)
     ).resolves.toMatchObject({
       book: {
         workspaceIndex: {
-          revision: result.book.workspaceIndex.revision
+          worldbuilding: expect.arrayContaining([
+            expect.objectContaining({ id: categoryId })
+          ])
         }
       }
     });

@@ -1,6 +1,5 @@
 import {
   LONG_WORKSPACE_INDEX_PATH,
-  LongLedgerCommitRecordSchema,
   LongProjectManifestSchema,
   LongWorkspaceFileReferenceSchema,
   LongWorkspaceIndexSnapshotSchema,
@@ -17,6 +16,7 @@ import {
 } from "@deepwrite/contracts";
 import { assertLongLedgerRecordMatchesIndex } from "../../long-portable-bundle";
 import type { ProjectTransactionFileOperation } from "../../project-transaction";
+import { parseLongLedgerCommitRecord } from "../../long-version-metadata";
 import {
   appendLongCharacterHistoryEntry,
   serializeLongContinuityHandoff
@@ -29,11 +29,7 @@ import {
   serializeJson,
   unknownRecord
 } from "../io";
-import {
-  createLongFileRevision,
-  encodeUtf8Strict,
-  longRevisionsMatchContent
-} from "../revisions";
+import { encodeUtf8Strict } from "../utf8";
 import {
   MANIFEST_PATH,
   MAX_DOCUMENT_BYTES,
@@ -101,7 +97,6 @@ export async function migrateLegacyChapterContinuityFiles(input: {
       foreshadowingChanges: {
         id: longChapterForeshadowingChangesFileId(chapterCardId),
         path,
-        revision: createLongFileRevision(content),
         updatedAt:
           typeof chapter.body === "object" && chapter.body !== null
             ? (unknownRecord(chapter.body)?.updatedAt ??
@@ -120,11 +115,7 @@ export async function migrateLegacyChapterContinuityFiles(input: {
   });
   const indexContent = serializeJson(nextIndex);
   const nextManifest = LongProjectManifestSchema.parse({
-    ...input.manifest,
-    workspaceIndexFile: {
-      ...input.manifest.workspaceIndexFile,
-      revision: createLongFileRevision(indexContent)
-    }
+    ...input.manifest
   });
   await commitLongProjectTransaction({
     projectRoot: input.projectDirectory,
@@ -156,7 +147,7 @@ type LegacyProjectedCharacter = {
 /**
  * Projects recoverable v1-v3 structured continuity into the chapter Markdown
  * files used by the current UI. The original record and its `structured` mode
- * remain untouched, so audit and rollback semantics do not change.
+ * remain untouched, so its semantic audit stays available.
  */
 export async function migrateLegacyStructuredContinuityFiles(input: {
   projectDirectory: string;
@@ -241,19 +232,6 @@ export async function migrateLegacyStructuredContinuityFiles(input: {
     } catch (error: unknown) {
       if (!isNodeError(error, "ENOENT")) throw error;
     }
-    if (
-      options.reference &&
-      disk &&
-      !longRevisionsMatchContent(
-        options.reference.revision,
-        disk.revision,
-        disk.bytes
-      )
-    ) {
-      throw new Error(
-        `旧版连续性文件存在索引外修改，无法自动迁移：${options.path}`
-      );
-    }
     const projected = fitLegacyContinuityMarkdown(options.content);
     const content = disk?.content.trim() ? disk.content : projected;
     if (disk === null || content !== disk.content) {
@@ -267,7 +245,6 @@ export async function migrateLegacyStructuredContinuityFiles(input: {
     const reference = LongWorkspaceFileReferenceSchema.parse({
       id: options.id,
       path: options.path,
-      revision: createLongFileRevision(content),
       updatedAt:
         disk === null || content !== disk.content || !options.reference
           ? options.updatedAt
@@ -275,7 +252,6 @@ export async function migrateLegacyStructuredContinuityFiles(input: {
     });
     if (
       !options.reference ||
-      options.reference.revision !== reference.revision ||
       options.reference.updatedAt !== reference.updatedAt
     ) {
       changed = true;
@@ -293,7 +269,7 @@ export async function migrateLegacyStructuredContinuityFiles(input: {
       commit.recordFile.path,
       MAX_LEDGER_RECORD_BYTES
     );
-    const record = LongLedgerCommitRecordSchema.parse(
+    const record = parseLongLedgerCommitRecord(
       parseJson(recordDisk.content, `旧版连续性账本 ${commit.id}`)
     );
     assertLongLedgerRecordMatchesIndex(
@@ -417,11 +393,7 @@ export async function migrateLegacyStructuredContinuityFiles(input: {
   const nextIndex = LongWorkspaceIndexSnapshotSchema.parse(index);
   const indexContent = serializeJson(nextIndex);
   const nextManifest = LongProjectManifestSchema.parse({
-    ...input.manifest,
-    workspaceIndexFile: {
-      ...input.manifest.workspaceIndexFile,
-      revision: createLongFileRevision(indexContent)
-    }
+    ...input.manifest
   });
   await commitLongProjectTransaction({
     projectRoot: input.projectDirectory,
@@ -446,7 +418,7 @@ export async function migrateLegacyStructuredContinuityFiles(input: {
 export function projectLegacyStructuredContinuity(
   index: LongWorkspaceIndexSnapshot,
   record: LongLedgerCommitRecord,
-  characterRoleByFileId: ReadonlyMap<
+  _characterRoleByFileId: ReadonlyMap<
     string,
     {
       characterId: string;
@@ -460,7 +432,7 @@ export function projectLegacyStructuredContinuity(
   handoff: string | null;
   characters: LegacyProjectedCharacter[];
 } {
-  const notice = `> 从旧版 structured 连续性提交 ${record.id}（${record.committedAt}）恢复；完整审计与回滚数据仍保留在原账本记录中。`;
+  const notice = `> 从旧版 structured 连续性记录 ${record.id}（${record.committedAt}）恢复。`;
   const list = (items: readonly string[]): string =>
     items.length > 0 ? items.map((item) => `- ${item}`).join("\n") : "- 无";
   const foreshadowing = [
@@ -477,7 +449,7 @@ export function projectLegacyStructuredContinuity(
     list(
       record.foreshadowingBeatChanges.map(
         (change) =>
-          `${change.beatId}: ${change.before.status} → ${change.after.status}${change.note ? `；${change.note}` : ""}`
+          `${change.beatId}: ${change.after.status}${change.note ? `；${change.note}` : ""}`
       )
     ),
     "",
@@ -485,8 +457,7 @@ export function projectLegacyStructuredContinuity(
     "",
     list(
       record.foreshadowingThreadChanges.map(
-        (change) =>
-          `${change.foreshadowingId}: ${change.before} → ${change.after}`
+        (change) => `${change.foreshadowingId}: ${change.after}`
       )
     ),
     ""
@@ -527,8 +498,8 @@ export function projectLegacyStructuredContinuity(
         "",
         list(
           worldFacts.map(
-            ({ before, after }) =>
-              `${after.subjectId} · ${after.field}: ${before?.value ?? "未记录"} → ${after.value}；${after.evidence}`
+            ({ after }) =>
+              `${after.subjectId} · ${after.field}: ${after.value}；${after.evidence}`
           )
         ),
         "",
@@ -536,58 +507,41 @@ export function projectLegacyStructuredContinuity(
         "",
         list(
           worldKnowledge.map(
-            ({ before, after }) =>
-              `${after.audienceType}${after.audienceId ? ` ${after.audienceId}` : ""} 对 ${after.factId}: ${before?.level ?? "未记录"} → ${after.level}；${after.evidence}`
+            ({ after }) =>
+              `${after.audienceType}${after.audienceId ? ` ${after.audienceId}` : ""} 对 ${after.factId}: ${after.level}；${after.evidence}`
           )
         ),
         ""
       ].join("\n")
     : null;
 
-  const chapter = index.chapters.find(
-    ({ chapterCardId }) => chapterCardId === record.chapterCardId
-  );
-  const chapterStateChange = record.fileChanges.find(
-    ({ fileId }) => fileId === chapter?.characterState.id
-  );
-  const chapterState = chapterStateChange?.after.content.trim()
-    ? chapterStateChange.after.content
-    : record.chapterOutputs.characterState.trim()
-      ? record.chapterOutputs.characterState
-      : [
-          "# 章末状态",
-          "",
-          notice,
-          "",
-          "## 时间线",
-          "",
-          record.chapterSummary.timeline,
-          "",
-          "## 人物状态",
-          "",
-          record.chapterSummary.characterStates,
-          "",
-          "## 连续性备注",
-          "",
-          record.chapterSummary.continuityNotes,
-          ""
-        ].join("\n");
-  const handoffChange = record.fileChanges.find(
-    ({ fileId }) => fileId === chapter?.handoff.id
-  );
-  const handoff = handoffChange?.after.content.trim()
-    ? handoffChange.after.content
-    : record.chapterOutputs.handoff.summary.trim()
-      ? serializeLongContinuityHandoff(record.chapterOutputs.handoff)
-      : record.chapterSummary.continuityNotes.trim()
-        ? `# 接续包\n\n${notice}\n\n${record.chapterSummary.continuityNotes}\n`
-        : null;
+  const chapterState = record.chapterOutputs.characterState.trim()
+    ? record.chapterOutputs.characterState
+    : [
+        "# 章末状态",
+        "",
+        notice,
+        "",
+        "## 时间线",
+        "",
+        record.chapterSummary.timeline,
+        "",
+        "## 人物状态",
+        "",
+        record.chapterSummary.characterStates,
+        "",
+        "## 连续性备注",
+        "",
+        record.chapterSummary.continuityNotes,
+        ""
+      ].join("\n");
+  const handoff = record.chapterOutputs.handoff.summary.trim()
+    ? serializeLongContinuityHandoff(record.chapterOutputs.handoff)
+    : record.chapterSummary.continuityNotes.trim()
+      ? `# 接续包\n\n${notice}\n\n${record.chapterSummary.continuityNotes}\n`
+      : null;
 
   const characterIds = new Set<string>();
-  for (const change of record.fileChanges) {
-    const role = characterRoleByFileId.get(change.fileId);
-    if (role) characterIds.add(role.characterId);
-  }
   for (const { after } of record.factChanges) {
     if (
       (after.domain === "character" || after.domain === "relationship") &&
@@ -600,43 +554,29 @@ export function projectLegacyStructuredContinuity(
     (characterId) => {
       const character = index.characters.find(({ id }) => id === characterId);
       if (!character) return [];
-      const roleChanges = new Map<
-        "relationships" | "current-state" | "history",
-        LongLedgerCommitRecord["fileChanges"][number]
-      >();
-      for (const change of record.fileChanges) {
-        const role = characterRoleByFileId.get(change.fileId);
-        if (role?.characterId === characterId) {
-          roleChanges.set(role.role, change);
-        }
-      }
       const facts = record.factChanges.filter(
         ({ after }) =>
           after.subjectId === characterId &&
           (after.domain === "character" || after.domain === "relationship")
       );
       const factLines = facts.map(
-        ({ before, after }) =>
-          `${after.field}: ${before?.value ?? "未记录"} → ${after.value}；${after.evidence}`
+        ({ after }) => `${after.field}: ${after.value}；${after.evidence}`
       );
-      const exactState = roleChanges.get("current-state")?.after.content;
-      const currentState = exactState?.trim()
-        ? exactState
-        : [
-            `# ${character.name} · 当前状态`,
-            "",
-            notice,
-            "",
-            record.chapterSummary.characterStates,
-            "",
-            list(factLines),
-            ""
-          ].join("\n");
+      const currentState = [
+        `# ${character.name} · 当前状态`,
+        "",
+        notice,
+        "",
+        record.chapterSummary.characterStates,
+        "",
+        list(factLines),
+        ""
+      ].join("\n");
       return [
         {
           characterId,
           currentState,
-          exactHistory: roleChanges.get("history")?.after.content ?? null,
+          exactHistory: null,
           historyEntry: [
             `${character.name}：${record.chapterSummary.characterStates}`,
             ...factLines

@@ -25,7 +25,6 @@ describe("DeepWrite Pi runtime adapter: provider-model-routing", () => {
     const agentsMd = "# 长篇上下文\n\n## 世界观阶段\n维护设定。";
     const navigation = {
       schemaVersion: 1 as const,
-      revision: 3,
       bookId: "longbook_agents_md",
       updatedAt: "2026-07-26T10:00:00.000Z",
       counts: {
@@ -60,8 +59,6 @@ describe("DeepWrite Pi runtime adapter: provider-model-routing", () => {
             title: "雾港长篇",
             activeRoot: "plot_design",
             activeAgentId: profile.id,
-            workspaceRevision: 3,
-            projectRevision: 5,
             navigation,
             agentsMd
           }
@@ -84,8 +81,6 @@ describe("DeepWrite Pi runtime adapter: provider-model-routing", () => {
           title: "雾港长篇",
           activeRoot: "draft",
           activeAgentId: "long",
-          workspaceRevision: 3,
-          projectRevision: 5,
           navigation,
           agentsMd: "   "
         }
@@ -103,11 +98,8 @@ describe("DeepWrite Pi runtime adapter: provider-model-routing", () => {
       title: "雾港长篇",
       activeRoot: "plot_design",
       activeAgentId: profile.id,
-      workspaceRevision: 3,
-      projectRevision: 5,
       navigation: {
         schemaVersion: 1,
-        revision: 3,
         bookId: "longbook_subagents",
         updatedAt: "2026-07-26T10:00:00.000Z",
         counts: {

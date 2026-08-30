@@ -54,6 +54,15 @@ describe("App general settings integration", () => {
     expect(source).toContain('@update-show-in-menu-bar="updateShowInMenuBar"');
   });
 
+  it("persists the context usage indicator visibility", () => {
+    expect(coordinatorSource).toContain(
+      "function updateShowContextUsage(enabled: boolean)"
+    );
+    expect(source).toContain(
+      '@update-show-context-usage="updateShowContextUsage"'
+    );
+  });
+
   it("persists and applies the selected creative-workspace pane layout", () => {
     expect(coordinatorSource).toContain(
       "function updateWorkspacePaneLayout(layout: WorkspacePaneLayout)"

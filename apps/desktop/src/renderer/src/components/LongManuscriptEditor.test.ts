@@ -49,15 +49,12 @@ describe("LongManuscriptEditor", () => {
     expect(editorImplementationSource).toContain(
       "async function saveCurrentDocument("
     );
-    expect(editorImplementationSource).toContain(
-      "baseRevision: state.file.revision"
-    );
-    expect(editorImplementationSource).toContain(
-      "baseWorkspaceRevision: state.workspaceRevision"
-    );
-    expect(editorImplementationSource).toContain(
-      "baseProjectRevision: state.projectRevision"
-    );
+    expect(editorImplementationSource).toContain("bookId,");
+    expect(editorImplementationSource).toContain("fileId: state.file.id");
+    expect(editorImplementationSource).toContain("content: submittedContent");
+    expect(editorImplementationSource).not.toContain("baseRevision");
+    expect(editorImplementationSource).not.toContain("workspaceRevision");
+    expect(editorImplementationSource).not.toContain("projectRevision");
   });
 
   it("keeps the latest text viewport when a save finishes", () => {
@@ -78,7 +75,7 @@ describe("LongManuscriptEditor", () => {
       "currentEditorViewportKey() !== snapshot.documentKey"
     );
     expect(editorImplementationSource).toContain(
-      "props.workspaceIndex?.revision"
+      "options.currentSelectionFile.value?.file.updatedAt"
     );
   });
 

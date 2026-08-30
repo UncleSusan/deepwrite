@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import type { AgentEditProposal, ChatMessage } from "../types/conversation";
+import { longImpactConfirmationLines } from "../utils/longImpactConfirmation";
 import AppIcon from "./AppIcon.vue";
 import ApprovalDiscardButton from "./ApprovalDiscardButton.vue";
 import {
@@ -53,7 +55,7 @@ const proposalStatusMessages: Record<AgentEditProposal["status"], string> = {
 };
 
 function proposalStatusLabel(): string {
-  const discardLabel = approvalDiscardStatusLabel(props.proposal.discardState);
+  const discardLabel = approvalDiscardStatusLabel(proposalDiscardState());
   if (discardLabel) return discardLabel;
   if (
     props.proposal.status === "pending" &&
@@ -61,13 +63,17 @@ function proposalStatusLabel(): string {
   ) {
     return "待自动保存";
   }
+  if (isLongProposal()) {
+    if (props.proposal.status === "accepting") return "正在保存";
+    if (props.proposal.status === "conflict") return "内容已变化";
+    if (props.proposal.status === "error") return "保存失败";
+  }
   return proposalStatusLabels[props.proposal.status];
 }
 
 function proposalVisualStatus(): AgentEditProposal["status"] {
   return (
-    approvalDiscardVisualStatus(props.proposal.discardState) ??
-    props.proposal.status
+    approvalDiscardVisualStatus(proposalDiscardState()) ?? props.proposal.status
   );
 }
 
@@ -75,14 +81,44 @@ function showDiscardButton(): boolean {
   return shouldShowApprovalDiscardButton(
     props.discardable,
     props.proposal.status === "accepted",
-    props.proposal.discardState
+    proposalDiscardState()
   );
 }
 
 function proposalAcceptLabel(): string {
   if (props.proposal.status === "accepting") return "保存中…";
+  if (isLongProposal()) {
+    if (!longExpectedImpact.value) return "核对影响";
+    return props.proposal.status === "error" ? "重新确认" : "确认并保存";
+  }
   return props.proposal.status === "error" ? "重试接受并保存" : "接受并保存";
 }
+
+function isLongProposal(): boolean {
+  return Boolean(
+    props.proposal.longWorldbuildingTarget ||
+    props.proposal.longCharacterTarget ||
+    props.proposal.longPlotDesignTarget ||
+    props.proposal.longDraftTarget
+  );
+}
+
+function proposalDiscardState(): AgentEditProposal["discardState"] | undefined {
+  return isLongProposal() ? undefined : props.proposal.discardState;
+}
+
+const longExpectedImpact = computed(
+  () =>
+    props.proposal.longWorldbuildingTarget?.expectedImpact ??
+    props.proposal.longCharacterTarget?.expectedImpact ??
+    props.proposal.longPlotDesignTarget?.expectedImpact ??
+    props.proposal.longDraftTarget?.expectedImpact
+);
+const longExpectedImpactLines = computed(() =>
+  longExpectedImpact.value
+    ? longImpactConfirmationLines(longExpectedImpact.value)
+    : []
+);
 
 function canReviewProposalWhileStreaming(): boolean {
   return props.allowLiveEditReview;
@@ -122,8 +158,19 @@ function proposalReviewDisabled(decision: "accept" | "reject"): boolean {
 
 function proposalStatusMessage(): string {
   const proposal = props.proposal;
-  const discardMessage = approvalDiscardStatusMessage(proposal.discardState);
+  const discardMessage = approvalDiscardStatusMessage(proposalDiscardState());
   if (discardMessage) return discardMessage;
+  if (!proposal.statusMessage && isLongProposal()) {
+    if (proposal.status === "accepting") {
+      return "正在直接保存这项长篇修改……";
+    }
+    if (proposal.status === "conflict") {
+      return "目标内容或关联关系已经变化，本次修改尚未保存。";
+    }
+    if (proposal.status === "error") {
+      return "这项长篇修改未能保存，请检查运行详情。";
+    }
+  }
   if (
     props.messageStatus === "streaming" &&
     proposal.status === "pending" &&
@@ -253,7 +300,7 @@ function diffLineMark(type: "context" | "addition" | "deletion"): string {
     :class="`is-${proposalVisualStatus()}`"
     :aria-busy="
       proposal.status === 'accepting' ||
-      proposal.discardState?.status === 'discarding'
+      proposalDiscardState()?.status === 'discarding'
     "
   >
     <header class="edit-proposal-header">
@@ -286,7 +333,7 @@ function diffLineMark(type: "context" | "addition" | "deletion"): string {
           </button>
           <ApprovalDiscardButton
             v-if="showDiscardButton()"
-            :discarding="proposal.discardState?.status === 'discarding'"
+            :discarding="proposalDiscardState()?.status === 'discarding'"
             @discard="
               emit('discard', {
                 runId: proposal.runId,
@@ -349,6 +396,20 @@ function diffLineMark(type: "context" | "addition" | "deletion"): string {
     </details>
     <p v-else class="edit-proposal-empty">没有可显示的行级差异。</p>
 
+    <section
+      v-if="longExpectedImpact"
+      class="long-proposal-impact"
+      aria-label="本次长篇修改的精确影响"
+    >
+      <strong>本次结构与关联影响</strong>
+      <ul v-if="longExpectedImpactLines.length">
+        <li v-for="line in longExpectedImpactLines" :key="line">
+          {{ line }}
+        </li>
+      </ul>
+      <p v-else>没有额外关联变化，仅保存提案中的文件内容。</p>
+    </section>
+
     <footer class="edit-proposal-footer">
       <span class="edit-proposal-message">{{ proposalStatusMessage() }}</span>
       <div v-if="showProposalReviewActions()" class="edit-proposal-actions">
@@ -373,3 +434,33 @@ function diffLineMark(type: "context" | "addition" | "deletion"): string {
     </footer>
   </article>
 </template>
+
+<style scoped>
+.long-proposal-impact {
+  display: grid;
+  gap: 6px;
+  margin: 10px 14px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: 0.785714rem;
+  line-height: 1.5;
+}
+
+.long-proposal-impact strong {
+  color: var(--text-primary);
+}
+
+.long-proposal-impact ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.long-proposal-impact p {
+  margin: 0;
+}
+</style>

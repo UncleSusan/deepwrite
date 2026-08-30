@@ -1,3 +1,14 @@
+import type {
+  LongForeshadowingBeat,
+  LongNarrativePlacement
+} from "../long-workspace";
+import {
+  cleanupProjectionForDeletedEntity,
+  refreshForeshadowingThreadStatus,
+  removeBeatDecisionFromLedger,
+  removeLedgerCommitForChapter,
+  removePlacementDecisionFromLedger
+} from "./ledger-cleanup";
 import type { MutationState } from "./state";
 import {
   addFileDeleteIntent,
@@ -5,15 +16,42 @@ import {
   assertChapterIsMutable,
   assertPlacementIsMutable,
   concreteChapterIdForBeat,
-  eventParticipatesInCommittedFacts,
   findBeat,
   findEntityIndex,
   markDeleted,
   markUpdated,
   operationError,
-  orderedChapterIds,
-  requireCascade
+  orderedChapterIds
 } from "./state";
+
+export { deleteCharacter } from "./cascade-character";
+
+function ensureRetainedBeatHasAnchor(beat: LongForeshadowingBeat): void {
+  if (
+    beat.eventId !== null ||
+    beat.placementId !== null ||
+    beat.chapterCardId !== null ||
+    (beat.volumeId ?? null) !== null ||
+    (beat.arcId ?? null) !== null ||
+    beat.plannedScope.trim().length > 0
+  ) {
+    return;
+  }
+  beat.plannedScope = "原关联对象已删除，待重新指定锚点。";
+}
+
+function retainBeatAfterPlacementDeletion(
+  state: MutationState,
+  beat: LongForeshadowingBeat,
+  placement: LongNarrativePlacement
+): void {
+  if (beat.placementId !== placement.id) return;
+  beat.placementId = null;
+  beat.chapterCardId ??= placement.chapterCardId;
+  beat.eventId ??= placement.eventId;
+  ensureRetainedBeatHasAnchor(beat);
+  markUpdated(state, beat.id);
+}
 
 export function deleteForeshadowingBeat(
   state: MutationState,
@@ -21,15 +59,17 @@ export function deleteForeshadowingBeat(
 ): void {
   const { thread, beat, beatIndex } = findBeat(state.draft, beatId);
   assertBeatIsMutable(beat, "delete");
+  removeBeatDecisionFromLedger(state, beat, thread.id);
+  cleanupProjectionForDeletedEntity(state, beat.id);
   thread.beats.splice(beatIndex, 1);
   markDeleted(state, beat.id);
   markUpdated(state, thread.id);
+  refreshForeshadowingThreadStatus(state, thread);
 }
 
 export function deleteNarrativePlacement(
   state: MutationState,
-  placementId: string,
-  cascade: boolean
+  placementId: string
 ): void {
   const placementIndex = findEntityIndex(
     state.draft.plot.narrativePlacements,
@@ -38,21 +78,20 @@ export function deleteNarrativePlacement(
   );
   const placement = state.draft.plot.narrativePlacements[placementIndex]!;
   assertPlacementIsMutable(placement, "delete");
-  const beatIds = state.draft.plot.foreshadowing.flatMap((thread) =>
-    thread.beats
-      .filter((beat) => beat.placementId === placementId)
-      .map(({ id }) => id)
+  state.draft.plot.foreshadowing.forEach((thread) =>
+    thread.beats.forEach((beat) =>
+      retainBeatAfterPlacementDeletion(state, beat, placement)
+    )
   );
-  requireCascade(cascade, beatIds, `Narrative placement ${placementId}`);
-  beatIds.forEach((beatId) => deleteForeshadowingBeat(state, beatId));
+  removePlacementDecisionFromLedger(state, placement);
+  cleanupProjectionForDeletedEntity(state, placement.id);
   state.draft.plot.narrativePlacements.splice(placementIndex, 1);
   markDeleted(state, placement.id);
 }
 
 export function deleteChapter(
   state: MutationState,
-  chapterCardId: string,
-  cascade: boolean
+  chapterCardId: string
 ): void {
   assertChapterIsMutable(state.draft, chapterCardId, "delete");
   const chapterIndex = findEntityIndex(
@@ -64,61 +103,39 @@ export function deleteChapter(
   const placementIds = state.draft.plot.narrativePlacements
     .filter((placement) => placement.chapterCardId === chapterCardId)
     .map(({ id }) => id);
-  const placementIdSet = new Set(placementIds);
-  const directBeatIds = state.draft.plot.foreshadowing.flatMap((thread) =>
-    thread.beats
-      .filter(
-        (beat) =>
-          beat.chapterCardId === chapterCardId ||
-          (beat.placementId !== null && placementIdSet.has(beat.placementId))
-      )
-      .map(({ id }) => id)
-  );
-  requireCascade(
-    cascade,
-    [...placementIds, ...directBeatIds],
-    `Chapter card ${chapterCardId}`
-  );
-
-  for (const beatId of new Set(directBeatIds)) {
-    deleteForeshadowingBeat(state, beatId);
-  }
+  removeLedgerCommitForChapter(state, chapterCardId);
   for (const placementId of placementIds) {
-    deleteNarrativePlacement(state, placementId, true);
+    deleteNarrativePlacement(state, placementId);
   }
-
-  const ledgerRecord = state.draft.ledger.commits.find(
-    (commit) => commit.chapterCardId === chapterCardId
-  );
-  if (ledgerRecord) {
-    addFileDeleteIntent(
-      state,
-      ledgerRecord.recordFile,
-      `Delete continuity record for chapter ${chapterCardId}`
-    );
-    state.draft.ledger.commits = state.draft.ledger.commits.filter(
-      ({ id }) => id !== ledgerRecord.id
-    );
-    state.draft.plot.narrativePlacements.forEach((placement) => {
-      if (placement.commitId !== ledgerRecord.id) return;
-      placement.commitId = null;
-      placement.status = "planned";
+  state.draft.plot.foreshadowing.forEach((thread) => {
+    thread.beats.forEach((beat) => {
+      if (beat.chapterCardId !== chapterCardId) return;
+      beat.chapterCardId = null;
+      const event =
+        beat.eventId === null
+          ? undefined
+          : state.draft.plot.storyEvents.find(({ id }) => id === beat.eventId);
+      const eventSupportsVolume =
+        !event ||
+        event.arcIds.some(
+          (arcId) =>
+            state.draft.plot.arcs.find((arc) => arc.id === arcId)?.volumeId ===
+            chapter.volumeId
+        );
+      const eventSupportsArc =
+        chapter.primaryArcId !== null &&
+        (!event || event.arcIds.includes(chapter.primaryArcId));
+      if ((beat.volumeId ?? null) === null && eventSupportsVolume) {
+        beat.volumeId = chapter.volumeId;
+      }
+      if ((beat.arcId ?? null) === null && eventSupportsArc) {
+        beat.arcId = chapter.primaryArcId;
+      }
+      ensureRetainedBeatHasAnchor(beat);
+      markUpdated(state, beat.id);
     });
-    state.draft.plot.foreshadowing.forEach((thread) => {
-      thread.beats.forEach((beat) => {
-        if (beat.commitId !== ledgerRecord.id) return;
-        beat.commitId = null;
-        beat.status = "planned";
-      });
-    });
-    state.draft.ledger.projection = {
-      throughCommitId: null,
-      facts: [],
-      knowledge: [],
-      openLoops: [],
-      latestHandoff: null
-    };
-  }
+  });
+  cleanupProjectionForDeletedEntity(state, chapterCardId);
 
   const fileIndex = state.draft.chapters.findIndex(
     (entry) => entry.chapterCardId === chapterCardId
@@ -172,49 +189,26 @@ export function deleteStoryPlot(
     storyPlot.file,
     `Delete story plot ${storyPlotId}`
   );
+  cleanupProjectionForDeletedEntity(state, storyPlot.id);
   state.draft.plot.storyPlots.splice(storyPlotIndex, 1);
   markDeleted(state, storyPlot.id);
 }
 
-export function deleteArc(
-  state: MutationState,
-  arcId: string,
-  cascade: boolean
-): void {
+export function deleteArc(state: MutationState, arcId: string): void {
   const arcIndex = findEntityIndex(state.draft.plot.arcs, arcId, "Arc");
   const arc = state.draft.plot.arcs[arcIndex]!;
-  const eventIds = state.draft.plot.storyEvents
-    .filter((event) => event.arcIds.includes(arcId))
-    .map(({ id }) => id);
   const storyPlotIds = state.draft.plot.storyPlots
     .filter((storyPlot) => storyPlot.arcId === arcId)
     .map(({ id }) => id);
-  const directBeatIds = state.draft.plot.foreshadowing.flatMap((thread) =>
-    thread.beats
-      .filter((beat) => (beat.arcId ?? null) === arcId)
-      .map(({ id }) => id)
+  state.draft.plot.foreshadowing.forEach((thread) =>
+    thread.beats.forEach((beat) => {
+      if ((beat.arcId ?? null) !== arcId) return;
+      assertBeatIsMutable(beat, "unlink from its deleted planning arc");
+      beat.arcId = null;
+      ensureRetainedBeatHasAnchor(beat);
+      markUpdated(state, beat.id);
+    })
   );
-  if (
-    eventIds.some((eventId) =>
-      eventParticipatesInCommittedFacts(state.draft, eventId)
-    )
-  ) {
-    operationError(
-      "committed_prefix_protected",
-      `Cannot delete arc ${arcId}; a committed event references it.`
-    );
-  }
-  requireCascade(
-    cascade,
-    [...eventIds, ...storyPlotIds, ...directBeatIds],
-    `Arc ${arcId}`
-  );
-  for (const beatId of new Set(directBeatIds)) {
-    const stillExists = state.draft.plot.foreshadowing.some((thread) =>
-      thread.beats.some((beat) => beat.id === beatId)
-    );
-    if (stillExists) deleteForeshadowingBeat(state, beatId);
-  }
   state.draft.plot.chapterCards.forEach((chapter) => {
     if (chapter.primaryArcId !== arcId) return;
     chapter.primaryArcId = null;
@@ -257,6 +251,7 @@ export function deleteArc(
       });
     });
   });
+  cleanupProjectionForDeletedEntity(state, arc.id);
   state.draft.plot.arcs.splice(
     findEntityIndex(state.draft.plot.arcs, arcId, "Arc"),
     1
@@ -264,11 +259,7 @@ export function deleteArc(
   markDeleted(state, arc.id);
 }
 
-export function deleteVolume(
-  state: MutationState,
-  volumeId: string,
-  cascade: boolean
-): void {
+export function deleteVolume(state: MutationState, volumeId: string): void {
   const volumeIndex = findEntityIndex(
     state.draft.plot.volumes,
     volumeId,
@@ -281,24 +272,18 @@ export function deleteVolume(
   const arcIds = state.draft.plot.arcs
     .filter((arc) => arc.volumeId === volumeId)
     .map(({ id }) => id);
-  const directBeatIds = state.draft.plot.foreshadowing.flatMap((thread) =>
-    thread.beats
-      .filter((beat) => (beat.volumeId ?? null) === volumeId)
-      .map(({ id }) => id)
+  chapterIds.forEach((chapterId) => deleteChapter(state, chapterId));
+  arcIds.forEach((arcId) => deleteArc(state, arcId));
+  state.draft.plot.foreshadowing.forEach((thread) =>
+    thread.beats.forEach((beat) => {
+      if ((beat.volumeId ?? null) !== volumeId) return;
+      assertBeatIsMutable(beat, "unlink from its deleted planning volume");
+      beat.volumeId = null;
+      ensureRetainedBeatHasAnchor(beat);
+      markUpdated(state, beat.id);
+    })
   );
-  requireCascade(
-    cascade,
-    [...arcIds, ...chapterIds, ...directBeatIds],
-    `Volume ${volumeId}`
-  );
-  for (const beatId of new Set(directBeatIds)) {
-    const stillExists = state.draft.plot.foreshadowing.some((thread) =>
-      thread.beats.some((beat) => beat.id === beatId)
-    );
-    if (stillExists) deleteForeshadowingBeat(state, beatId);
-  }
-  chapterIds.forEach((chapterId) => deleteChapter(state, chapterId, true));
-  arcIds.forEach((arcId) => deleteArc(state, arcId, true));
+  cleanupProjectionForDeletedEntity(state, volume.id);
   state.draft.plot.volumes.splice(
     findEntityIndex(state.draft.plot.volumes, volumeId, "Volume"),
     1
@@ -306,11 +291,7 @@ export function deleteVolume(
   markDeleted(state, volume.id);
 }
 
-export function deleteStoryEvent(
-  state: MutationState,
-  eventId: string,
-  cascade: boolean
-): void {
+export function deleteStoryEvent(state: MutationState, eventId: string): void {
   const eventIndex = findEntityIndex(
     state.draft.plot.storyEvents,
     eventId,
@@ -327,52 +308,25 @@ export function deleteStoryEvent(
   const placementIds = state.draft.plot.narrativePlacements
     .filter((placement) => placement.eventId === eventId)
     .map(({ id }) => id);
-  const placementIdSet = new Set(placementIds);
-  const beatIds = state.draft.plot.foreshadowing.flatMap((thread) =>
-    thread.beats
-      .filter(
-        (beat) =>
-          beat.eventId === eventId ||
-          (beat.placementId !== null && placementIdSet.has(beat.placementId))
-      )
-      .map(({ id }) => id)
-  );
-  const truthThreadIds = state.draft.plot.foreshadowing
-    .filter((thread) => thread.truthEventId === eventId)
-    .map(({ id }) => id);
-  const committedPlacement = state.draft.plot.narrativePlacements.find(
-    (placement) => placement.eventId === eventId && placement.commitId !== null
-  );
-  const committedBeat = state.draft.plot.foreshadowing
-    .flatMap(({ beats }) => beats)
-    .find((beat) => beat.eventId === eventId && beat.commitId !== null);
-  if (committedPlacement || committedBeat) {
-    operationError(
-      "committed_prefix_protected",
-      `Cannot delete event ${eventId}; it participates in committed facts.`
-    );
-  }
-  requireCascade(
-    cascade,
-    [...connectionIds, ...placementIds, ...beatIds, ...truthThreadIds],
-    `Story event ${eventId}`
-  );
-
   placementIds.forEach((placementId) =>
-    deleteNarrativePlacement(state, placementId, true)
+    deleteNarrativePlacement(state, placementId)
   );
-  for (const beatId of new Set(beatIds)) {
-    const stillExists = state.draft.plot.foreshadowing.some((thread) =>
-      thread.beats.some((beat) => beat.id === beatId)
-    );
-    if (stillExists) deleteForeshadowingBeat(state, beatId);
-  }
+  state.draft.plot.foreshadowing.forEach((thread) =>
+    thread.beats.forEach((beat) => {
+      if (beat.eventId !== eventId) return;
+      assertBeatIsMutable(beat, "unlink from its deleted event");
+      beat.eventId = null;
+      ensureRetainedBeatHasAnchor(beat);
+      markUpdated(state, beat.id);
+    })
+  );
   connectionIds.forEach((connectionId) => {
     const index = findEntityIndex(
       state.draft.plot.eventConnections,
       connectionId,
       "Event connection"
     );
+    cleanupProjectionForDeletedEntity(state, connectionId);
     state.draft.plot.eventConnections.splice(index, 1);
     markDeleted(state, connectionId);
   });
@@ -381,80 +335,14 @@ export function deleteStoryEvent(
     thread.truthEventId = null;
     markUpdated(state, thread.id);
   });
+  cleanupProjectionForDeletedEntity(state, event.id);
   state.draft.plot.storyEvents.splice(eventIndex, 1);
   markDeleted(state, event.id);
 }
 
-export function deleteCharacter(
-  state: MutationState,
-  characterId: string,
-  cascade: boolean
-): void {
-  const characterIndex = findEntityIndex(
-    state.draft.characters,
-    characterId,
-    "Character"
-  );
-  const character = state.draft.characters[characterIndex]!;
-  const eventRefs = state.draft.plot.storyEvents
-    .filter((event) => event.characterIds.includes(characterId))
-    .map(({ id }) => id);
-  const continuityRefs = state.draft.chapters.flatMap((chapter) =>
-    chapter.characterContinuity
-      .filter((entry) => entry.characterId === characterId)
-      .map((entry) => ({ chapter, entry }))
-  );
-  requireCascade(
-    cascade,
-    [
-      ...eventRefs,
-      ...continuityRefs.map(({ chapter }) => chapter.chapterCardId)
-    ],
-    `Character ${characterId}`
-  );
-  state.draft.plot.storyEvents.forEach((event) => {
-    if (!event.characterIds.includes(characterId)) return;
-    event.characterIds = event.characterIds.filter(
-      (candidate) => candidate !== characterId
-    );
-    markUpdated(state, event.id);
-  });
-  for (const { chapter, entry } of continuityRefs) {
-    [entry.currentState, entry.history].forEach((file) =>
-      addFileDeleteIntent(
-        state,
-        file,
-        `Delete uncommitted chapter continuity for character ${characterId}`
-      )
-    );
-    chapter.characterContinuity = chapter.characterContinuity.filter(
-      (candidate) => candidate.characterId !== characterId
-    );
-    markUpdated(state, chapter.chapterCardId);
-  }
-
-  const fileIndex = state.draft.characterFiles.findIndex(
-    (entry) => entry.characterId === characterId
-  );
-  if (fileIndex < 0) {
-    operationError(
-      "invalid_result",
-      `Character ${characterId} is missing its file index.`
-    );
-  }
-  const files = state.draft.characterFiles[fileIndex]!;
-  [files.coreProfile, files.relationships].forEach((file) =>
-    addFileDeleteIntent(state, file, `Delete character ${characterId}`)
-  );
-  state.draft.characterFiles.splice(fileIndex, 1);
-  state.draft.characters.splice(characterIndex, 1);
-  markDeleted(state, character.id);
-}
-
 export function deleteForeshadowingThread(
   state: MutationState,
-  threadId: string,
-  cascade: boolean
+  threadId: string
 ): void {
   const threadIndex = findEntityIndex(
     state.draft.plot.foreshadowing,
@@ -462,18 +350,8 @@ export function deleteForeshadowingThread(
     "Foreshadowing thread"
   );
   const thread = state.draft.plot.foreshadowing[threadIndex]!;
-  if (thread.beats.some((beat) => beat.commitId !== null)) {
-    operationError(
-      "committed_prefix_protected",
-      `Cannot delete foreshadowing thread ${threadId} with committed beats.`
-    );
-  }
-  requireCascade(
-    cascade,
-    thread.beats.map(({ id }) => id),
-    `Foreshadowing thread ${threadId}`
-  );
   [...thread.beats].forEach((beat) => deleteForeshadowingBeat(state, beat.id));
+  cleanupProjectionForDeletedEntity(state, thread.id);
   state.draft.plot.foreshadowing.splice(threadIndex, 1);
   markDeleted(state, thread.id);
 }

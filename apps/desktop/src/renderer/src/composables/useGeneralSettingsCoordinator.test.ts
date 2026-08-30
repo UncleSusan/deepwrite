@@ -266,4 +266,16 @@ describe("general settings coordinator", () => {
       expect.objectContaining({ autoApproveCrossStageOperations: true })
     );
   });
+
+  it("persists context usage visibility independently", async () => {
+    const { coordinator, settings, api } = harness();
+
+    coordinator.updateShowContextUsage(false);
+    await coordinator.drain();
+
+    expect(settings.value.showContextUsage).toBe(false);
+    expect(api?.save).toHaveBeenCalledWith(
+      expect.objectContaining({ showContextUsage: false })
+    );
+  });
 });

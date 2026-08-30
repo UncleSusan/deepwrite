@@ -16,7 +16,7 @@ import {
   LongLedgerCommitIndexSchema
 } from "./continuity";
 import { LongPlotIndexSchema } from "./plot";
-import { LongRevisionSchema, LongTimestampSchema } from "./primitives";
+import { LongTimestampSchema } from "./primitives";
 import {
   DEFAULT_LONG_WORKSPACE_FEATURE_SETTINGS,
   LongWorldbuildingCategorySchema,
@@ -26,7 +26,6 @@ import {
 export const LongWorkspaceIndexSnapshotObjectSchema = z
   .object({
     schemaVersion: LongWorkspaceSchemaVersionSchema,
-    revision: LongRevisionSchema,
     bookId: LongBookIdSchema,
     updatedAt: LongTimestampSchema,
     bookLine: LongMarkdownFileReferenceSchema,
@@ -42,7 +41,6 @@ export const LongWorkspaceIndexSnapshotObjectSchema = z
     characterOverview: LongMarkdownFileReferenceSchema.optional(),
     characterTypes: z
       .array(LongCharacterTypeSchema)
-      .min(1)
       .max(10_000)
       .default(() =>
         DEFAULT_LONG_CHARACTER_TYPES.map((value) => ({ ...value }))

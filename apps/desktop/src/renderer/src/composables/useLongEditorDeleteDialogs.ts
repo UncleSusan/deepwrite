@@ -1,10 +1,16 @@
 import { computed, nextTick, ref, type ComputedRef, type Ref } from "vue";
 import type {
   LongChapterCardId,
+  LongWorkspaceImpactConfirmation,
   LongWorkspaceIndexSnapshot,
-  LongWorkspaceOperation
+  LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
-import type { LongWorkspaceSelection } from "../types/longWorkspace";
+import type {
+  LongStructureMutationCompletion,
+  LongWorkspaceSelection
+} from "../types/longWorkspace";
+import { longDeletionDescription } from "../utils/longDeletionImpact";
+import { longImpactConfirmationDescription } from "../utils/longImpactConfirmation";
 
 export interface LongNavigationDeleteTarget {
   kind: "character" | "volume" | "plotPoint" | "chapterCard";
@@ -12,6 +18,8 @@ export interface LongNavigationDeleteTarget {
   title: string;
   label: string;
   description: string;
+  previewPending?: boolean;
+  expectedImpact?: LongWorkspaceImpactConfirmation;
 }
 
 export function useLongEditorDeleteDialogs(options: {
@@ -24,19 +32,35 @@ export function useLongEditorDeleteDialogs(options: {
   currentNavigationDeleteTarget: ComputedRef<LongNavigationDeleteTarget | null>;
   currentWorldbuildingItems: ComputedRef<Array<{ id: string; title: string }>>;
   pendingWorldbuildingDeleteId: Ref<string | null>;
-  emitWorldbuildingItemMutation: (
-    operations: LongWorkspaceOperation[],
-    onSuccess?: () => void
+  emitPreviewMutation: (
+    batch: LongWorkspaceOperationBatch,
+    completion: (impact?: LongWorkspaceImpactConfirmation) => void
+  ) => void;
+  emitMutation: (
+    batch: LongWorkspaceOperationBatch,
+    completion: LongStructureMutationCompletion
   ) => void;
   selectWorldbuildingItem: (itemId: string) => Promise<void>;
   selectWorldbuildingOverview: () => Promise<void>;
-  emitDeleteStructure: (
+  emitPreviewDeleteStructure: (
     input: {
       kind: "character" | "volume" | "plotPoint" | "chapterCard";
       id: string;
       title: string;
     },
-    completion: (succeeded: boolean) => void
+    completion: (impact?: LongWorkspaceImpactConfirmation) => void
+  ) => void;
+  emitDeleteStructure: (
+    input: {
+      kind: "character" | "volume" | "plotPoint" | "chapterCard";
+      id: string;
+      title: string;
+      expectedImpact: LongWorkspaceImpactConfirmation;
+    },
+    completion: (
+      succeeded: boolean,
+      changedImpact?: LongWorkspaceImpactConfirmation
+    ) => void
   ) => void;
 }): {
   worldbuildingDeleteDialog: Ref<HTMLElement | undefined>;
@@ -48,6 +72,10 @@ export function useLongEditorDeleteDialogs(options: {
   pendingWorldbuildingDeleteItem: ComputedRef<{
     id: string;
     title: string;
+    description: string;
+    previewPending: boolean;
+    pending: boolean;
+    expectedImpact?: LongWorkspaceImpactConfirmation;
   } | null>;
   openWorldbuildingItemDelete: (itemId: string) => void;
   closeWorldbuildingItemDelete: () => void;
@@ -69,13 +97,49 @@ export function useLongEditorDeleteDialogs(options: {
   const navigationDeleteCancelButton = ref<HTMLButtonElement>();
   let worldbuildingDeletePreviousFocus: HTMLElement | null = null;
   let navigationDeletePreviousFocus: HTMLElement | null = null;
+  const worldbuildingDeletePreviewPending = ref(false);
+  const worldbuildingDeletePending = ref(false);
+  const worldbuildingDeleteImpact = ref<LongWorkspaceImpactConfirmation>();
+  let worldbuildingDeleteRequest = 0;
 
-  const pendingWorldbuildingDeleteItem = computed(
-    () =>
-      options.currentWorldbuildingItems.value.find(
-        ({ id }) => id === options.pendingWorldbuildingDeleteId.value
-      ) ?? null
-  );
+  const pendingWorldbuildingDeleteItem = computed(() => {
+    const item = options.currentWorldbuildingItems.value.find(
+      ({ id }) => id === options.pendingWorldbuildingDeleteId.value
+    );
+    if (!item) return null;
+    const expectedImpact = worldbuildingDeleteImpact.value;
+    return {
+      ...item,
+      description: expectedImpact
+        ? longImpactConfirmationDescription(
+            expectedImpact,
+            "该条目及其正文文件将被删除，分类内容与连续性投影会同步更新。"
+          )
+        : "该条目及其正文文件将被删除，分类内容与连续性投影会同步更新。",
+      previewPending: worldbuildingDeletePreviewPending.value,
+      pending: worldbuildingDeletePending.value,
+      ...(expectedImpact ? { expectedImpact } : {})
+    };
+  });
+
+  function worldbuildingDeleteBatch(
+    categoryId: string,
+    itemId: string,
+    expectedImpact?: LongWorkspaceImpactConfirmation
+  ): LongWorkspaceOperationBatch {
+    return {
+      updatedAt: new Date().toISOString(),
+      operations: [
+        {
+          type: "worldbuildingItem.delete",
+          categoryId,
+          id: itemId
+        }
+      ],
+      documentWrites: [],
+      ...(expectedImpact ? { expectedImpact } : {})
+    };
+  }
 
   function openWorldbuildingItemDelete(itemId: string): void {
     if (options.currentReadOnly.value) return;
@@ -83,14 +147,37 @@ export function useLongEditorDeleteDialogs(options: {
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
+    const categoryId = props.selection?.key.slice("worldbuilding:".length);
+    if (!categoryId) return;
+    const request = ++worldbuildingDeleteRequest;
     options.pendingWorldbuildingDeleteId.value = itemId;
+    worldbuildingDeleteImpact.value = undefined;
+    worldbuildingDeletePending.value = false;
+    worldbuildingDeletePreviewPending.value = true;
+    options.emitPreviewMutation(
+      worldbuildingDeleteBatch(categoryId, itemId),
+      (expectedImpact) => {
+        if (
+          request !== worldbuildingDeleteRequest ||
+          options.pendingWorldbuildingDeleteId.value !== itemId
+        ) {
+          return;
+        }
+        worldbuildingDeletePreviewPending.value = false;
+        worldbuildingDeleteImpact.value = expectedImpact;
+      }
+    );
     void nextTick(() => {
       worldbuildingDeleteCancelButton.value?.focus({ preventScroll: true });
     });
   }
 
   function closeWorldbuildingItemDelete(): void {
+    if (worldbuildingDeletePending.value) return;
+    worldbuildingDeleteRequest += 1;
     options.pendingWorldbuildingDeleteId.value = null;
+    worldbuildingDeletePreviewPending.value = false;
+    worldbuildingDeleteImpact.value = undefined;
     const previousFocus = worldbuildingDeletePreviousFocus;
     worldbuildingDeletePreviousFocus = null;
     void nextTick(() => {
@@ -130,30 +217,43 @@ export function useLongEditorDeleteDialogs(options: {
 
   function confirmWorldbuildingItemDelete(): void {
     const target = pendingWorldbuildingDeleteItem.value;
-    if (!target) return;
+    if (
+      !target?.expectedImpact ||
+      target.previewPending ||
+      worldbuildingDeletePending.value
+    ) {
+      return;
+    }
     const items = options.currentWorldbuildingItems.value;
     const targetIndex = items.findIndex(({ id }) => id === target.id);
     const nextItems = items.filter(({ id }) => id !== target.id);
     const categoryId = props.selection?.key.slice("worldbuilding:".length);
     if (!categoryId) return;
-    options.emitWorldbuildingItemMutation(
-      [
-        {
-          type: "worldbuildingItem.delete",
-          categoryId,
-          id: target.id,
-          cascade: true
+    worldbuildingDeletePending.value = true;
+    options.emitMutation(
+      worldbuildingDeleteBatch(categoryId, target.id, target.expectedImpact),
+      {
+        succeed() {
+          worldbuildingDeletePending.value = false;
+          closeWorldbuildingItemDelete();
+          const nextId =
+            nextItems[Math.min(targetIndex, nextItems.length - 1)]?.id ?? null;
+          if (nextId) {
+            void options.selectWorldbuildingItem(nextId);
+            return;
+          }
+          void options.selectWorldbuildingOverview();
+        },
+        fail(_message, changedImpact) {
+          worldbuildingDeletePending.value = false;
+          if (changedImpact) {
+            worldbuildingDeleteImpact.value = changedImpact;
+          }
+        },
+        appliedButRefreshFailed() {
+          worldbuildingDeletePending.value = false;
+          closeWorldbuildingItemDelete();
         }
-      ],
-      () => {
-        closeWorldbuildingItemDelete();
-        const nextId =
-          nextItems[Math.min(targetIndex, nextItems.length - 1)]?.id ?? null;
-        if (nextId) {
-          void options.selectWorldbuildingItem(nextId);
-          return;
-        }
-        void options.selectWorldbuildingOverview();
       }
     );
   }
@@ -163,7 +263,30 @@ export function useLongEditorDeleteDialogs(options: {
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    navigationDeleteTarget.value = target;
+    const pendingTarget: LongNavigationDeleteTarget = {
+      ...target,
+      previewPending: true
+    };
+    navigationDeleteTarget.value = pendingTarget;
+    options.emitPreviewDeleteStructure(
+      { kind: target.kind, id: target.id, title: target.title },
+      (expectedImpact) => {
+        if (navigationDeleteTarget.value !== pendingTarget) return;
+        navigationDeleteTarget.value = {
+          ...pendingTarget,
+          previewPending: false,
+          ...(expectedImpact
+            ? {
+                description: longImpactConfirmationDescription(
+                  expectedImpact,
+                  pendingTarget.description
+                )
+              }
+            : {}),
+          ...(expectedImpact ? { expectedImpact } : {})
+        };
+      }
+    );
     void nextTick(() => {
       navigationDeleteCancelButton.value?.focus({ preventScroll: true });
     });
@@ -217,17 +340,39 @@ export function useLongEditorDeleteDialogs(options: {
 
   function confirmNavigationDelete(): void {
     const target = navigationDeleteTarget.value;
-    if (!target || navigationDeletePending.value) return;
+    if (
+      !target ||
+      target.previewPending ||
+      !target.expectedImpact ||
+      navigationDeletePending.value
+    )
+      return;
     navigationDeletePending.value = true;
     options.emitDeleteStructure(
       {
         kind: target.kind,
         id: target.id,
-        title: target.title
+        title: target.title,
+        expectedImpact: target.expectedImpact
       },
-      (succeeded) => {
+      (succeeded, changedImpact) => {
         navigationDeletePending.value = false;
-        if (succeeded) closeNavigationDelete();
+        if (succeeded) {
+          closeNavigationDelete();
+          return;
+        }
+        if (changedImpact && navigationDeleteTarget.value === target) {
+          const refreshed = options.currentNavigationDeleteTarget.value;
+          navigationDeleteTarget.value = {
+            ...(refreshed ?? target),
+            description: longImpactConfirmationDescription(
+              changedImpact,
+              (refreshed ?? target).description
+            ),
+            expectedImpact: changedImpact,
+            previewPending: false
+          };
+        }
       }
     );
   }
@@ -236,17 +381,17 @@ export function useLongEditorDeleteDialogs(options: {
     if (props.locked || options.currentReadOnly.value) {
       return;
     }
-    const chapterCard = props.workspaceIndex?.plot.chapterCards.find(
+    const index = props.workspaceIndex;
+    const chapterCard = index?.plot.chapterCards.find(
       ({ id }) => id === chapterCardId
     );
-    if (!chapterCard) return;
+    if (!index || !chapterCard) return;
     showNavigationDelete({
       kind: "chapterCard",
       id: chapterCard.id,
       title: chapterCard.title,
       label: "章卡",
-      description:
-        "将永久删除该章卡、章节正文、章末人物状态、下一章接续包，以及相关剧情落点和伏笔触点。"
+      description: longDeletionDescription(index, "chapterCard", chapterCard.id)
     });
   }
 

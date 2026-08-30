@@ -13,16 +13,14 @@ const NOW = "2026-08-14T03:00:00.000Z";
 
 function summary(
   bookId: string,
-  revision = 1,
-  projectRevision = revision
+  _sequence = 1,
+  _catalogSequence = _sequence
 ): LongBookSummary {
   return {
     id: bookId,
     title: `长篇 ${bookId}`,
-    projectRevision,
     updatedAt: NOW,
     navigation: {
-      revision,
       worldbuilding: [],
       characterTypes: [],
       characters: [],
@@ -42,10 +40,9 @@ function summary(
   } as unknown as LongBookSummary;
 }
 
-function index(bookId: string, revision = 1): LongWorkspaceIndexSnapshot {
+function index(bookId: string, _sequence = 1): LongWorkspaceIndexSnapshot {
   return {
     schemaVersion: 1,
-    revision,
     bookId,
     updatedAt: NOW,
     worldbuilding: [],
@@ -80,7 +77,6 @@ function selection(bookId: string): LongWorkspaceSelection {
 
 function listResult(...books: LongBookSummary[]): LongListBooksResult {
   return {
-    revision: books.length,
     updatedAt: NOW,
     books,
     diagnostics: []
@@ -108,7 +104,7 @@ beforeEach(() => {
 });
 
 describe("long workspace store", () => {
-  it("publishes a book, index, selection and revision state as shallow values", () => {
+  it("publishes a book, index and selection as shallow values", () => {
     const store = useLongWorkspaceStore();
     const book = summary("book-a", 4, 7);
     const workspace = index("book-a", 4);
@@ -122,17 +118,6 @@ describe("long workspace store", () => {
     expect(isReactive(store.longBooks)).toBe(false);
     expect(isReactive(store.workspaceIndex)).toBe(false);
     expect(isReactive(store.selection)).toBe(false);
-    expect(store.activeContextReady).toBe(true);
-
-    store.setRevisionRequirement({
-      bookId: "book-a",
-      workspaceRevision: 5,
-      projectRevision: 8
-    });
-    expect(store.activeContextReady).toBe(false);
-    expect(store.satisfyRevisionRequirement("book-a")).toBe(false);
-    store.publishBook(summary("book-a", 5, 8), index("book-a", 5));
-    expect(store.activeRevisionRequirement).toBeNull();
     expect(store.activeContextReady).toBe(true);
   });
 
@@ -292,7 +277,7 @@ describe("long workspace store", () => {
     expect(loader).toHaveBeenCalledTimes(2);
     expect(store.workspaceLoadError).toBeNull();
     expect(store.activeRefreshStatus).toBeNull();
-    expect(store.workspaceIndex?.revision).toBe(2);
+    expect(store.workspaceIndex?.bookId).toBe("book-a");
   });
 
   it("does not publish a workspace result that settles after disposal", async () => {

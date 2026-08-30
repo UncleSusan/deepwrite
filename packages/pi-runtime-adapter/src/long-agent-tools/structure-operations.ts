@@ -83,8 +83,7 @@ export function longContinuityDeleteOperation(
  * and character types stay under the UI's own structure editor.
  */
 export function longEntityDeleteOperation(
-  target: LongEntityTarget,
-  cascade: boolean
+  target: LongEntityTarget
 ): LongWorkspaceOperation {
   if (!LONG_DELETABLE_KINDS.has(target.kind)) {
     throw new Error(
@@ -96,9 +95,8 @@ export function longEntityDeleteOperation(
     return {
       type: "worldbuildingItem.delete",
       categoryId: target.categoryId,
-      id: target.id,
-      cascade
+      id: target.id
     } as unknown as LongWorkspaceOperation;
   }
-  return { type, id: target.id, cascade } as unknown as LongWorkspaceOperation;
+  return { type, id: target.id } as unknown as LongWorkspaceOperation;
 }

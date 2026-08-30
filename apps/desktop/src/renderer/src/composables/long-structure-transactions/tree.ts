@@ -8,6 +8,8 @@ import type {
   ResourceTreeNode
 } from "../../types/workspace";
 import { longNavigationNodeId } from "../../utils/longWorkspaceResourceTree";
+import { longDeletionDescription } from "../../utils/longDeletionImpact";
+import { longImpactConfirmationDescription } from "../../utils/longImpactConfirmation";
 import type { LongStructureCreate } from "./create";
 import type { LongStructureLease } from "./lease";
 import type { LongStructureSync } from "./sync";
@@ -48,9 +50,6 @@ export function resolveLongTreeItemDetails(
   if (target.kind === "character") {
     const character = index.characters.find(({ id }) => id === target.id);
     if (!character) return null;
-    const eventReferences = index.plot.storyEvents.filter((event) =>
-      event.characterIds.includes(character.id)
-    ).length;
     const orderedIds = index.characters
       .filter(({ group }) => group === character.group)
       .sort((left, right) => left.order - right.order)
@@ -58,11 +57,7 @@ export function resolveLongTreeItemDetails(
     return {
       label: "人物",
       title: character.name,
-      description: `将永久删除该人物的核心档案和人物关系${
-        eventReferences > 0
-          ? `，并从 ${eventReferences} 个故事事件中移除人物引用`
-          : ""
-      }。`,
+      description: longDeletionDescription(index, "character", character.id),
       orderedIds,
       parentResourceId: longNavigationNodeId(
         bookId,
@@ -74,16 +69,10 @@ export function resolveLongTreeItemDetails(
   if (target.kind === "volume") {
     const volume = index.plot.volumes.find(({ id }) => id === target.id);
     if (!volume) return null;
-    const plotPointCount = index.plot.arcs.filter(
-      ({ volumeId }) => volumeId === volume.id
-    ).length;
-    const chapterCount = index.plot.chapterCards.filter(
-      ({ volumeId }) => volumeId === volume.id
-    ).length;
     return {
       label: "分卷",
       title: volume.title,
-      description: `将永久删除该分卷，以及其中 ${plotPointCount} 个剧情点、${chapterCount} 张章卡及对应正文文件和关联数据。`,
+      description: longDeletionDescription(index, "volume", volume.id),
       orderedIds: [...index.plot.volumes]
         .sort((left, right) => left.order - right.order)
         .map(({ id }) => id),
@@ -98,8 +87,7 @@ export function resolveLongTreeItemDetails(
     return {
       label: "剧情点",
       title: plotPoint.title,
-      description:
-        "将永久删除该剧情点、相关事件和伏笔关联；已关联章卡会保留并解除关联。",
+      description: longDeletionDescription(index, "plotPoint", plotPoint.id),
       orderedIds: index.plot.arcs
         .filter(({ volumeId }) => volumeId === plotPoint.volumeId)
         .sort((left, right) => left.order - right.order)
@@ -117,8 +105,7 @@ export function resolveLongTreeItemDetails(
   return {
     label: "章卡",
     title: chapter.title,
-    description:
-      "将永久删除该章卡、章节正文、章末人物状态、下一章接续包，以及相关剧情落点和伏笔触点。",
+    description: longDeletionDescription(index, "chapterCard", chapter.id),
     orderedIds: index.plot.chapterCards
       .filter(({ volumeId }) => volumeId === chapter.volumeId)
       .sort((left, right) => left.narrativeOrder - right.narrativeOrder)
@@ -176,19 +163,19 @@ export function createLongStructureTree(
     beginDialogRequest,
     dialogRequestIsCurrent
   } = host;
-  const { executeLongStructureMutation } = sync;
+  const { executeLongStructureMutation, previewLongStructureImpact } = sync;
   const {
     openLongWorldbuildingItemCreateForCategoryInternal,
     openLongPlotPointCreateForVolumeInternal,
-    openLongChapterCardCreateInternal
+    openLongChapterCardCreateInternal,
+    openLongVolumeCreateInternal
   } = created;
   const {
     activeBookId: activeLongBookId,
     activeBookSummary: activeLongBookSummary,
     workspaceIndex: activeLongWorkspaceIndex,
     characterCreateTarget: longCharacterCreate,
-    treeItemDeleteTarget: longTreeItemDelete,
-    volumeCreateTarget: longVolumeCreate
+    treeItemDeleteTarget: longTreeItemDelete
   } = state;
   const {
     saveActiveEditorBeforeLeaving: saveActiveLongEditorBeforeLeaving,
@@ -246,6 +233,21 @@ export function createLongStructureTree(
         );
         return;
       }
+      if (target.kind === "volume") {
+        const bookId = node.longBookId;
+        if (!bookId || node.workspaceType !== "long") {
+          uiMessage.warning("当前长篇尚未准备好新建分卷。");
+          return;
+        }
+        await openLongVolumeCreateInternal(requestId, {
+          bookId,
+          source:
+            node.longWorkspaceSelection?.root === "draft"
+              ? "draft"
+              : "book-line"
+        });
+        return;
+      }
       const prepared = await ensureLongTreeTargetBook(
         node,
         "新增条目",
@@ -265,10 +267,6 @@ export function createLongStructureTree(
           group: group.id,
           groupLabel: group.title
         };
-        return;
-      }
-      if (target.kind === "volume") {
-        longVolumeCreate.value = { bookId: prepared.bookId };
         return;
       }
       if (target.kind === "plot-point" && target.parentId) {
@@ -314,13 +312,45 @@ export function createLongStructureTree(
         return;
       }
       if (action === "delete") {
-        longTreeItemDelete.value = {
-          bookId: prepared.bookId,
-          node,
-          label: details.label,
-          title: details.title,
-          description: details.description
-        };
+        let batch: LongWorkspaceOperationBatch;
+        try {
+          const { createLongStructureMutationBuilder } =
+            await loadLongStructureMutationModule();
+          const builder = createLongStructureMutationBuilder(prepared.index);
+          if (target.kind === "worldbuilding-item") {
+            if (!target.parentId) throw new Error("缺少世界观分类 ID。");
+            batch = builder.deleteWorldbuildingItem(target.parentId, target.id);
+          } else if (target.kind === "character") {
+            batch = builder.deleteCharacter(target.id);
+          } else if (target.kind === "volume") {
+            batch = builder.deleteVolume(target.id);
+          } else if (target.kind === "plot-point") {
+            batch = builder.deleteArc(target.id);
+          } else {
+            batch = builder.deleteChapter(target.id);
+          }
+          const expectedImpact = await previewLongStructureImpact(
+            prepared.bookId,
+            batch
+          );
+          if (!dialogRequestIsCurrent(requestId)) return;
+          longTreeItemDelete.value = {
+            bookId: prepared.bookId,
+            node,
+            label: details.label,
+            title: details.title,
+            description: longImpactConfirmationDescription(
+              expectedImpact,
+              details.description
+            ),
+            expectedImpact
+          };
+        } catch (error: unknown) {
+          if (isDisposed()) return;
+          uiMessage.warning(
+            error instanceof Error ? error.message : "无法预览删除影响。"
+          );
+        }
         return;
       }
       await withMutation(

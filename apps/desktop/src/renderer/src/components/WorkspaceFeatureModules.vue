@@ -25,6 +25,7 @@ import {
   AgentTeamSettingsPanel,
   CloudBackupPage,
   LearningImitationDialog,
+  LongBookAnalysisPage,
   ModelSettingsFeature,
   SettingsPage,
   SkillMarketplacePage,
@@ -50,6 +51,7 @@ const emit = defineEmits<{
   updateAutoApproveCrossStageOperations: [enabled: boolean];
   updateAutoSave: [enabled: boolean];
   updateLanguage: [language: AppLanguage];
+  updateShowContextUsage: [enabled: boolean];
   updateShowInMenuBar: [enabled: boolean];
   updateWorkspacePaneLayout: [layout: WorkspacePaneLayout];
   updateDefaultTextViewMode: [mode: TextViewMode];
@@ -95,6 +97,7 @@ const emit = defineEmits<{
     "
     :auto-save-enabled="module.autoSaveEnabled"
     :language="module.language"
+    :show-context-usage="module.showContextUsage"
     :show-in-menu-bar="module.showInMenuBar"
     :workspace-pane-layout="module.workspacePaneLayout"
     :default-text-view-mode="module.defaultTextViewMode"
@@ -134,6 +137,7 @@ const emit = defineEmits<{
     "
     @update-auto-save="emit('updateAutoSave', $event)"
     @update-language="emit('updateLanguage', $event)"
+    @update-show-context-usage="emit('updateShowContextUsage', $event)"
     @update-show-in-menu-bar="emit('updateShowInMenuBar', $event)"
     @update-workspace-pane-layout="emit('updateWorkspacePaneLayout', $event)"
     @update-default-text-view-mode="emit('updateDefaultTextViewMode', $event)"
@@ -250,6 +254,23 @@ const emit = defineEmits<{
       :models="module.models"
       :catalog-snapshot="module.catalogSnapshot"
       :approval-mode="module.approvalMode"
+      @refresh-catalog="emit('refreshCatalog')"
+    />
+  </WorkspaceFeatureFrame>
+
+  <WorkspaceFeatureFrame
+    v-else-if="module.kind === 'long-book-analysis'"
+    class="long-book-analysis-main-view"
+    :left-collapsed="leftCollapsed"
+    expand-button-class="long-book-analysis-expand-sidebar"
+    label="长篇拆书分析"
+    @expand-left="emit('expandLeft')"
+  >
+    <LongBookAnalysisPage
+      v-if="module.controller"
+      :controller="module.controller"
+      :models="module.models"
+      :catalog-snapshot="module.catalogSnapshot"
       @refresh-catalog="emit('refreshCatalog')"
     />
   </WorkspaceFeatureFrame>

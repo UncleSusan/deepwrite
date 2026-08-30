@@ -41,11 +41,10 @@ async function flushMicrotasks(): Promise<void> {
 
 function workspaceIndex(
   bookId = BOOK_A,
-  revision = 1
+  _sequence = 1
 ): LongWorkspaceIndexSnapshot {
   return {
     bookId,
-    revision,
     updatedAt: NOW,
     worldbuilding: [],
     characters: [],
@@ -62,17 +61,15 @@ function workspaceIndex(
 
 function bookSummary(
   bookId = BOOK_A,
-  projectRevision = 1,
+  _sequence = 1,
   title = `长篇 ${bookId}`
 ): LongBookSummary {
   return {
     id: bookId,
     title,
-    projectRevision,
     updatedAt: NOW,
     navigation: {
       bookId,
-      revision: projectRevision,
       updatedAt: NOW,
       worldbuilding: [],
       characterTypes: [],
@@ -87,16 +84,16 @@ function bookSummary(
 
 function openedBook(
   bookId = BOOK_A,
-  projectRevision = 1,
+  sequence = 1,
   title = `长篇 ${bookId}`
 ): LongOpenBookResult {
   return {
     book: {
       id: bookId,
       title,
-      workspaceIndex: workspaceIndex(bookId, projectRevision)
+      workspaceIndex: workspaceIndex(bookId, sequence)
     },
-    summary: bookSummary(bookId, projectRevision, title)
+    summary: bookSummary(bookId, sequence, title)
   } as unknown as LongOpenBookResult;
 }
 
@@ -159,7 +156,6 @@ function createHarness(overrides: HarnessOverrides = {}) {
     openExisting: vi.fn(async () => null),
     getWorkspaceIndex: vi.fn(async ({ bookId }) => ({
       bookId,
-      projectRevision: 1,
       workspaceIndex: workspaceIndex(bookId)
     })),
     readDocument: vi.fn(),
@@ -174,7 +170,6 @@ function createHarness(overrides: HarnessOverrides = {}) {
     applyOperations: vi.fn(),
     writeChapter: vi.fn(),
     commitChapter: vi.fn(),
-    rollbackLastCommit: vi.fn(),
     unregister: vi.fn(async ({ bookId }) => ({ bookId, removed: true })),
     delete: vi.fn(async ({ bookId }) => ({ bookId, removed: true })),
     list: vi.fn(),
@@ -198,8 +193,6 @@ function createHarness(overrides: HarnessOverrides = {}) {
     continuationImportPreview: shallowRef(null),
     legacySyncPreview: shallowRef(null),
     legacySyncResult: shallowRef(null),
-    rollbackDialogOpen: ref(true),
-    rollbackCommitId: ref("commit_old"),
     structureDialogOpen: ref(false),
     structureAgentsMd: ref<string | null>(null),
     structureAgentsMdPending: ref(false),
@@ -255,9 +248,6 @@ function createHarness(overrides: HarnessOverrides = {}) {
     showConversation: vi.fn(),
     revealEditor: vi.fn()
   };
-  const editorRevisions = {
-    synchronizeProjectRevisions: vi.fn()
-  };
   const manuscript = {
     available: vi.fn(() => true),
     createInput: vi.fn(
@@ -280,7 +270,6 @@ function createHarness(overrides: HarnessOverrides = {}) {
     conversations,
     catalog,
     resources,
-    editorRevisions,
     manuscript,
     scheduler,
     notifications
@@ -290,7 +279,6 @@ function createHarness(overrides: HarnessOverrides = {}) {
     catalog,
     conversations,
     coordinator: useLongBookLifecycleCoordinator(options),
-    editorRevisions,
     manuscript,
     notifications,
     resources,
@@ -339,7 +327,6 @@ describe("useLongBookLifecycleCoordinator", () => {
     ]);
     expect(test.state.createBookDialogOpen.value).toBe(false);
     expect(test.state.selectedResourceId.value).toBe(`long-book:${BOOK_B}`);
-    expect(test.state.rollbackDialogOpen.value).toBe(false);
     expect(test.resources.showConversation).toHaveBeenCalledOnce();
     expect(test.resources.revealEditor).toHaveBeenCalledOnce();
     expect(test.notifications.success).toHaveBeenCalledWith(
@@ -404,7 +391,7 @@ describe("useLongBookLifecycleCoordinator", () => {
     expect(test.notifications.success).not.toHaveBeenCalled();
   });
 
-  it("refreshes an inactive book before using its authoritative rename revision", async () => {
+  it("refreshes an inactive book before renaming it directly", async () => {
     const rename = vi.fn(async () => openedBook(BOOK_A, 8, "权威名称"));
     const test = createHarness({
       activeBookId: null,
@@ -420,12 +407,11 @@ describe("useLongBookLifecycleCoordinator", () => {
 
     expect(rename).toHaveBeenCalledWith({
       bookId: BOOK_A,
-      expectedProjectRevision: 7,
       title: "权威名称"
     });
   });
 
-  it("refreshes the active book before bindings CAS and synchronizes returned revisions", async () => {
+  it("refreshes the active book before updating bindings directly", async () => {
     const updateBindings = vi.fn(async () =>
       openedBook(BOOK_A, 10, "绑定长篇")
     );
@@ -445,14 +431,10 @@ describe("useLongBookLifecycleCoordinator", () => {
 
     expect(updateBindings).toHaveBeenCalledWith({
       bookId: BOOK_A,
-      expectedProjectRevision: 9,
       linkedMaterialIdsByKind: {},
       linkedSkillIdsByKind: {},
       linkedResourceStageScopes: { materials: {}, skills: {} }
     });
-    expect(
-      test.editorRevisions.synchronizeProjectRevisions
-    ).toHaveBeenCalledWith(10, 10);
     expect(test.state.bindingsDialogMode.value).toBeNull();
   });
 

@@ -1,6 +1,5 @@
 import { ref, type Ref } from "vue";
 import {
-  LONG_DOCUMENT_PAGE_MAX_CHARACTERS,
   LongMutationProposalEventEnvelopeSchema,
   LongWorkspaceOperationBatchSchema,
   createEnvelope,
@@ -14,9 +13,9 @@ import {
   type LongWorkspaceOperationBatch,
   type SystemEventEnvelope
 } from "@deepwrite/contracts";
+import { longWorkspaceOperationsRequireImpactConfirmation } from "@deepwrite/contracts/renderer";
 import { createId } from "@deepwrite/shared";
 import type { LongWorkspaceRendererApi } from "../types/longWorkspace";
-import type { AgentEditProposal } from "../types/conversation";
 import { createKeyedSerialTaskQueue } from "../utils/keyedSerialTaskQueue";
 import { longWorldbuildingFiles } from "../utils/longWorldbuildingFiles";
 import {
@@ -85,76 +84,11 @@ function isBatchProposal(
   );
 }
 
-function createdFilesForBatch(
-  batch: LongWorkspaceOperationBatch
-): LongWorkspaceFileReference[] {
-  return batch.operations.flatMap((operation) => {
-    if (operation.type === "worldbuilding.create") {
-      return operation.category.format === "text"
-        ? [operation.category.file]
-        : [
-            ...(operation.category.overview
-              ? [operation.category.overview]
-              : []),
-            ...operation.category.items.map(({ file }) => file)
-          ];
-    }
-    if (operation.type === "worldbuildingItem.create") {
-      return [operation.item.file];
-    }
-    if (operation.type === "storyPlot.create") {
-      return [operation.storyPlot.file];
-    }
-    if (operation.type === "character.create") {
-      return [operation.files.coreProfile, operation.files.relationships];
-    }
-    if (operation.type === "chapter.create") {
-      return [
-        operation.files.body,
-        operation.files.card,
-        operation.files.characterState,
-        operation.files.handoff,
-        operation.files.foreshadowingChanges,
-        ...(operation.files.worldReveals ? [operation.files.worldReveals] : []),
-        ...operation.files.characterContinuity.flatMap((entry) => [
-          entry.currentState,
-          entry.history
-        ])
-      ];
-    }
-    if (operation.type === "chapterContinuity.worldReveals.create") {
-      return [operation.file];
-    }
-    if (operation.type === "chapterContinuity.character.create") {
-      return [operation.currentState, operation.history];
-    }
-    return [];
-  });
-}
-
-function producedFileRevision(
-  event: LongBatchProposalEvent,
-  fileId: string
-): string | undefined {
-  if (isContentFileProposal(event)) {
-    return [...event.payload.files]
-      .reverse()
-      .find((file) => file.fileId === fileId)?.nextRevision;
-  }
-  const write = [...event.payload.batch.documentWrites]
-    .reverse()
-    .find((candidate) => candidate.fileId === fileId);
-  if (write) return write.nextRevision;
-  return createdFilesForBatch(event.payload.batch).find(
-    (file) => file.id === fileId
-  )?.revision;
-}
-
-function proposalFileIds(event: LongBatchProposalEvent): Set<string> {
-  return new Set([
-    ...createdFilesForBatch(event.payload.batch).map(({ id }) => id),
-    ...event.payload.batch.documentWrites.map(({ fileId }) => fileId)
-  ]);
+function isLongImpactMismatch(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /impact_mismatch|关联.*变化|影响.*变化/iu.test(error.message)
+  );
 }
 
 const CONTINUITY_FILE_ROLE_LABELS: Record<LongContinuityFileRole, string> = {
@@ -316,60 +250,6 @@ function assertContinuityFileMetadata(
   }
 }
 
-async function readAuthoritativeContinuityText(
-  api: LongWorkspaceRendererApi,
-  input: {
-    bookId: string;
-    target: LongContinuityFileTarget;
-    workspaceRevision: number;
-    projectRevision: number;
-  }
-): Promise<string> {
-  let offset = 0;
-  let totalCharacters: number | null = null;
-  let content = "";
-  for (;;) {
-    const page = await api.readDocument({
-      bookId: input.bookId,
-      fileId: input.target.file.id,
-      offset,
-      maxCharacters: LONG_DOCUMENT_PAGE_MAX_CHARACTERS
-    });
-    if (
-      page.bookId !== input.bookId ||
-      page.file.id !== input.target.file.id ||
-      page.file.path !== input.target.file.path ||
-      page.file.revision !== input.target.file.revision ||
-      page.offset !== offset ||
-      page.workspaceRevision !== input.workspaceRevision ||
-      page.projectRevision !== input.projectRevision
-    ) {
-      throw new Error("连续性文件读取结果与当前工作区不一致。");
-    }
-    if (totalCharacters !== null && page.totalCharacters !== totalCharacters) {
-      throw new Error("连续性文件在完整读取期间发生了变化。");
-    }
-    totalCharacters ??= page.totalCharacters;
-    const pageCharacters = Array.from(page.content).length;
-    const endOffset = offset + pageCharacters;
-    if (
-      endOffset > page.totalCharacters ||
-      (page.nextOffset !== null &&
-        (page.nextOffset !== endOffset ||
-          page.nextOffset >= page.totalCharacters)) ||
-      (page.nextOffset === null && endOffset !== page.totalCharacters)
-    ) {
-      throw new Error("连续性文件返回了无效的分页。");
-    }
-    content += page.content;
-    if (content.length > 1_000_000) {
-      throw new Error("连续性文件超出可审批的文本长度。");
-    }
-    if (page.nextOffset === null) return content;
-    offset = page.nextOffset;
-  }
-}
-
 export type LongWorkspaceProposalStatus =
   "previewing" | "waiting" | "ready" | "submitting" | "error" | "accepted";
 
@@ -378,14 +258,10 @@ export interface LongWorkspaceProposalItem {
   approvalMode: AgentWriteApprovalMode;
   status: LongWorkspaceProposalStatus;
   preview?: LongWorkspaceImpactPreview;
-  previewProjectRevision?: number;
   effectiveBatch?: LongWorkspaceOperationBatch;
-  effectiveProjectRevision?: number;
-  appliedProjectRevision?: number;
   error?: string;
   errorPhase?: "preview" | "apply";
   errorRetryable?: boolean;
-  discardState?: AgentEditProposal["discardState"];
 }
 
 interface LongProposalNotifications {
@@ -425,7 +301,6 @@ export interface EnqueueManualLongMutationInput {
   bookId: string;
   agentId?: LongAgentId;
   batch: LongWorkspaceOperationBatch;
-  baseProjectRevision: number;
   summary: string;
 }
 
@@ -440,11 +315,6 @@ export interface LongWorkspaceProposalController {
     input: EnqueueManualLongMutationInput
   ): Promise<LongMutationProposalEvent>;
   retryPreview(bookId: string, eventId: string): Promise<void>;
-  setDiscardState(
-    bookId: string,
-    eventId: string,
-    state: NonNullable<AgentEditProposal["discardState"]>
-  ): void;
   approve(bookId: string, eventId: string): Promise<void>;
   reject(bookId: string, eventId: string): boolean;
 }
@@ -471,9 +341,6 @@ function isRetryableLongProposalError(error: unknown): boolean {
   const message = errorMessage(error, "");
   if (
     message.startsWith("long.operation.") ||
-    message.startsWith("long.conflict:") ||
-    message.includes("请基于最新结构重新生成提案") ||
-    message.includes("未覆盖最新内容") ||
     message.includes("v4 连续性账本的文件清单与章节索引不一致") ||
     message.includes("自动按当前文件覆盖旧 v4 连续性账本失败")
   ) {
@@ -605,9 +472,7 @@ export function useLongWorkspaceProposals(
         }
         if (clearPreview) {
           delete next.preview;
-          delete next.previewProjectRevision;
           delete next.effectiveBatch;
-          delete next.effectiveProjectRevision;
         }
         return next;
       })
@@ -621,40 +486,11 @@ export function useLongWorkspaceProposals(
     );
   }
 
-  function setDiscardState(
-    bookId: string,
-    eventId: string,
-    state: NonNullable<AgentEditProposal["discardState"]>
-  ): void {
-    updateItem(bookId, eventId, { discardState: state });
-  }
-
   function currentItem(
     bookId: string,
     eventId: string
   ): LongWorkspaceProposalItem | undefined {
     return itemsForBook(bookId).find((item) => item.event.id === eventId);
-  }
-
-  function pendingFilePredecessor(
-    item: LongWorkspaceProposalItem,
-    fileId: string,
-    expectedRevision: string | null
-  ): LongWorkspaceProposalItem | undefined {
-    const items = itemsForBook(item.event.payload.bookId);
-    const currentIndex = items.findIndex(
-      ({ event }) => event.id === item.event.id
-    );
-    if (currentIndex < 0) return undefined;
-    return items
-      .slice(0, currentIndex)
-      .reverse()
-      .find(
-        (candidate) =>
-          isBatchProposal(candidate.event) &&
-          producedFileRevision(candidate.event, fileId) === expectedRevision &&
-          candidate.status !== "error"
-      );
   }
 
   function pendingBatchPredecessor(
@@ -704,46 +540,16 @@ export function useLongWorkspaceProposals(
       clearPreview: true
     });
     try {
-      let effectiveBatch = event.payload.batch;
-      let effectiveProjectRevision = event.payload.baseProjectRevision;
-      if (event.type === "long.mutation_proposal") {
-        const batchPredecessor = pendingBatchPredecessor(item);
-        if (batchPredecessor) {
-          updateItem(event.payload.bookId, event.id, {
-            status: "waiting",
-            clearError: true
-          });
-          return;
-        }
-        const latest = await api.getWorkspaceIndex({
-          bookId: event.payload.bookId
+      const batchPredecessor = pendingBatchPredecessor(item);
+      if (batchPredecessor) {
+        updateItem(event.payload.bookId, event.id, {
+          status: "waiting",
+          clearError: true
         });
-        if (
-          latest.bookId !== event.payload.bookId ||
-          latest.workspaceIndex.bookId !== event.payload.bookId
-        ) {
-          throw new Error("长篇工作区索引返回了错误的项目。");
-        }
-        for (const write of event.payload.batch.documentWrites) {
-          const filePredecessor = pendingFilePredecessor(
-            item,
-            write.fileId,
-            write.expectedRevision
-          );
-          if (filePredecessor && filePredecessor.status !== "accepted") {
-            updateItem(event.payload.bookId, event.id, {
-              status: "waiting",
-              clearError: true
-            });
-            return;
-          }
-        }
-        effectiveBatch = {
-          ...event.payload.batch,
-          baseRevision: latest.workspaceIndex.revision
-        };
-        effectiveProjectRevision = latest.projectRevision;
-      } else if (isContentFileProposal(event)) {
+        return;
+      }
+      let effectiveBatch = event.payload.batch;
+      if (isContentFileProposal(event)) {
         const latest = await api.getWorkspaceIndex({
           bookId: event.payload.bookId
         });
@@ -757,16 +563,22 @@ export function useLongWorkspaceProposals(
           event.type === "long.continuity_file_proposal"
             ? continuityFileTargets(latest.workspaceIndex)
             : null;
+        const characterFiles = [
+          ...(latest.workspaceIndex.characterOverview
+            ? [latest.workspaceIndex.characterOverview]
+            : []),
+          ...latest.workspaceIndex.characterFiles.flatMap((entry) => [
+            entry.coreProfile,
+            entry.relationships
+          ])
+        ];
         const currentFiles = new Map<string, LongWorkspaceFileReference>(
           event.type === "long.worldbuilding_file_proposal"
             ? longWorldbuildingFiles(latest.workspaceIndex.worldbuilding).map(
                 (file) => [file.id, file] as const
               )
             : event.type === "long.character_file_proposal"
-              ? latest.workspaceIndex.characterFiles.flatMap((entry) => [
-                  [entry.coreProfile.id, entry.coreProfile] as const,
-                  [entry.relationships.id, entry.relationships] as const
-                ])
+              ? characterFiles.map((file) => [file.id, file] as const)
               : [...continuityTargets!.values()].map(
                   ({ file }) => [file.id, file] as const
                 )
@@ -785,11 +597,7 @@ export function useLongWorkspaceProposals(
                 event,
                 file.fileId
               );
-              if (
-                !createdTarget ||
-                createdTarget.file.revision !== file.nextRevision ||
-                file.beforeText !== ""
-              ) {
+              if (!createdTarget || file.beforeText !== "") {
                 throw new Error("连续性文件创建提案的身份或初始内容不一致。");
               }
               assertContinuityFileMetadata(
@@ -799,105 +607,28 @@ export function useLongWorkspaceProposals(
               );
               continue;
             }
-
-            if (currentTarget) {
-              assertContinuityFileMetadata(
-                latest.workspaceIndex,
-                file as LongContinuityFileChange,
-                currentTarget
-              );
+            if (!current || !currentTarget) {
+              throw new Error(`目标连续性文件已经不存在：${file.fileId}`);
             }
-            if (
-              current &&
-              currentTarget &&
-              current.revision === file.beforeRevision
-            ) {
-              const beforeText = await readAuthoritativeContinuityText(api, {
-                bookId: event.payload.bookId,
-                target: currentTarget,
-                workspaceRevision: latest.workspaceIndex.revision,
-                projectRevision: latest.projectRevision
-              });
-              if (beforeText !== file.beforeText) {
-                throw new Error(
-                  `连续性提案的原始内容与实际文件不一致：${file.fileId}`
-                );
-              }
-              continue;
-            }
-
-            const predecessor = pendingFilePredecessor(
-              item,
-              file.fileId,
-              file.beforeRevision
+            assertContinuityFileMetadata(
+              latest.workspaceIndex,
+              file as LongContinuityFileChange,
+              currentTarget
             );
-            if (predecessor && predecessor.status !== "accepted") {
-              if (predecessor.event.type !== "long.continuity_file_proposal") {
-                throw new Error("连续性文件的前序提案类型不一致。");
-              }
-              const predecessorFile = predecessor.event.payload.files.find(
-                (candidate) =>
-                  candidate.fileId === file.fileId &&
-                  candidate.nextRevision === file.beforeRevision
-              );
-              const predecessorTarget =
-                currentTarget ??
-                createdContinuityFileTarget(predecessor.event, file.fileId);
-              if (!predecessorFile || !predecessorTarget) {
-                throw new Error("无法确认连续性文件的前序身份。");
-              }
-              assertContinuityFileMetadata(
-                latest.workspaceIndex,
-                predecessorFile,
-                predecessorTarget
-              );
-              assertContinuityFileMetadata(
-                latest.workspaceIndex,
-                file as LongContinuityFileChange,
-                predecessorTarget
-              );
-              if (file.beforeText !== predecessorFile.afterText) {
-                throw new Error(
-                  `连续性提案的原始内容与前序写入不一致：${file.fileId}`
-                );
-              }
-              updateItem(event.payload.bookId, event.id, {
-                status: "waiting",
-                clearError: true
-              });
-              return;
-            }
-            throw new Error(
-              `目标连续性文件已在提案后更新，未覆盖最新内容：${file.fileId}`
-            );
+            continue;
           }
           if (file.operation === "create") {
             if (current) {
               throw new Error(`目标文件已存在，无法重复创建：${file.filePath}`);
             }
-          } else if (!current || current.revision !== file.beforeRevision) {
-            const predecessor = pendingFilePredecessor(
-              item,
-              file.fileId,
-              file.beforeRevision
-            );
-            if (predecessor && predecessor.status !== "accepted") {
-              updateItem(event.payload.bookId, event.id, {
-                status: "waiting",
-                clearError: true
-              });
-              return;
-            }
-            throw new Error(
-              `目标文件已在提案后更新，未覆盖最新内容：${file.filePath}`
-            );
+          } else if (!current) {
+            throw new Error(`目标文件已经不存在：${file.filePath}`);
           }
         }
         const nextOrderByCategory = new Map<string, number>();
         const nextOrderByCharacterGroup = new Map<string, number>();
         effectiveBatch = {
           ...event.payload.batch,
-          baseRevision: latest.workspaceIndex.revision,
           operations: event.payload.batch.operations.map((operation) => {
             if (operation.type === "worldbuildingItem.create") {
               const category = latest.workspaceIndex.worldbuilding.find(
@@ -931,7 +662,6 @@ export function useLongWorkspaceProposals(
             return operation;
           })
         };
-        effectiveProjectRevision = latest.projectRevision;
       }
       const result = await api.previewOperations(
         ipcSafeJson({
@@ -942,16 +672,11 @@ export function useLongWorkspaceProposals(
       if (result.bookId !== event.payload.bookId) {
         throw new Error("结构影响预览返回了错误的长篇项目。");
       }
-      if (result.projectRevision !== effectiveProjectRevision) {
-        throw new Error("长篇项目已在提案后更新，请基于最新结构重新生成提案。");
-      }
       if (!currentItem(event.payload.bookId, event.id)) return;
       updateItem(event.payload.bookId, event.id, {
         status: "ready",
         preview: result.preview,
-        previewProjectRevision: result.projectRevision,
         effectiveBatch,
-        effectiveProjectRevision,
         clearError: true
       });
     } catch (error: unknown) {
@@ -1098,6 +823,24 @@ export function useLongWorkspaceProposals(
         current = currentItem(event.payload.bookId, event.id);
       }
       if (!current || current.status !== "ready") return;
+      if (
+        isBatchProposal(current.event) &&
+        current.preview &&
+        longWorkspaceOperationsRequireImpactConfirmation(
+          (current.effectiveBatch ?? current.event.payload.batch).operations,
+          current.preview.confirmation
+        )
+      ) {
+        updateItem(event.payload.bookId, event.id, {
+          approvalMode: "request-approval",
+          status: "ready",
+          clearError: true
+        });
+        options.notifications.warning(
+          "该提案包含删除或解除关联影响，请核对后手动确认。"
+        );
+        return;
+      }
       if (!prepared) {
         try {
           await options.prepareAutoApprove?.(event);
@@ -1115,7 +858,7 @@ export function useLongWorkspaceProposals(
           return;
         }
       }
-      await approveCurrent(event.payload.bookId, event.id, false);
+      await approveCurrent(event.payload.bookId, event.id);
     });
   }
 
@@ -1222,8 +965,7 @@ export function useLongWorkspaceProposals(
             model: "manual-structure-manager",
             mode: "local-faux"
           },
-          batch: input.batch,
-          baseProjectRevision: input.baseProjectRevision
+          batch: input.batch
         },
         {
           id: eventId,
@@ -1273,10 +1015,9 @@ export function useLongWorkspaceProposals(
 
   async function approveCurrent(
     bookId: string,
-    eventId: string,
-    refreshMutationPreview: boolean
+    eventId: string
   ): Promise<void> {
-    let item = currentItem(bookId, eventId);
+    const item = currentItem(bookId, eventId);
     const api = options.api();
     if (!item || !api || item.status === "submitting") {
       if (!api) {
@@ -1289,23 +1030,22 @@ export function useLongWorkspaceProposals(
       return;
     }
     if (
-      refreshMutationPreview &&
-      (item.event.type === "long.mutation_proposal" ||
-        isContentFileProposal(item.event))
-    ) {
-      await previewMutation(item);
-      const refreshed = currentItem(bookId, eventId);
-      if (!refreshed || refreshed.status !== "ready" || !refreshed.preview) {
-        return;
-      }
-      item = refreshed;
-    }
-    if (
       (item.event.type === "long.mutation_proposal" ||
         isContentFileProposal(item.event)) &&
       (item.status !== "ready" || !item.preview)
     ) {
-      options.notifications.warning("请先完成结构影响预览，再确认应用。");
+      await previewMutation(item);
+      const refreshed = currentItem(bookId, eventId);
+      if (refreshed?.status === "ready" && refreshed.preview) {
+        updateItem(bookId, eventId, {
+          approvalMode: "request-approval",
+          status: "ready",
+          clearError: true
+        });
+        options.notifications.warning(
+          "关联影响已完成核对，请查看最新影响后再次确认。"
+        );
+      }
       return;
     }
     const mutationPreview =
@@ -1326,33 +1066,46 @@ export function useLongWorkspaceProposals(
       status: "submitting",
       clearError: true
     });
-    let appliedProjectRevision: number | undefined;
     try {
       if (
         item.event.type === "long.mutation_proposal" ||
         isContentFileProposal(item.event)
       ) {
         const effectiveBatch = item.effectiveBatch ?? item.event.payload.batch;
-        const effectiveProjectRevision =
-          item.effectiveProjectRevision ??
-          item.event.payload.baseProjectRevision;
-        const result = await api.applyOperations(
+        await api.applyOperations(
           ipcSafeJson({
             bookId,
             batch: LongWorkspaceOperationBatchSchema.parse({
               ...effectiveBatch,
-              expectedImpact: mutationPreview!.impact
-            }),
-            baseProjectRevision: effectiveProjectRevision
+              expectedImpact: mutationPreview!.confirmation
+            })
           })
         );
-        appliedProjectRevision = result?.projectRevision;
       } else {
         throw new Error(
           "章节正文必须通过会话 diff 审批卡保存，不能进入旧长篇提案队列。"
         );
       }
     } catch (error: unknown) {
+      if (
+        (item.event.type === "long.mutation_proposal" ||
+          isContentFileProposal(item.event)) &&
+        isLongImpactMismatch(error)
+      ) {
+        await previewMutation(item);
+        const refreshed = currentItem(bookId, eventId);
+        if (refreshed?.status === "ready" && refreshed.preview) {
+          updateItem(bookId, eventId, {
+            approvalMode: "request-approval",
+            status: "ready",
+            clearError: true
+          });
+          options.notifications.warning(
+            "关联关系或删除影响已变化，请查看最新影响后再次确认。"
+          );
+        }
+        return;
+      }
       updateItem(bookId, eventId, {
         status: "error",
         error: errorMessage(error, "处理长篇提案失败。"),
@@ -1370,9 +1123,6 @@ export function useLongWorkspaceProposals(
     ) {
       updateItem(bookId, eventId, {
         status: "accepted",
-        ...(appliedProjectRevision === undefined
-          ? {}
-          : { appliedProjectRevision }),
         clearError: true
       });
     } else {
@@ -1413,7 +1163,7 @@ export function useLongWorkspaceProposals(
 
   async function approve(bookId: string, eventId: string): Promise<void> {
     await proposalApprovalQueue.enqueue(bookId, async () => {
-      await approveCurrent(bookId, eventId, true);
+      await approveCurrent(bookId, eventId);
     });
   }
 
@@ -1448,28 +1198,6 @@ export function useLongWorkspaceProposals(
         });
       }
     }
-    if (isBatchProposal(item.event)) {
-      const rejectedEvent = item.event;
-      const rejectedFileIds = proposalFileIds(rejectedEvent);
-      for (const dependent of itemsForBook(bookId)) {
-        if (
-          dependent.status === "waiting" &&
-          isBatchProposal(dependent.event) &&
-          dependent.event.payload.batch.documentWrites.some(
-            ({ fileId, expectedRevision }) =>
-              rejectedFileIds.has(fileId) &&
-              producedFileRevision(rejectedEvent, fileId) === expectedRevision
-          )
-        ) {
-          updateItem(bookId, dependent.event.id, {
-            status: "error",
-            error: "依赖的文件创建或前序写入已被拒绝，本次变更未保存。",
-            errorPhase: "preview",
-            errorRetryable: false
-          });
-        }
-      }
-    }
     options.onRejected?.(item.event);
     removeItem(bookId, eventId);
     if (isBatchProposal(item.event)) {
@@ -1498,7 +1226,6 @@ export function useLongWorkspaceProposals(
     handleEvent,
     enqueueManualMutation,
     retryPreview,
-    setDiscardState,
     approve,
     reject
   };

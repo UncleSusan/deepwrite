@@ -1,5 +1,4 @@
 import type {
-  LongFileRevision,
   LongProjectManifest,
   LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
@@ -13,7 +12,6 @@ export interface WriteClawLongImportDocument {
   path: string;
   kind: "markdown" | "json";
   content: string;
-  revision: LongFileRevision;
 }
 
 export interface WriteClawLongImportPlan {

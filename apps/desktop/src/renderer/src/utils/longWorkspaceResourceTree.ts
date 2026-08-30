@@ -753,7 +753,10 @@ export function projectLongWorkspaceNavigation(
       icon: "edit",
       label: "正文",
       badge: String(counts.chapterCards),
-      children: draftChildren
+      children: draftChildren,
+      longTreeCollection: {
+        kind: "volume"
+      }
     }),
     node(createLongRootSelection(book, "continuity_ledger"), {
       icon: "ledger",

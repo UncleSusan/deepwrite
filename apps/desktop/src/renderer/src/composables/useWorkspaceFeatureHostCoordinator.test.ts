@@ -7,6 +7,7 @@ import { ref, shallowRef } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import { useSettingsStore } from "../stores/settingsStore";
 import type { LearningImitationController } from "./useLearningImitation";
+import type { LongBookAnalysisController } from "../extras/long-book-analysis/useLongBookAnalysis";
 import type { SubagentAuthoringController } from "./useSubagentAuthoring";
 import {
   useWorkspaceFeatureHostCoordinator,
@@ -68,6 +69,7 @@ function createHarness(overrides: HarnessOverrides = {}) {
     | "directory"
     | "models"
     | "imitation"
+    | "long-book-analysis"
     | "agent-team"
     | "marketplace"
     | "cloud-backup"
@@ -78,6 +80,8 @@ function createHarness(overrides: HarnessOverrides = {}) {
   const learningController = shallowRef<LearningImitationController | null>(
     null
   );
+  const longBookAnalysisController =
+    shallowRef<LongBookAnalysisController | null>(null);
   const authoringController = shallowRef<SubagentAuthoringController | null>(
     null
   );
@@ -137,6 +141,10 @@ function createHarness(overrides: HarnessOverrides = {}) {
       learningImitation: {
         controller: learningController,
         ensureLoaded: ensureLearningLoaded
+      },
+      longBookAnalysis: {
+        controller: longBookAnalysisController,
+        ensureLoaded: vi.fn(async () => undefined)
       },
       subagentAuthoring: {
         controller: authoringController,
@@ -341,12 +349,14 @@ describe("useWorkspaceFeatureHostCoordinator", () => {
     expect(
       harness.loaders.loadShortAndScriptAgentSettings
     ).toHaveBeenCalledTimes(1);
+    expect(harness.loaders.loadAgentTeamSettings).toHaveBeenCalledTimes(1);
 
     await harness.coordinator.ensureActiveFeatureDependencies("long-workspace");
     expect(harness.loaders.loadModelSettings).toHaveBeenCalledTimes(2);
     expect(harness.loaders.ensureLongAgentSettingsLoaded).toHaveBeenCalledTimes(
       1
     );
+    expect(harness.loaders.loadAgentTeamSettings).toHaveBeenCalledTimes(2);
 
     await harness.coordinator.ensureActiveFeatureDependencies("models");
     await harness.coordinator.ensureActiveFeatureDependencies("directory");

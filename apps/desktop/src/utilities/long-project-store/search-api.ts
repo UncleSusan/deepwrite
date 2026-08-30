@@ -1,11 +1,11 @@
 import { LongFileIdSchema } from "@deepwrite/contracts";
-import { loadPagedIndexedFile } from "./cache";
 import {
   boundedNonnegativeInteger,
   boundedPositiveInteger,
   secureDirectory
 } from "./io";
 import { loadProject } from "./load-project";
+import { loadPublicPagedIndexedFile } from "./public-file-read";
 import { parseProjectSearchResume, scanIndexedFileForSearch } from "./search";
 import type { LongProjectStoreContext } from "./store-context";
 import {
@@ -61,7 +61,6 @@ export async function search(
     const matches: LongProjectSearchMatch[] = [];
     let fileIndex = resume?.fileIndex ?? 0;
     let characterOffset = resume?.characterOffset ?? 0;
-    let expectedRevision = resume?.fileRevision;
     let nextResume: LongProjectSearchResume | null = null;
     let scannedFileCount = 0;
     let scannedCharacterCount = 0;
@@ -74,14 +73,17 @@ export async function search(
       scannedCharacterCount < MAX_SEARCH_SCANNED_CHARACTERS
     ) {
       const scannedFileIndex = fileIndex;
-      const file = await loadPagedIndexedFile(ctx, loaded, fileIds[fileIndex]!);
+      const file = await loadPublicPagedIndexedFile(
+        ctx,
+        loaded,
+        fileIds[fileIndex]!
+      );
       const scanned = await scanIndexedFileForSearch(
         file,
         query,
         characterOffset,
         maxResults - matches.length,
         contextCharacters,
-        expectedRevision,
         MAX_SEARCH_SCANNED_CHARACTERS - scannedCharacterCount
       );
       scannedFileCount += 1;
@@ -91,7 +93,6 @@ export async function search(
         nextResume = {
           fileIndex,
           fileId: scanned.fileId,
-          fileRevision: scanned.revision,
           characterOffset: scanned.nextMatchOffset
         };
         break;
@@ -99,12 +100,10 @@ export async function search(
       lastCompletedFile = {
         fileIndex: scannedFileIndex,
         fileId: scanned.fileId,
-        fileRevision: scanned.revision,
         characterOffset: scanned.characterLength
       };
       fileIndex += 1;
       characterOffset = 0;
-      expectedRevision = undefined;
     }
 
     if (
@@ -117,8 +116,6 @@ export async function search(
 
     return {
       query,
-      workspaceRevision: loaded.index.revision,
-      projectRevision: loaded.manifest.revision,
       matches,
       nextResume,
       truncated: nextResume !== null

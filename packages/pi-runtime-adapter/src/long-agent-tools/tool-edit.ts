@@ -1,7 +1,7 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
 import type { LongWorkspaceOperation } from "@deepwrite/contracts";
-import { defineTool, nextContentRevision, textResult } from "./shared";
+import { defineTool, textResult } from "./shared";
 import {
   chapterContextIdParameter,
   contentParameter,
@@ -117,7 +117,7 @@ export function buildEditTool(ctx: LongToolContext): AgentTool {
     execute: async (toolCallId, params, signal) => {
       const summary = params.summary.trim();
       if (!summary) throw new Error("summary 必须非空。");
-      let { index, projectRevision } = await loadIndex(signal);
+      let index = await loadIndex(signal);
       let target = resolveLongTarget(index, {
         id: params.id,
         ...(params.document ? { document: params.document } : {}),
@@ -137,7 +137,7 @@ export function buildEditTool(ctx: LongToolContext): AgentTool {
         return crossStageWriteCancelled(ctx, target.stage);
       }
       if (LONG_STAGE_ROOTS[target.stage] !== ctx.workspace.activeRoot) {
-        ({ index, projectRevision } = await reloadIndex(signal));
+        index = await reloadIndex(signal);
         target = resolveLongTarget(index, {
           id: params.id,
           ...(params.document ? { document: params.document } : {}),
@@ -188,8 +188,6 @@ export function buildEditTool(ctx: LongToolContext): AgentTool {
           toolCallId,
           changes: [],
           operations: [operation],
-          baseRevision: index.revision,
-          projectRevision,
           timestamp,
           summary,
           message: `已形成《${target.title}》修改提案，等待客户端审阅。`,
@@ -212,8 +210,6 @@ export function buildEditTool(ctx: LongToolContext): AgentTool {
               longMetaPatch(target.kind, params.meta)
             )
           ],
-          baseRevision: index.revision,
-          projectRevision,
           timestamp,
           summary,
           message: `已形成《${target.title}》信息修改提案，等待客户端审阅。`,
@@ -227,12 +223,7 @@ export function buildEditTool(ctx: LongToolContext): AgentTool {
         );
       }
 
-      const live = await readWholeDocument(
-        target.file,
-        index.revision,
-        projectRevision,
-        signal
-      );
+      const live = await readWholeDocument(target.file, signal);
       const evidence = fullyReadDocuments.get(live.file.id);
       if (live.content.trim()) {
         if (params.content !== undefined && !params.allow_overwrite_existing) {
@@ -240,11 +231,7 @@ export function buildEditTool(ctx: LongToolContext): AgentTool {
             "未写入：目标已有正文，整篇覆盖需设置 allow_overwrite_existing=true。"
           );
         }
-        if (
-          !evidence ||
-          evidence.file.revision !== live.file.revision ||
-          evidence.content !== live.content
-        ) {
+        if (!evidence || evidence.content !== live.content) {
           return textResult(`未修改：请先用 read 完整读取 ${target.title}。`);
         }
       }
@@ -258,15 +245,9 @@ export function buildEditTool(ctx: LongToolContext): AgentTool {
       if (params.replacements && !evidence) {
         return textResult(`未修改：请先用 read 完整读取 ${target.title}。`);
       }
-      const nextRevision = nextContentRevision(
-        live.file.revision,
-        next.content
-      );
       fullyReadDocuments.set(live.file.id, {
         content: next.content,
-        file: { ...live.file, revision: nextRevision, updatedAt: timestamp },
-        workspaceRevision: index.revision,
-        projectRevision
+        file: { ...live.file, updatedAt: timestamp }
       });
       return formLongProposal(ctx, {
         toolCallId,
@@ -276,14 +257,10 @@ export function buildEditTool(ctx: LongToolContext): AgentTool {
             operation: params.replacements ? "edit" : "write",
             beforeText: live.content,
             afterText: next.content,
-            beforeRevision: live.file.revision,
-            nextRevision,
             file: live.file
           }
         ],
         operations: [],
-        baseRevision: index.revision,
-        projectRevision,
         timestamp,
         summary,
         message: `已形成《${target.title}》正文${

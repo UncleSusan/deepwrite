@@ -99,7 +99,7 @@ export function buildCreateTool(ctx: LongToolContext): AgentTool {
         signal
       });
       if (decision === "cancel") return crossStageWriteCancelled(ctx, stage);
-      const { index, projectRevision } = await loadIndex(signal);
+      const index = await loadIndex(signal);
       const timestamp = new Date().toISOString();
       const result = buildCreate({
         kind,
@@ -118,8 +118,6 @@ export function buildCreateTool(ctx: LongToolContext): AgentTool {
         toolCallId,
         changes: result.changes,
         operations: result.operations,
-        baseRevision: index.revision,
-        projectRevision,
         timestamp,
         summary,
         message: `已形成${verb}${result.label}（${result.createdId}）的提案，等待客户端审阅。`,

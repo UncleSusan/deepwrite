@@ -116,8 +116,7 @@ export function useWorkspaceResourceTreeCoordinator(
           longBookId: book.id,
           catalogNodeType: "long-book" as const,
           selectableBranch: true,
-          children: projectLongWorkspaceNavigation(book, workspaceIndex),
-          projectRevision: book.projectRevision
+          children: projectLongWorkspaceNavigation(book, workspaceIndex)
         };
       }),
       ...[...unavailable.values()].map((diagnostic) => ({

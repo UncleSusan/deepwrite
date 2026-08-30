@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  LONG_WORKSPACE_DELETED_LATEST_HANDOFF_SUMMARY,
   LONG_WORKSPACE_INDEX_FILE_ID,
   LONG_WORKSPACE_INDEX_PATH,
   LongLedgerCommitRecordSchema,
@@ -23,14 +24,6 @@ const FIXED_NOW = "2026-07-26T12:00:00.000Z";
 
 function sha256(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
-}
-
-function revision(content: string): string {
-  return `v2:${Buffer.byteLength(content, "utf8")}:${sha256(content)}`;
-}
-
-function legacyRevision(content: string): string {
-  return `v1:${Buffer.byteLength(content, "utf8")}:${sha256(content).slice(0, 8)}`;
 }
 
 function serializeJson(value: unknown): string {
@@ -130,23 +123,14 @@ function portableImportFixture(): LongPortableExportBundle {
     sequence: 1,
     chapterCardId: chapterId,
     committedAt: FIXED_NOW,
-    reversible: true,
-    sourceWorkspaceRevision: 0,
-    committedWorkspaceRevision: 1,
-    sourceProjectRevision: 0,
-    committedProjectRevision: 1,
-    previousCommittedThroughChapterId: null,
     committedThroughChapterId: chapterId,
-    previousChapterCommitId: null,
     placementChanges: [],
-    foreshadowingBeatChanges: [],
-    fileChanges: []
+    foreshadowingBeatChanges: []
   });
   const recordContent = serializeJson(record);
   const recordPath = `long/ledger/${sha256(commitId).slice(0, 32)}.json`;
   const index = LongWorkspaceIndexSnapshotSchema.parse({
     ...plan.index,
-    revision: 1,
     chapters: plan.index.chapters.map((chapter) => ({
       ...chapter,
       commitId
@@ -159,14 +143,11 @@ function portableImportFixture(): LongPortableExportBundle {
           sequence: 1,
           chapterCardId: chapterId,
           committedAt: FIXED_NOW,
-          reversible: true,
-          sourceRevision: 0,
           placementIds: [],
           foreshadowingBeatIds: [],
           recordFile: {
             id: longLedgerCommitFileId(commitId),
             path: recordPath,
-            revision: revision(recordContent),
             updatedAt: FIXED_NOW
           }
         }
@@ -175,11 +156,9 @@ function portableImportFixture(): LongPortableExportBundle {
   });
   const manifest = LongProjectManifestSchema.parse({
     ...plan.manifest,
-    revision: 1,
     workspaceIndexFile: {
       id: LONG_WORKSPACE_INDEX_FILE_ID,
       path: LONG_WORKSPACE_INDEX_PATH,
-      revision: revision(serializeJson(index)),
       updatedAt: FIXED_NOW
     }
   });
@@ -188,7 +167,6 @@ function portableImportFixture(): LongPortableExportBundle {
       id: document.fileId,
       path: document.path,
       kind: "markdown" as const,
-      revision: document.revision,
       sha256: sha256(document.content),
       content: document.content
     })),
@@ -196,7 +174,6 @@ function portableImportFixture(): LongPortableExportBundle {
       id: longLedgerCommitFileId(commitId),
       path: recordPath,
       kind: "ledger-record" as const,
-      revision: revision(recordContent),
       sha256: sha256(recordContent),
       content: recordContent
     }
@@ -228,16 +205,37 @@ function rehashLedgerMutation(
   const record = JSON.parse(ledgerFile.content) as Record<string, unknown>;
   mutate(record);
   ledgerFile.content = serializeJson(record);
-  ledgerFile.revision = revision(ledgerFile.content);
   ledgerFile.sha256 = sha256(ledgerFile.content);
-  bundle.index.value.ledger.commits[0]!.recordFile.revision =
-    ledgerFile.revision as never;
   const indexText = serializeJson(bundle.index.value);
   bundle.index.sha256 = sha256(indexText);
-  bundle.manifest.value.workspaceIndexFile.revision = revision(
-    indexText
-  ) as never;
   bundle.manifest.sha256 = sha256(serializeJson(bundle.manifest.value));
+}
+
+function rewriteFixtureRecordAsV2Handoff(
+  bundle: LongPortableExportBundle,
+  summary: string
+): void {
+  rehashLedgerMutation(bundle, (record) => {
+    record.schemaVersion = 2;
+    record.commitMessage = "保留旧版结构化交接";
+    record.chapterSummary = {
+      timeline: "时间线已经核验。",
+      characterStates: "人物状态已经核验。",
+      factionStates: "阵营状态已经核验。",
+      realmStates: "境界状态已经核验。",
+      foreshadowingStates: "伏笔状态已经核验。",
+      continuityNotes: "连续性已经核验。"
+    };
+    record.chapterOutputs = {
+      characterState: "",
+      handoff: {
+        summary,
+        mustCarry: [],
+        nextChapterConstraints: [],
+        openLoops: []
+      }
+    };
+  });
 }
 
 function portableTextFileCommitFixture(): LongPortableExportBundle {
@@ -251,10 +249,9 @@ function portableTextFileCommitFixture(): LongPortableExportBundle {
       chapter.characterState,
       chapter.handoff,
       chapter.foreshadowingChanges
-    ].map(({ id, path, revision: fileRevision }) => ({
+    ].map(({ id, path }) => ({
       fileId: id,
-      path,
-      revision: fileRevision
+      path
     }));
   });
   return bundle;
@@ -270,7 +267,7 @@ describe("long portable import parser", () => {
     );
   });
 
-  it("accepts a lightweight v4 text-file commit and rejects an audited revision mismatch", () => {
+  it("accepts a lightweight v4 text-file commit and validates its file paths", () => {
     const parsed = parseLongPortableExportBundle(
       portableTextFileCommitFixture()
     );
@@ -280,38 +277,55 @@ describe("long portable import parser", () => {
     });
     const parsedRecord = JSON.parse(
       parsed.files.find(({ kind }) => kind === "ledger-record")!.content
-    ) as { schemaVersion: number; fileChanges: unknown[] };
-    expect(parsedRecord).toMatchObject({
-      schemaVersion: 4,
-      fileChanges: []
-    });
+    ) as Record<string, unknown>;
+    expect(parsedRecord.schemaVersion).toBe(4);
+    expect(parsedRecord).not.toHaveProperty("fileChanges");
+    expect(parsedRecord).not.toHaveProperty("reversible");
 
     const mismatched = portableTextFileCommitFixture();
     rehashLedgerMutation(mismatched, (record) => {
       const continuityFiles = record.continuityFiles as Array<
         Record<string, unknown>
       >;
-      continuityFiles[0]!.revision = revision("不匹配的连续性文件");
+      continuityFiles[0]!.path = "long/continuity/not-indexed.md";
     });
     expect(() => parseLongPortableExportBundle(mismatched)).toThrow(
       /v4 连续性账本的文件清单与章节索引不一致/u
     );
   });
 
-  it("accepts an equivalent legacy revision in a historical v4 audit", () => {
-    const compatible = portableTextFileCommitFixture();
-    const chapter = compatible.index.value.chapters[0]!;
-    const characterState = compatible.files.find(
-      ({ id }) => id === chapter.characterState.id
-    )!;
-    rehashLedgerMutation(compatible, (record) => {
-      const continuityFiles = record.continuityFiles as Array<
-        Record<string, unknown>
-      >;
-      continuityFiles[0]!.revision = legacyRevision(characterState.content);
+  it("strips retired singular and plural revision metadata from a legacy bundle", () => {
+    const legacy = portableTextFileCommitFixture();
+    const raw = legacy as unknown as {
+      manifest: { value: Record<string, unknown>; sha256: string };
+      index: { value: Record<string, unknown>; sha256: string };
+      files: Array<Record<string, unknown>>;
+    };
+    raw.manifest.value.revision = 7;
+    (
+      raw.manifest.value.workspaceIndexFile as Record<string, unknown>
+    ).revision = "v1:legacy";
+    raw.index.value.revision = 9;
+    raw.index.value.chapterFileRevisions = { body: "v1:legacy" };
+    raw.files[0]!.revision = "v1:legacy";
+    rehashLedgerMutation(legacy, (record) => {
+      record.reversible = true;
+      record.sourceProjectRevision = 8;
+      record.continuityFileRevisions = { body: "v1:legacy" };
+      record.fileChanges = [];
+      record.before = { revision: "v1:legacy" };
     });
+    raw.index.sha256 = sha256(serializeJson(raw.index.value));
+    raw.manifest.sha256 = sha256(serializeJson(raw.manifest.value));
 
-    expect(() => parseLongPortableExportBundle(compatible)).not.toThrow();
+    const parsed = parseLongPortableExportBundle(legacy);
+    const normalized = JSON.stringify(parsed);
+    expect(normalized).not.toMatch(
+      /"(?:revision|[^"]*Revision|[^"]*Revisions|reversible|fileChanges|before)"\s*:/u
+    );
+    expect(parsed.manifest.value.schemaVersion).toBe(
+      legacy.manifest.value.schemaVersion
+    );
   });
 
   it("accepts a v4 commit without a foreshadowing file audit when the chapter has no touchpoints", () => {
@@ -343,9 +357,6 @@ describe("long portable import parser", () => {
     delete legacyLedger.projection;
     const legacyIndexContent = serializeJson(legacy.index.value);
     legacy.index.sha256 = sha256(legacyIndexContent);
-    legacy.manifest.value.workspaceIndexFile.revision = revision(
-      legacyIndexContent
-    ) as never;
     legacy.manifest.sha256 = sha256(serializeJson(legacy.manifest.value));
 
     const parsed = parseLongPortableExportBundle(legacy);
@@ -357,9 +368,52 @@ describe("long portable import parser", () => {
       openLoops: [],
       latestHandoff: null
     });
-    expect(parsed.manifest.value.workspaceIndexFile.revision).toBe(
-      revision(serializeJson(parsed.index.value))
+    expect(parsed.manifest.value.workspaceIndexFile).not.toHaveProperty(
+      "revision"
     );
+  });
+
+  it("does not treat an arbitrary legacy v2 handoff as a typed projection watermark", () => {
+    const legacy = structuredClone(portableImportFixture());
+    rewriteFixtureRecordAsV2Handoff(legacy, "普通旧版交接内容。");
+
+    const parsed = parseLongPortableExportBundle(legacy);
+
+    expect(parsed.index.value.ledger.projection).toEqual({
+      throughCommitId: null,
+      facts: [],
+      knowledge: [],
+      openLoops: [],
+      latestHandoff: null
+    });
+  });
+
+  it("replays only the reserved v2 deletion-cleanup handoff watermark", () => {
+    const cleaned = structuredClone(portableImportFixture());
+    rewriteFixtureRecordAsV2Handoff(
+      cleaned,
+      LONG_WORKSPACE_DELETED_LATEST_HANDOFF_SUMMARY
+    );
+    const commit = cleaned.index.value.ledger.commits[0]!;
+    cleaned.index.value.ledger.projection = {
+      throughCommitId: commit.id,
+      facts: [],
+      knowledge: [],
+      openLoops: [],
+      latestHandoff: {
+        summary: LONG_WORKSPACE_DELETED_LATEST_HANDOFF_SUMMARY,
+        mustCarry: [],
+        nextChapterConstraints: [],
+        openLoops: [],
+        chapterCardId: commit.chapterCardId,
+        commitId: commit.id
+      }
+    };
+    cleaned.index.sha256 = sha256(serializeJson(cleaned.index.value));
+
+    expect(
+      parseLongPortableExportBundle(cleaned).index.value.ledger.projection
+    ).toEqual(cleaned.index.value.ledger.projection);
   });
 
   it("migrates an older aggregate worldbuilding list into item files", () => {
@@ -376,22 +430,16 @@ describe("long portable import parser", () => {
         content: "逆潮每十年出现一次。"
       }
     ]);
-    const aggregateRevision = revision(aggregateContent);
     const aggregateFile = legacy.files.find(
       ({ id }) => id === categoryFile.id
     )!;
     aggregateFile.content = aggregateContent;
-    aggregateFile.revision = aggregateRevision;
     aggregateFile.sha256 = sha256(aggregateContent);
     category.format = "list";
     category.contentAuthority = "markdown";
-    categoryFile.revision = aggregateRevision;
 
     const legacyIndexContent = serializeJson(legacy.index.value);
     legacy.index.sha256 = sha256(legacyIndexContent);
-    legacy.manifest.value.workspaceIndexFile.revision = revision(
-      legacyIndexContent
-    ) as never;
     legacy.manifest.sha256 = sha256(serializeJson(legacy.manifest.value));
 
     const parsed = parseLongPortableExportBundle(legacy);
@@ -452,10 +500,10 @@ describe("long portable import parser", () => {
   it("rejects a fully rehashed record that no longer matches its index", () => {
     const tampered = structuredClone(portableImportFixture());
     rehashLedgerMutation(tampered, (record) => {
-      record.sourceWorkspaceRevision = 5;
-      record.committedWorkspaceRevision = 6;
-      record.sourceProjectRevision = 5;
-      record.committedProjectRevision = 6;
+      const chapterCardId = record.chapterCardId as string;
+      record.chapterCardId = `${chapterCardId.slice(0, -1)}${
+        chapterCardId.endsWith("a") ? "b" : "a"
+      }`;
     });
 
     expect(() => parseLongPortableExportBundle(tampered)).toThrow(
@@ -495,7 +543,6 @@ describe("long portable import parser", () => {
       };
       record.factChanges = [
         {
-          before: null,
           after: {
             factId: "fact_orphan-world",
             domain: "world",
@@ -517,22 +564,13 @@ describe("long portable import parser", () => {
     );
   });
 
-  it("rejects rehashed project-revision and previous-commit forgeries", () => {
-    const splitRevision = structuredClone(portableImportFixture());
-    rehashLedgerMutation(splitRevision, (record) => {
-      record.sourceProjectRevision = 5;
-      record.committedProjectRevision = 6;
+  it("rejects a rehashed ledger record with an invented sequence", () => {
+    const inventedSequence = structuredClone(portableImportFixture());
+    rehashLedgerMutation(inventedSequence, (record) => {
+      record.sequence = 2;
     });
-    expect(() => parseLongPortableExportBundle(splitRevision)).toThrow(
-      /revision/u
-    );
-
-    const inventedPreviousCommit = structuredClone(portableImportFixture());
-    rehashLedgerMutation(inventedPreviousCommit, (record) => {
-      record.previousChapterCommitId = "commit_forged";
-    });
-    expect(() => parseLongPortableExportBundle(inventedPreviousCommit)).toThrow(
-      /回滚前态/u
+    expect(() => parseLongPortableExportBundle(inventedSequence)).toThrow(
+      /账本记录.*索引不一致/u
     );
   });
 });

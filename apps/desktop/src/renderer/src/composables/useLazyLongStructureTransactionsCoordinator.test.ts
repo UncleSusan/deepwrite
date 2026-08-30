@@ -2,6 +2,10 @@ import type {
   LongBookSummary,
   LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
+import {
+  LONG_BOOK_LINE_FILE_ID,
+  LongWorkspaceIndexSnapshotSchema
+} from "@deepwrite/contracts";
 import { computed, ref } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import facadeSource from "./useLazyLongStructureTransactionsCoordinator.ts?raw";
@@ -45,8 +49,33 @@ function fakeBook(
   } as unknown as LongBookSummary;
 }
 
-function fakeIndex(revision = 1): LongWorkspaceIndexSnapshot {
-  return { revision } as unknown as LongWorkspaceIndexSnapshot;
+function fakeIndex(): LongWorkspaceIndexSnapshot {
+  const updatedAt = "2026-08-14T08:00:00.000Z";
+  return LongWorkspaceIndexSnapshotSchema.parse({
+    schemaVersion: 1,
+    bookId: BOOK_ID,
+    updatedAt,
+    bookLine: {
+      id: LONG_BOOK_LINE_FILE_ID,
+      path: "long/plot/book-line.md",
+      updatedAt
+    },
+    worldbuilding: [],
+    characters: [],
+    characterFiles: [],
+    plot: {
+      volumes: [],
+      arcs: [],
+      chapterCards: [],
+      storyEvents: [],
+      storyPlots: [],
+      eventConnections: [],
+      narrativePlacements: [],
+      foreshadowing: []
+    },
+    chapters: [],
+    ledger: { committedThroughChapterId: null, commits: [] }
+  });
 }
 
 function createLoadedCoordinator() {
@@ -127,8 +156,12 @@ function createContext(input: { readonly pending?: boolean } = {}) {
       title: "第一章"
     }),
     treeItemDeleteTarget: ref<object | null>({ bookId: BOOK_ID }),
-    volumeCreateTarget: ref<{ readonly bookId: string } | null>({
-      bookId: BOOK_ID
+    volumeCreateTarget: ref<{
+      readonly bookId: string;
+      readonly source: "book-line" | "draft";
+    } | null>({
+      bookId: BOOK_ID,
+      source: "book-line"
     }),
     selectedResourceId: ref("")
   };
@@ -317,7 +350,10 @@ describe("useLazyLongStructureTransactionsCoordinator", () => {
       title: "旧目标",
       summary: ""
     });
-    second.state.volumeCreateTarget.value = { bookId: "longbook_new_target" };
+    second.state.volumeCreateTarget.value = {
+      bookId: "longbook_new_target",
+      source: "book-line"
+    };
     secondLoading.resolve(moduleFor(secondLoaded.coordinator));
     await staleCreating;
     expect(secondLoaded.raw.createLongVolume).not.toHaveBeenCalled();

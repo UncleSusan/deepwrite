@@ -19,6 +19,7 @@ import type {
   EditorTextReference,
   EditorTextReferenceNavigation
 } from "../types/conversation";
+import type { EditorEntrySearchSource } from "../types/editorEntrySearch";
 import type { EditorDraftState, WorkspaceDocument } from "../types/workspace";
 import {
   createEditorTextReference,
@@ -45,9 +46,14 @@ import { parseSkillFrontmatter } from "../utils/skillFrontmatter";
 import { createTransientScrollbarController } from "../utils/transientScrollbar";
 import { uiMessage } from "../ui-feedback";
 import { useEditorSaveViewport } from "../composables/useEditorSaveViewport";
+import {
+  searchLocalEditorEntries,
+  useEditorEntrySearch
+} from "../composables/useEditorEntrySearch";
 import { useTextViewMode } from "../composables/useTextViewMode";
 import AppIcon from "./AppIcon.vue";
 import DocumentMetaRow from "./DocumentMetaRow.vue";
+import EditorEntrySearchRow from "./EditorEntrySearchRow.vue";
 import MarkdownContent from "./MarkdownContent.vue";
 
 const props = defineProps<{
@@ -72,6 +78,7 @@ const props = defineProps<{
   deleteSectionLabel?: string | undefined;
   rightPane?: boolean;
   rightPaneCollapsed?: boolean;
+  entrySearchItems: readonly EditorEntrySearchSource[];
 }>();
 
 const emit = defineEmits<{
@@ -84,6 +91,8 @@ const emit = defineEmits<{
   createSection: [];
   deleteSection: [];
   selectDraftFile: [fileKind: "body" | "character-state"];
+  selectEntrySearchResult: [documentId: string];
+  prepareEntrySearch: [];
 }>();
 
 const editorInput = ref<HTMLTextAreaElement>();
@@ -114,6 +123,21 @@ const searchQuery = ref("");
 const replacementText = ref("");
 const currentMatchIndex = ref(-1);
 const searchAnchor = ref(0);
+const entrySearch = useEditorEntrySearch({
+  search: (query) => searchLocalEditorEntries(props.entrySearchItems, query),
+  navigate: ({ id }) => emit("selectEntrySearchResult", id)
+});
+const {
+  query: entrySearchQuery,
+  results: entrySearchResults,
+  activeIndex: activeEntrySearchIndex,
+  pending: entrySearchPending,
+  resultLabel: entrySearchResultLabel,
+  handleInput: handleEntrySearchInput,
+  moveActive: moveActiveEntrySearchResult,
+  selectResult: selectEntrySearchResult,
+  reset: resetEntrySearch
+} = entrySearch;
 
 interface EditorSearchMatch {
   start: number;
@@ -165,6 +189,7 @@ watch(activeScrollMemoryKey, (nextScrollMemoryKey, previousScrollMemoryKey) => {
   searchQuery.value = "";
   replacementText.value = "";
   currentMatchIndex.value = -1;
+  resetEntrySearch();
   resetEditorHistory();
   void restoreDocumentScroll(nextScrollMemoryKey, nextViewMode);
 });
@@ -541,6 +566,13 @@ watch(
   (mode) => selectViewMode(mode)
 );
 
+watch(
+  () => props.entrySearchItems,
+  () => {
+    if (entrySearchQuery.value.trim()) handleEntrySearchInput();
+  }
+);
+
 function closeFindPanel(): void {
   findPanelOpen.value = false;
   currentMatchIndex.value = -1;
@@ -556,6 +588,7 @@ async function toggleFindPanel(mode: "find" | "replace"): Promise<void> {
   closeSelectionAction();
   findPanelMode.value = mode;
   findPanelOpen.value = true;
+  emit("prepareEntrySearch");
   searchAnchor.value = editorInput.value?.selectionStart ?? 0;
   currentMatchIndex.value = -1;
   await nextTick();
@@ -1092,6 +1125,16 @@ onBeforeUnmount(() => {
             全部
           </button>
         </div>
+        <EditorEntrySearchRow
+          v-model:query="entrySearchQuery"
+          :results="entrySearchResults"
+          :active-index="activeEntrySearchIndex"
+          :pending="entrySearchPending"
+          :result-label="entrySearchResultLabel"
+          @input="handleEntrySearchInput"
+          @move="moveActiveEntrySearchResult"
+          @select="selectEntrySearchResult"
+        />
       </div>
     </div>
 

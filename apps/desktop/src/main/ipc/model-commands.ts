@@ -1,4 +1,5 @@
 import {
+  AgentProviderRuntimeConfigSchema,
   CommandEnvelopeSchema,
   ModelCapacityResultSchema,
   ModelConnectionTestResultSchema,
@@ -391,9 +392,13 @@ export async function handleModelCommands(
 
   if (command.type === "models.resolveCapacity") {
     try {
-      const runtimeConfig = await ctx
-        .requireModelConfigStore()
-        .resolveDraft(command.payload.model);
+      // Capacity resolution only reads model metadata. Keep this path free of
+      // stored credentials so a missing login, locked safe storage, or broken
+      // API key cannot prevent the UI from showing the model's context window.
+      const runtimeConfig = AgentProviderRuntimeConfigSchema.parse({
+        ...command.payload.model,
+        apiKey: ""
+      });
       const internalCommand = CommandEnvelopeSchema.parse(
         createEnvelope(
           "agent.model_capacity",

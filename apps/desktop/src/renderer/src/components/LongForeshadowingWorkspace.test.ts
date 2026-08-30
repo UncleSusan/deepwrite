@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { expectSourceToContain } from "../../../test-utils/sourceText";
+import deleteDialogSource from "./LongForeshadowingDeleteDialog.vue?raw";
 import source from "./LongForeshadowingWorkspace.vue?raw";
+import deleteConfirmationSource from "../composables/useLongForeshadowingDeleteConfirmation.ts?raw";
 
 describe("LongForeshadowingWorkspace", () => {
   it("projects one foreshadowing model into overview, volume, and plot-point views", () => {
@@ -61,13 +63,15 @@ describe("LongForeshadowingWorkspace", () => {
     for (const method of [
       "createForeshadowing",
       "updateForeshadowing",
-      "deleteForeshadowing",
       "createForeshadowingBeat",
-      "updateForeshadowingBeat",
-      "deleteForeshadowingBeat"
+      "updateForeshadowingBeat"
     ]) {
       expect(source).toContain(`builder.${method}`);
     }
+    expect(deleteConfirmationSource).toContain("builder.deleteForeshadowing");
+    expect(deleteConfirmationSource).toContain(
+      "builder.deleteForeshadowingBeat"
+    );
     expect(source).toContain("hiddenTruth");
     expect(source).toContain("plannedSpan");
     expect(source).toContain(
@@ -136,13 +140,14 @@ describe("LongForeshadowingWorkspace", () => {
     expect(source).not.toContain("<select");
     expect(source).toContain("uiMessage.warning");
     expect(source).toContain("uiMessage.info");
-    expect(source.match(/<Teleport to="body">/gu)).toHaveLength(2);
-    expect(source).toContain('role="alertdialog"');
-    expect(source).toContain(
+    expect(source.match(/<Teleport to="body">/gu)).toHaveLength(1);
+    expect(deleteDialogSource.match(/<Teleport to="body">/gu)).toHaveLength(1);
+    expect(deleteDialogSource).toContain('role="alertdialog"');
+    expect(deleteDialogSource).toContain(
       'aria-describedby="foreshadow-delete-description"'
     );
     expect(source).toContain("function focusOpenedForm()");
-    expect(source).toContain('ref="deleteCancelButton"');
+    expect(deleteDialogSource).toContain('ref="cancelButton"');
     for (const token of [
       "--surface-main",
       "--surface-raised",

@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { expectSourceToContain } from "../../../test-utils/sourceText";
 import appSource from "../WorkspaceShell.vue?raw";
 import featureModulesSource from "./WorkspaceFeatureModules.vue?raw";
-import featureHostSource from "../composables/useWorkspaceFeatureHostCoordinator.ts?raw";
+import featureHostCoordinatorSource from "../composables/useWorkspaceFeatureHostCoordinator.ts?raw";
+import featureHostModuleSource from "../composables/workspaceFeatureHostModule.ts?raw";
 import generalPanelSource from "./GeneralSettingsPanel.vue?raw";
 import fontSource from "./AppearanceFontSettings.vue?raw";
 import appearancePanelSource from "./AppearanceSettingsPanel.vue?raw";
@@ -12,6 +13,7 @@ import workspaceAgentFormSource from "./WorkspaceAgentProfileForm.vue?raw";
 import source from "./SettingsPage.vue?raw";
 
 const generalSettingsSource = `${source}\n${generalPanelSource}`;
+const featureHostSource = `${featureHostCoordinatorSource}\n${featureHostModuleSource}`;
 
 describe("SettingsPage", () => {
   it("can open directly on a requested settings category", () => {
@@ -23,6 +25,25 @@ describe("SettingsPage", () => {
     expectSourceToContain(generalSettingsSource, "<strong>自动保存</strong>");
     expect(generalSettingsSource).toContain(':checked="autoSaveEnabled"');
     expectSourceToContain(generalSettingsSource, "emit('updateAutoSave'");
+  });
+
+  it("offers a persisted context usage visibility switch in general settings", () => {
+    expectSourceToContain(
+      generalSettingsSource,
+      "<strong>上下文使用显示</strong>"
+    );
+    expect(generalSettingsSource).toContain(':checked="showContextUsage"');
+    expect(generalSettingsSource).toContain("'updateShowContextUsage'");
+    expect(source).toContain(':show-context-usage="showContextUsage"');
+    expect(featureModulesSource).toContain(
+      ':show-context-usage="module.showContextUsage"'
+    );
+    expect(featureHostSource).toContain(
+      "settingsStore.generalSettings.showContextUsage"
+    );
+    expect(appSource).toContain(
+      '@update-show-context-usage="updateShowContextUsage"'
+    );
   });
 
   it("keeps only the requested general controls and makes permission modes exclusive", () => {

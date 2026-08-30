@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, type ComponentPublicInstance } from "vue";
 import type {
+  AgentTeamRunMode,
   LongArcId,
   LongAgentProfile,
   LongBookSummary,
   LongChapterCardId,
   LongCharacterId,
-  LongLedgerCommitIndexEntry,
+  LongWorkspaceImpactConfirmation,
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch,
   LongWriteDocumentResult,
@@ -48,9 +49,7 @@ const props = defineProps<{
   availableSkillReferences: ComposerReferenceOption[];
   availableMaterialReferences: ComposerReferenceOption[];
   proposalItems: LongWorkspaceProposalItem[];
-  latestCommit: LongLedgerCommitIndexEntry | undefined;
   refreshStatus: LongWorkspaceRefreshStatus | null;
-  revisionSyncRequired: boolean;
   runtimeAvailable: boolean;
   sendContextReady: boolean;
   sendPreflightPending: boolean;
@@ -89,6 +88,7 @@ const emit = defineEmits<{
   selectThinking: [level: ThinkingLevel];
   selectTemperature: [temperature: number];
   selectApproval: [mode: AgentApprovalMode];
+  selectAgentTeamMode: [mode: AgentTeamRunMode];
   reviewEdit: [
     payload: {
       runId: string;
@@ -97,22 +97,20 @@ const emit = defineEmits<{
     }
   ];
   locateEditProposal: [payload: { runId: string; proposalId: string }];
-  discardEditProposal: [payload: { runId: string; proposalId: string }];
   approveLongProposal: [eventId: string];
   rejectLongProposal: [eventId: string];
   retryLongProposalPreview: [eventId: string];
   locateLongProposal: [eventId: string];
-  discardLongProposal: [eventId: string];
   retryWorkspaceRefresh: [];
   saved: [result: LongWriteDocumentResult];
   contextChange: [context: LongWorkspaceFileContext | null];
-  rollback: [];
   selectCharacter: [
     characterId: LongCharacterId,
     done?: (accepted: boolean) => void
   ];
   selectPlotPoint: [plotPointId: LongArcId];
   selectChapterCard: [chapterCardId: LongChapterCardId];
+  selectEntrySearchResult: [fileId: string];
   renameCharacter: [
     input: { characterId: LongCharacterId; name: string },
     completion: (succeeded: boolean) => void
@@ -130,13 +128,25 @@ const emit = defineEmits<{
   createPlotPoint: [];
   createChapterCard: [];
   createVolume: [];
-  deleteStructure: [
+  previewDeleteStructure: [
     input: {
       kind: "character" | "volume" | "plotPoint" | "chapterCard";
       id: string;
       title: string;
     },
-    completion: (succeeded: boolean) => void
+    completion: (impact?: LongWorkspaceImpactConfirmation) => void
+  ];
+  deleteStructure: [
+    input: {
+      kind: "character" | "volume" | "plotPoint" | "chapterCard";
+      id: string;
+      title: string;
+      expectedImpact: LongWorkspaceImpactConfirmation;
+    },
+    completion: (
+      succeeded: boolean,
+      changedImpact?: LongWorkspaceImpactConfirmation
+    ) => void
   ];
   saveVolumeOutline: [
     input: { volumeId: string; outline: string },
@@ -154,6 +164,10 @@ const emit = defineEmits<{
     batch: LongWorkspaceOperationBatch,
     completion: LongStructureMutationCompletion
   ];
+  previewMutation: [
+    batch: LongWorkspaceOperationBatch,
+    completion: (impact?: LongWorkspaceImpactConfirmation) => void
+  ];
 }>();
 
 const conversationDraft = computed({
@@ -170,11 +184,7 @@ const canRewriteHistory = computed(
       !props.sendPreflightPending &&
       !props.editorLocked &&
       props.sendContextReady
-    ) &&
-    props.proposalItems.every(
-      (item) =>
-        item.status === "accepted" && item.discardState?.status !== "discarding"
-    )
+    ) && props.proposalItems.every((item) => item.status === "accepted")
 );
 
 function submitEditedMessage(
@@ -225,10 +235,25 @@ function forwardDeleteStructure(
     kind: "character" | "volume" | "plotPoint" | "chapterCard";
     id: string;
     title: string;
+    expectedImpact: LongWorkspaceImpactConfirmation;
   },
-  completion: (succeeded: boolean) => void
+  completion: (
+    succeeded: boolean,
+    changedImpact?: LongWorkspaceImpactConfirmation
+  ) => void
 ): void {
   emit("deleteStructure", input, completion);
+}
+
+function forwardPreviewDeleteStructure(
+  input: {
+    kind: "character" | "volume" | "plotPoint" | "chapterCard";
+    id: string;
+    title: string;
+  },
+  completion: (impact?: LongWorkspaceImpactConfirmation) => void
+): void {
+  emit("previewDeleteStructure", input, completion);
 }
 
 function forwardSaveVolumeOutline(
@@ -254,6 +279,13 @@ function forwardMutation(
   completion: LongStructureMutationCompletion
 ): void {
   emit("mutation", batch, completion);
+}
+
+function forwardPreviewMutation(
+  batch: LongWorkspaceOperationBatch,
+  completion: (impact?: LongWorkspaceImpactConfirmation) => void
+): void {
+  emit("previewMutation", batch, completion);
 }
 
 onBeforeUnmount(() => {
@@ -300,8 +332,10 @@ onBeforeUnmount(() => {
         :models="conversationController.configuredModels.value"
         :selected-model-id="conversationController.selectedModelId.value"
         :thinking-level="conversationController.thinkingLevel.value"
+        :web-search-enabled="conversationController.webSearchEnabled.value"
         :temperature="conversationController.temperature.value"
         :approval-mode="conversationController.approvalMode.value"
+        :agent-team-mode="conversationController.agentTeamMode.value"
         allow-live-edit-review
         :context-title="selection?.title ?? book.title"
         :book-title="book.title"
@@ -333,16 +367,18 @@ onBeforeUnmount(() => {
         @toggle-right="emit('toggleRight')"
         @select-model="emit('selectModel', $event)"
         @select-thinking="emit('selectThinking', $event)"
+        @toggle-web-search="
+          conversationController.selectWebSearchEnabled($event)
+        "
         @select-temperature="emit('selectTemperature', $event)"
         @select-approval="emit('selectApproval', $event)"
+        @select-agent-team-mode="emit('selectAgentTeamMode', $event)"
         @review-edit="emit('reviewEdit', $event)"
         @locate-edit-proposal="emit('locateEditProposal', $event)"
-        @discard-edit-proposal="emit('discardEditProposal', $event)"
         @approve-long-proposal="emit('approveLongProposal', $event)"
         @reject-long-proposal="emit('rejectLongProposal', $event)"
         @retry-long-proposal-preview="emit('retryLongProposalPreview', $event)"
         @locate-long-proposal="emit('locateLongProposal', $event)"
-        @discard-long-proposal="emit('discardLongProposal', $event)"
         @submit-user-input="conversationController.submitUserInput($event)"
       />
       <section
@@ -350,10 +386,7 @@ onBeforeUnmount(() => {
         class="long-workspace-refresh-status is-error"
         aria-live="polite"
       >
-        <span v-if="revisionSyncRequired">
-          账本回滚已完成，但最新版本尚未同步；正文编辑已锁定以防止版本冲突。
-        </span>
-        <span v-else> 最新工作区索引尚未同步，长篇智能体已暂停发送。 </span>
+        <span>最新工作区索引尚未同步，长篇智能体已暂停发送。</span>
         <button type="button" @click="emit('retryWorkspaceRefresh')">
           重新同步
         </button>
@@ -366,7 +399,6 @@ onBeforeUnmount(() => {
         :book-id="book.id"
         :selection="selection"
         :workspace-index="workspaceIndex"
-        :latest-commit="latestCommit"
         :locked="editorLocked"
         :locked-reason="editorLockedReason"
         :right-pane="paneLayout === 'agent-editor'"
@@ -376,10 +408,10 @@ onBeforeUnmount(() => {
         @context-change="emit('contextChange', $event)"
         @collapse="emit('collapseRight')"
         @toggle-right="emit('toggleRight')"
-        @rollback="emit('rollback')"
         @select-character="forwardSelectCharacter"
         @select-plot-point="emit('selectPlotPoint', $event)"
         @select-chapter-card="emit('selectChapterCard', $event)"
+        @select-entry-search-result="emit('selectEntrySearchResult', $event)"
         @rename-character="forwardRenameCharacter"
         @rename-structure-title="forwardRenameStructureTitle"
         @create-character="emit('createCharacter')"
@@ -387,9 +419,11 @@ onBeforeUnmount(() => {
         @create-plot-point="emit('createPlotPoint')"
         @create-chapter-card="emit('createChapterCard')"
         @create-volume="emit('createVolume')"
+        @preview-delete-structure="forwardPreviewDeleteStructure"
         @delete-structure="forwardDeleteStructure"
         @save-volume-outline="forwardSaveVolumeOutline"
         @save-plot-point-content="forwardSavePlotPointContent"
+        @preview-mutation="forwardPreviewMutation"
         @mutation="forwardMutation"
       />
     </template>

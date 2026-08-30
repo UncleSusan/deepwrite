@@ -47,7 +47,6 @@ export type LongAgentToolDetails =
       bookId: string;
       agentId: LongAgentProfile["id"];
       batch: LongWorkspaceOperationBatch;
-      baseProjectRevision: number;
       summary: string;
     }
   | {
@@ -55,7 +54,6 @@ export type LongAgentToolDetails =
       bookId: string;
       agentId: LongAgentProfile["id"];
       batch: LongWorkspaceOperationBatch;
-      baseProjectRevision: number;
       summary: string;
       files: LongWorldbuildingFileChange[];
     }
@@ -64,7 +62,6 @@ export type LongAgentToolDetails =
       bookId: string;
       agentId: LongAgentProfile["id"];
       batch: LongWorkspaceOperationBatch;
-      baseProjectRevision: number;
       summary: string;
       files: LongCharacterFileChange[];
     }
@@ -73,7 +70,6 @@ export type LongAgentToolDetails =
       bookId: string;
       agentId: LongAgentProfile["id"];
       batch: LongWorkspaceOperationBatch;
-      baseProjectRevision: number;
       summary: string;
       files: LongContinuityFileChange[];
     }
@@ -82,7 +78,6 @@ export type LongAgentToolDetails =
       bookId: string;
       agentId: LongAgentProfile["id"];
       batch: LongWorkspaceOperationBatch;
-      baseProjectRevision: number;
       file: LongChapterBodyChange;
       summary: string;
     }

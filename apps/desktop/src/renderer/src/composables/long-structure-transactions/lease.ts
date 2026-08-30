@@ -42,7 +42,7 @@ export function createLongStructureLease(
     ) {
       return null;
     }
-    return { bookId: expectedBookId, index, revision: index.revision };
+    return { bookId: expectedBookId, index };
   }
   function mutationIsCurrent(lease: LongStructureMutationLease): boolean {
     return (
@@ -60,8 +60,7 @@ export function createLongStructureLease(
     if (
       !mutationIsCurrent(lease) ||
       !current ||
-      current.index !== target.index ||
-      current.revision !== target.revision
+      current.index !== target.index
     ) {
       throw new Error(message);
     }

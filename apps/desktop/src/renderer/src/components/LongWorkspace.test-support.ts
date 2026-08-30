@@ -20,12 +20,11 @@ import longWorkspaceModuleSource from "./LongWorkspaceModule.vue?raw";
 import manuscriptNavigationSource from "./LongManuscriptNavigation.vue?raw";
 import worldbuildingNavigationSource from "./LongWorldbuildingNavigation.vue?raw";
 import foreshadowingFiltersSource from "../composables/useForeshadowingFilters.ts?raw";
-import foreshadowingMutationsSource from "../composables/useForeshadowingMutations.ts?raw";
 import legacySyncSource from "./LongLegacySyncDialog.vue?raw";
 import leftSidebarSource from "./LeftSidebar.vue?raw";
-import proposalSource from "./LongProposalReview.vue?raw";
+import proposalReviewSource from "./LongProposalReview.vue?raw";
+import proposalImpactSource from "./LongProposalImpactDetails.vue?raw";
 import removalSource from "./LongBookRemovalDialog.vue?raw";
-import rollbackSource from "./LongRollbackDialog.vue?raw";
 import sectionSource from "./TreeSection.vue?raw";
 import structureSource from "./LongStructureManager.vue?raw";
 import treeNodeSource from "./TreeNodeItem.vue?raw";
@@ -36,7 +35,6 @@ import longConversationSource from "../composables/useLongConversationCoordinato
 import proposalRuntimeSource from "../composables/useLongProposalRuntimeCoordinator.ts?raw";
 import longBookLifecycleSource from "../composables/useLongBookLifecycleCoordinator.ts?raw";
 import presentationCoordinatorSource from "../composables/useLongWorkspacePresentationCoordinator.ts?raw";
-import longRollbackSource from "../composables/useLongRollbackCoordinator.ts?raw";
 import longWorkspaceRefreshSource from "../composables/useLongWorkspaceRefreshCoordinator.ts?raw";
 import longWorkspaceSessionSource from "../composables/useLongWorkspaceSessionCoordinator.ts?raw";
 import longStructureTransactionsFacadeSource from "../composables/useLongStructureTransactionsCoordinator.ts?raw";
@@ -74,6 +72,8 @@ const agentConversationSource = [
   processingItemSource
 ].join("\n");
 
+const proposalSource = [proposalReviewSource, proposalImpactSource].join("\n");
+
 export {
   agentConversationSource,
   agentRunPreferencesSource,
@@ -95,14 +95,12 @@ export {
   expect,
   featureHostCoordinatorSource,
   foreshadowingFiltersSource,
-  foreshadowingMutationsSource,
   it,
   lazyLongStructureTransactionsSource,
   leftSidebarSource,
   legacySyncSource,
   longBookLifecycleSource,
   longConversationSource,
-  longRollbackSource,
   longStructureTransactionsCreateSource,
   longStructureTransactionsDeleteSource,
   longStructureTransactionsFacadeSource,
@@ -125,7 +123,6 @@ export {
   proposalSource,
   removalSource,
   resourceTreeCoordinatorSource,
-  rollbackSource,
   sectionSource,
   structureSource,
   treeNodeSource,

@@ -1,64 +1,25 @@
-import { createHash } from "node:crypto";
 import type {
   LongLedgerCommitIndexEntry,
   LongLedgerCommitRecord,
-  LongWorkspaceFileReference,
   LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
 
-export class LongV4LedgerFileAuditError extends Error {
-  constructor(
-    readonly recordId: string,
-    readonly canOverwriteFromCurrent: boolean,
-    message: string
-  ) {
-    super(message);
-    this.name = "LongV4LedgerFileAuditError";
-  }
-}
-
-function revisionMatchesContent(revision: string, content: string): boolean {
-  const bytes = Buffer.from(content, "utf8");
-  const match = /^(v1|v2):(\d+):([0-9a-f]+)$/u.exec(revision);
-  if (!match || Number(match[2]) !== bytes.byteLength) return false;
-  const digest = createHash("sha256").update(bytes).digest("hex");
-  return match[1] === "v1" ? digest.startsWith(match[3]!) : digest === match[3];
-}
-
-function revisionsAuditSameContent(
-  auditedRevision: string,
-  current: LongWorkspaceFileReference,
-  contents: ReadonlyMap<string, string> | undefined
-): boolean {
-  if (auditedRevision === current.revision) return true;
-  const content = contents?.get(current.id);
-  return (
-    content !== undefined &&
-    revisionMatchesContent(auditedRevision, content) &&
-    revisionMatchesContent(current.revision, content)
-  );
-}
-
 /**
- * A v4 record audits the chapter files that existed when that record was
- * created. Optional continuity files added later by older clients are not
- * retroactively part of that historical audit, but every audited file must
- * still resolve to the same stable id and content.
+ * A v4 record keeps the stable identities of the chapter continuity files.
+ * Their content remains directly editable and is intentionally not pinned.
  */
 export function assertLongV4LedgerFileAudit(
   index: LongWorkspaceIndexSnapshot,
   entry: LongLedgerCommitIndexEntry,
   record: LongLedgerCommitRecord,
-  continuityFileContents?: ReadonlyMap<string, string>
+  _continuityFileContents?: ReadonlyMap<string, string>
 ): void {
   if (record.schemaVersion !== 4) return;
   const chapter = index.chapters.find(
     ({ chapterCardId }) => chapterCardId === record.chapterCardId
   );
   if (!chapter) {
-    throw new LongV4LedgerFileAuditError(
-      record.id,
-      false,
+    throw new Error(
       `v4 连续性账本引用了不存在的章节：${record.chapterCardId}。`
     );
   }
@@ -91,20 +52,9 @@ export function assertLongV4LedgerFileAudit(
     requiredFileIds.some((fileId) => !auditedById.has(fileId)) ||
     record.continuityFiles.some((audited) => {
       const current = currentById.get(audited.fileId);
-      return (
-        !current ||
-        !revisionsAuditSameContent(
-          audited.revision,
-          current,
-          continuityFileContents
-        )
-      );
+      return !current || current.path !== audited.path;
     });
   if (invalid) {
-    throw new LongV4LedgerFileAuditError(
-      record.id,
-      true,
-      `v4 连续性账本的文件清单与章节索引不一致：${record.id}。`
-    );
+    throw new Error(`v4 连续性账本的文件清单与章节索引不一致：${record.id}。`);
   }
 }

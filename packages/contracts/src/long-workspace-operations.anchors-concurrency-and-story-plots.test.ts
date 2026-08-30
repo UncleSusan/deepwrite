@@ -3,16 +3,15 @@ import {
   LONG_BOOK_LINE_FILE_ID,
   LongWorkspaceOperationBatchSchema,
   applyLongWorkspaceOperations,
+  applyPreviewedLongWorkspaceOperations,
   committedForeshadowingWorkspace,
   committedWorkspace,
   describe,
   expect,
-  expectOperationError,
   file,
   it,
   later,
   previewLongWorkspaceOperations,
-  revision,
   workspace
 } from "./long-workspace-operations.test-support";
 
@@ -124,8 +123,7 @@ describe("long workspace operation engine: anchors-concurrency-and-story-plots",
       }
     );
     arcSource.plot.foreshadowing.push(arcThread);
-    const movedArc = applyLongWorkspaceOperations(arcSource, {
-      baseRevision: arcSource.revision,
+    const movedArc = applyPreviewedLongWorkspaceOperations(arcSource, {
       updatedAt: later,
       operations: [
         {
@@ -200,8 +198,7 @@ describe("long workspace operation engine: anchors-concurrency-and-story-plots",
       commitId: null
     });
     chapterSource.plot.foreshadowing.push(chapterThread);
-    const movedChapter = applyLongWorkspaceOperations(chapterSource, {
-      baseRevision: chapterSource.revision,
+    const movedChapter = applyPreviewedLongWorkspaceOperations(chapterSource, {
       updatedAt: later,
       operations: [
         {
@@ -264,17 +261,19 @@ describe("long workspace operation engine: anchors-concurrency-and-story-plots",
         commitId: null
       })
     );
-    const movedPlacement = applyLongWorkspaceOperations(placementSource, {
-      baseRevision: placementSource.revision,
-      updatedAt: later,
-      operations: [
-        {
-          type: "placement.move",
-          id: "placement_moving",
-          toChapterCardId: "chapter_two"
-        }
-      ]
-    });
+    const movedPlacement = applyPreviewedLongWorkspaceOperations(
+      placementSource,
+      {
+        updatedAt: later,
+        operations: [
+          {
+            type: "placement.move",
+            id: "placement_moving",
+            toChapterCardId: "chapter_two"
+          }
+        ]
+      }
+    );
     expect(
       movedPlacement.snapshot.plot.foreshadowing[0]!.beats[0]
     ).toMatchObject({
@@ -345,20 +344,18 @@ describe("long workspace operation engine: anchors-concurrency-and-story-plots",
       ]
     });
     const batch = LongWorkspaceOperationBatchSchema.parse({
-      baseRevision: source.revision,
       updatedAt: later,
       operations: [
         {
           type: "arc.delete",
-          id: "arc_letter",
-          cascade: true
+          id: "arc_letter"
         }
       ]
     });
     const preview = previewLongWorkspaceOperations(source, batch);
-    const result = applyLongWorkspaceOperations(source, {
+    const result = applyPreviewedLongWorkspaceOperations(source, {
       ...batch,
-      expectedImpact: preview.impact
+      expectedImpact: preview.confirmation
     });
     const beats = result.snapshot.plot.foreshadowing[0]!.beats;
     expect(
@@ -428,8 +425,7 @@ describe("long workspace operation engine: anchors-concurrency-and-story-plots",
         }
       ]
     });
-    const result = applyLongWorkspaceOperations(source, {
-      baseRevision: source.revision,
+    const result = applyPreviewedLongWorkspaceOperations(source, {
       updatedAt: later,
       operations: [
         {
@@ -455,7 +451,6 @@ describe("long workspace operation engine: anchors-concurrency-and-story-plots",
   it("allows recorded foreshadowing facts to be edited", () => {
     const source = committedForeshadowingWorkspace();
     const result = applyLongWorkspaceOperations(source, {
-      baseRevision: source.revision,
       updatedAt: later,
       operations: [
         {
@@ -487,7 +482,6 @@ describe("long workspace operation engine: anchors-concurrency-and-story-plots",
     const result = applyLongWorkspaceOperations(
       source,
       LongWorkspaceOperationBatchSchema.parse({
-        baseRevision: source.revision,
         updatedAt: later,
         operations: [
           {
@@ -537,64 +531,39 @@ describe("long workspace operation engine: anchors-concurrency-and-story-plots",
     ]);
   });
 
-  it("uses base revision and document revisions as optimistic concurrency guards", () => {
+  it("applies document writes directly without version guards", () => {
     const source = workspace();
-    expectOperationError(
-      () =>
-        applyLongWorkspaceOperations(
-          source,
-          LongWorkspaceOperationBatchSchema.parse({
-            baseRevision: 6,
+    const result = applyLongWorkspaceOperations(
+      source,
+      LongWorkspaceOperationBatchSchema.parse({
+        updatedAt: later,
+        operations: [
+          {
+            type: "volume.update",
+            id: "volume_one",
+            patch: { title: "新标题" }
+          }
+        ],
+        documentWrites: [
+          {
+            proposalId: "proposal_book_line",
+            fileId: LONG_BOOK_LINE_FILE_ID,
+            mode: "replace",
             updatedAt: later,
-            operations: [
-              {
-                type: "volume.update",
-                id: "volume_one",
-                patch: { title: "错误版本" }
-              }
-            ]
-          })
-        ),
-      "revision_conflict"
+            content: "新全书线",
+            reason: "更新全书线"
+          }
+        ]
+      })
     );
-
-    expectOperationError(
-      () =>
-        applyLongWorkspaceOperations(
-          source,
-          LongWorkspaceOperationBatchSchema.parse({
-            baseRevision: source.revision,
-            updatedAt: later,
-            operations: [
-              {
-                type: "volume.update",
-                id: "volume_one",
-                patch: { title: "新标题" }
-              }
-            ],
-            documentWrites: [
-              {
-                proposalId: "proposal_stale_book_line",
-                fileId: LONG_BOOK_LINE_FILE_ID,
-                mode: "replace",
-                expectedRevision: "v1:1:11111111",
-                nextRevision: "v1:2:22222222",
-                updatedAt: later,
-                content: "新全书线",
-                reason: "更新全书线"
-              }
-            ]
-          })
-        ),
-      "invalid_document_write"
-    );
+    expect(result.snapshot.plot.volumes[0]?.title).toBe("新标题");
+    expect(result.snapshot.bookLine.updatedAt).toBe(later);
   });
 
   it("keeps maintained character design files editable after continuity records", () => {
     const source = committedWorkspace();
     const files = source.characterFiles[0]!;
     const batchFor = (fileId: string) => ({
-      baseRevision: source.revision,
       updatedAt: later,
       operations: [
         {
@@ -608,8 +577,6 @@ describe("long workspace operation engine: anchors-concurrency-and-story-plots",
           proposalId: `proposal_${fileId.replace(/[^A-Za-z0-9._:-]/gu, "_")}`,
           fileId,
           mode: "replace" as const,
-          expectedRevision: revision,
-          nextRevision: "v1:1:1234abcd",
           updatedAt: later,
           content: "账本启动后的直接修改",
           reason: "验证连续性资料写锁"
@@ -635,7 +602,6 @@ describe("long workspace operation engine: anchors-concurrency-and-story-plots",
     source.ledger.commits[0]!.mode = "import_checkpoint";
     const relationships = source.characterFiles[0]!.relationships;
     const result = applyLongWorkspaceOperations(source, {
-      baseRevision: source.revision,
       updatedAt: later,
       operations: [
         {
@@ -649,8 +615,6 @@ describe("long workspace operation engine: anchors-concurrency-and-story-plots",
           proposalId: "proposal_import_checkpoint_relationships",
           fileId: relationships.id,
           mode: "replace",
-          expectedRevision: revision,
-          nextRevision: "v1:1:1234abcd",
           updatedAt: later,
           content: "导入后补录的人物关系",
           reason: "导入检查点不接管人物设计"
@@ -665,7 +629,6 @@ describe("long workspace operation engine: anchors-concurrency-and-story-plots",
     const created = applyLongWorkspaceOperations(
       source,
       LongWorkspaceOperationBatchSchema.parse({
-        baseRevision: source.revision,
         updatedAt: later,
         operations: [
           {
@@ -711,7 +674,6 @@ describe("long workspace operation engine: anchors-concurrency-and-story-plots",
     const reordered = applyLongWorkspaceOperations(
       created.snapshot,
       LongWorkspaceOperationBatchSchema.parse({
-        baseRevision: created.resultRevision,
         updatedAt: later,
         operations: [
           {
@@ -740,20 +702,23 @@ describe("long workspace operation engine: anchors-concurrency-and-story-plots",
       { id: "storyplot_daily", title: "日常崩塌", order: 2 }
     ]);
 
-    const deleted = applyLongWorkspaceOperations(
+    const deleteBatch = LongWorkspaceOperationBatchSchema.parse({
+      updatedAt: later,
+      operations: [
+        {
+          type: "storyPlot.delete",
+          id: "storyplot_daily"
+        }
+      ]
+    });
+    const deletePreview = previewLongWorkspaceOperations(
       reordered.snapshot,
-      LongWorkspaceOperationBatchSchema.parse({
-        baseRevision: reordered.resultRevision,
-        updatedAt: later,
-        operations: [
-          {
-            type: "storyPlot.delete",
-            id: "storyplot_daily",
-            cascade: false
-          }
-        ]
-      })
+      deleteBatch
     );
+    const deleted = applyLongWorkspaceOperations(reordered.snapshot, {
+      ...deleteBatch,
+      expectedImpact: deletePreview.confirmation
+    });
     expect(deleted.snapshot.plot.storyPlots.map(({ id }) => id)).toEqual([
       "storyplot_ripple"
     ]);

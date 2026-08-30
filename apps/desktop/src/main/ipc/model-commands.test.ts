@@ -104,4 +104,56 @@ describe("model commands", () => {
     });
     expect(syncConfiguredModels).not.toHaveBeenCalled();
   });
+
+  it("resolves model capacity without loading stored API credentials", async () => {
+    const resolveDraft = vi.fn(async () => {
+      throw new Error("API Key 解密失败");
+    });
+    const requestCommand = vi.fn(async () => ({
+      status: "accepted" as const,
+      requestId: "cmd_capacity",
+      payload: {
+        modelId: freeModel.modelId,
+        contextWindow: 456_000,
+        maxTokens: 32_000
+      }
+    }));
+    const ctx = {
+      requireModelConfigStore: () => ({ resolveDraft }),
+      supervisor: { requestCommand }
+    } as unknown as IpcCommandContext;
+    const command = CommandEnvelopeSchema.parse(
+      createEnvelope(
+        "models.resolveCapacity",
+        {
+          model: {
+            ...freeModel,
+            contextWindow: 456_000,
+            maxTokens: 32_000
+          }
+        },
+        { id: "cmd_capacity" }
+      )
+    );
+
+    await expect(handleModelCommands(ctx, command)).resolves.toMatchObject({
+      status: "accepted",
+      payload: { contextWindow: 456_000, maxTokens: 32_000 }
+    });
+    expect(resolveDraft).not.toHaveBeenCalled();
+    expect(requestCommand).toHaveBeenCalledWith(
+      "agent",
+      expect.objectContaining({
+        type: "agent.model_capacity",
+        payload: {
+          runtimeConfig: expect.objectContaining({
+            apiKey: "",
+            contextWindow: 456_000,
+            maxTokens: 32_000
+          })
+        }
+      }),
+      10_000
+    );
+  });
 });

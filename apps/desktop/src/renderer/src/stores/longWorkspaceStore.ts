@@ -6,8 +6,8 @@ import {
   type LongChooseContinuationImportSourceResult,
   type LongChooseLegacySyncSourceResult,
   type LongFileId,
-  type LongFileRevision,
   type LongListBooksResult,
+  type LongWorkspaceImpactConfirmation,
   type LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
 import { defineStore } from "pinia";
@@ -26,7 +26,6 @@ export type LongCatalogDiagnostic = NonNullable<
 export interface LongWorkspaceFileContext {
   readonly bookId: string;
   readonly fileId: LongFileId;
-  readonly fileRevision: LongFileRevision;
 }
 
 export interface LongWorkspaceRefreshStatus {
@@ -36,17 +35,10 @@ export interface LongWorkspaceRefreshStatus {
   readonly error: string | null;
 }
 
-export interface LongWorkspaceRevisionSyncRequirement {
-  readonly bookId: string;
-  readonly workspaceRevision: number;
-  readonly projectRevision: number;
-}
-
 export interface LongWorkspaceLoadPayload {
   readonly bookId: string;
   readonly workspaceIndex: LongWorkspaceIndexSnapshot;
   readonly summary?: LongBookSummary;
-  readonly projectRevision?: number;
 }
 
 export type LongBookListLoader = () => Promise<LongListBooksResult>;
@@ -81,11 +73,18 @@ export interface LongChapterCardCreateTarget {
   readonly source: "chapter-card" | "draft";
 }
 
+export interface LongVolumeCreateTarget {
+  readonly bookId: string;
+  readonly source: "book-line" | "draft";
+}
+
 export interface LongDraftSectionDeleteTarget {
   readonly bookId: string;
   readonly chapterCardId: string;
   readonly volumeId: string;
   readonly title: string;
+  readonly description: string;
+  readonly expectedImpact: LongWorkspaceImpactConfirmation;
 }
 
 export interface LongTreeItemDeleteTarget {
@@ -94,6 +93,7 @@ export interface LongTreeItemDeleteTarget {
   readonly label: string;
   readonly title: string;
   readonly description: string;
+  readonly expectedImpact: LongWorkspaceImpactConfirmation;
 }
 
 export interface LongBookRenameTarget {
@@ -125,16 +125,12 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
   const longCatalogDiagnostics = shallowRef<readonly LongCatalogDiagnostic[]>(
     []
   );
-  const catalogRevision = ref<number | null>(null);
   const catalogUpdatedAt = ref<string | null>(null);
   const activeBookId = ref<string | null>(null);
   const workspaceIndex = shallowRef<LongWorkspaceIndexSnapshot | null>(null);
   const selection = shallowRef<LongWorkspaceSelection | null>(null);
   const fileContext = shallowRef<LongWorkspaceFileContext | null>(null);
   const refreshStatus = shallowRef<LongWorkspaceRefreshStatus | null>(null);
-  const revisionRequirement =
-    shallowRef<LongWorkspaceRevisionSyncRequirement | null>(null);
-
   const bookListLoading = ref(false);
   const bookListError = ref<string | null>(null);
   const workspaceLoading = ref(false);
@@ -142,7 +138,6 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
   const sendPreflightPending = ref(false);
   const mutationPending = ref(false);
   const proposalApprovalPending = ref(false);
-  const rollbackPending = ref(false);
   const bookActionPending = ref(false);
   const manuscriptExportPending = ref(false);
 
@@ -152,8 +147,6 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     null
   );
   const legacySyncResult = shallowRef<LongApplyLegacySyncResult | null>(null);
-  const rollbackDialogOpen = ref(false);
-  const rollbackCommitId = ref<string | null>(null);
   const structureDialogOpen = ref(false);
   const structureAgentsMd = ref<string | null>(null);
   const structureAgentsMdPending = ref(false);
@@ -172,9 +165,7 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
   const treeItemDeleteTarget = shallowRef<LongTreeItemDeleteTarget | null>(
     null
   );
-  const volumeCreateTarget = shallowRef<{ readonly bookId: string } | null>(
-    null
-  );
+  const volumeCreateTarget = shallowRef<LongVolumeCreateTarget | null>(null);
   const bindingsDialogMode = ref<"skill" | "material" | null>(null);
   const exportTarget = shallowRef<LongBookRenameTarget | null>(null);
   const bookRenameTarget = shallowRef<LongBookRenameTarget | null>(null);
@@ -187,18 +178,12 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     const current = refreshStatus.value;
     return current?.bookId === activeBookId.value ? current : null;
   });
-  const activeRevisionRequirement = computed(() => {
-    const current = revisionRequirement.value;
-    return current?.bookId === activeBookId.value ? current : null;
-  });
   const activeContextReady = computed(() => {
     const summary = activeBookSummary.value;
     return (
       activeRefreshStatus.value === null &&
-      activeRevisionRequirement.value === null &&
       workspaceIndex.value !== null &&
-      summary !== null &&
-      summary.navigation.revision === workspaceIndex.value.revision
+      summary !== null
     );
   });
 
@@ -239,7 +224,6 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
         ? replaceLongBookSummary(result.books, activeSummary)
         : result.books;
     longCatalogDiagnostics.value = diagnostics;
-    catalogRevision.value = result.revision;
     catalogUpdatedAt.value = result.updatedAt;
   }
 
@@ -263,7 +247,6 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     selection.value = requestedSelection;
     fileContext.value = null;
     refreshStatus.value = null;
-    revisionRequirement.value = null;
     workspaceLoadError.value = null;
     workspaceLoading.value = false;
     clearDialogTargets();
@@ -282,9 +265,6 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     }
     return {
       ...current,
-      ...(payload.projectRevision === undefined
-        ? {}
-        : { projectRevision: payload.projectRevision }),
       updatedAt: payload.workspaceIndex.updatedAt,
       navigation: createLongWorkspaceNavigationSnapshot(payload.workspaceIndex)
     };
@@ -320,13 +300,11 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     fileContext.value = nextFile
       ? {
           bookId: payload.bookId,
-          fileId: nextFile.id,
-          fileRevision: nextFile.revision
+          fileId: nextFile.id
         }
       : null;
     refreshStatus.value = null;
     workspaceLoadError.value = null;
-    satisfyRevisionRequirement(payload.bookId);
     return true;
   }
 
@@ -528,37 +506,10 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     }
   }
 
-  function setRevisionRequirement(
-    requirement: LongWorkspaceRevisionSyncRequirement | null
-  ): void {
-    assertActive();
-    revisionRequirement.value = requirement;
-  }
-
-  function satisfyRevisionRequirement(bookId: string): boolean {
-    const requirement = revisionRequirement.value;
-    const summary = activeBookSummary.value;
-    const index = workspaceIndex.value;
-    if (!requirement || requirement.bookId !== bookId) return true;
-    if (
-      activeBookId.value !== bookId ||
-      summary?.id !== bookId ||
-      !index ||
-      index.revision < requirement.workspaceRevision ||
-      summary.projectRevision < requirement.projectRevision
-    ) {
-      return false;
-    }
-    revisionRequirement.value = null;
-    return true;
-  }
-
   function clearDialogTargets(): void {
     continuationImportPreview.value = null;
     legacySyncPreview.value = null;
     legacySyncResult.value = null;
-    rollbackDialogOpen.value = false;
-    rollbackCommitId.value = null;
     structureDialogOpen.value = false;
     structureAgentsMd.value = null;
     structureAgentsMdPending.value = false;
@@ -585,7 +536,6 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     selection.value = null;
     fileContext.value = null;
     refreshStatus.value = null;
-    revisionRequirement.value = null;
     workspaceLoading.value = false;
     workspaceLoadError.value = null;
     clearDialogTargets();
@@ -595,7 +545,6 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     sendPreflightPending.value = false;
     mutationPending.value = false;
     proposalApprovalPending.value = false;
-    rollbackPending.value = false;
     bookActionPending.value = false;
     manuscriptExportPending.value = false;
   }
@@ -610,7 +559,6 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     workspaceGenerations.clear();
     longBooks.value = [];
     longCatalogDiagnostics.value = [];
-    catalogRevision.value = null;
     catalogUpdatedAt.value = null;
     bookListLoading.value = false;
     bookListError.value = null;
@@ -619,7 +567,6 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     selection.value = null;
     fileContext.value = null;
     refreshStatus.value = null;
-    revisionRequirement.value = null;
     workspaceLoading.value = false;
     workspaceLoadError.value = null;
     clearDialogTargets();
@@ -638,14 +585,12 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     workspaceGenerations.clear();
     longBooks.value = [];
     longCatalogDiagnostics.value = [];
-    catalogRevision.value = null;
     catalogUpdatedAt.value = null;
     activeBookId.value = null;
     workspaceIndex.value = null;
     selection.value = null;
     fileContext.value = null;
     refreshStatus.value = null;
-    revisionRequirement.value = null;
     bookListLoading.value = false;
     bookListError.value = null;
     workspaceLoading.value = false;
@@ -659,7 +604,6 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
   return {
     longBooks,
     longCatalogDiagnostics,
-    catalogRevision,
     catalogUpdatedAt,
     activeBookId,
     activeBookSummary,
@@ -668,8 +612,6 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     fileContext,
     refreshStatus,
     activeRefreshStatus,
-    revisionRequirement,
-    activeRevisionRequirement,
     activeContextReady,
     bookListLoading,
     bookListError,
@@ -678,14 +620,11 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     sendPreflightPending,
     mutationPending,
     proposalApprovalPending,
-    rollbackPending,
     bookActionPending,
     manuscriptExportPending,
     continuationImportPreview,
     legacySyncPreview,
     legacySyncResult,
-    rollbackDialogOpen,
-    rollbackCommitId,
     structureDialogOpen,
     structureAgentsMd,
     structureAgentsMdPending,
@@ -710,8 +649,6 @@ export const useLongWorkspaceStore = defineStore("longWorkspace", () => {
     invalidateBookList,
     ensureWorkspace,
     invalidateWorkspace,
-    setRevisionRequirement,
-    satisfyRevisionRequirement,
     clearDialogTargets,
     clearActiveBook,
     resetPendingState,

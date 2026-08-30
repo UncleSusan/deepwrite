@@ -18,6 +18,7 @@ import type {
   WorkspaceAgentSettings
 } from "@deepwrite/contracts";
 import type { LearningImitationController } from "../composables/useLearningImitation";
+import type { LongBookAnalysisController } from "../extras/long-book-analysis/useLongBookAnalysis";
 import type { SubagentAuthoringController } from "../composables/useSubagentAuthoring";
 
 export interface SettingsFeatureModule {
@@ -27,6 +28,7 @@ export interface SettingsFeatureModule {
   autoApproveCrossStageOperations: boolean;
   autoSaveEnabled: boolean;
   language: AppLanguage;
+  showContextUsage: boolean;
   showInMenuBar: boolean;
   workspacePaneLayout: WorkspacePaneLayout;
   defaultTextViewMode: TextViewMode;
@@ -100,6 +102,13 @@ export interface ImitationFeatureModule {
   approvalMode: GeneralPermissionMode;
 }
 
+export interface LongBookAnalysisFeatureModule {
+  kind: "long-book-analysis";
+  controller: LongBookAnalysisController | null;
+  models: readonly ModelConfig[];
+  catalogSnapshot: CatalogSnapshot | null;
+}
+
 export interface MarketplaceFeatureModule {
   kind: "marketplace";
   catalogSnapshot: CatalogSnapshot | null;
@@ -116,5 +125,6 @@ export type WorkspaceFeatureModule =
   | DirectoryFeatureModule
   | ModelsFeatureModule
   | ImitationFeatureModule
+  | LongBookAnalysisFeatureModule
   | MarketplaceFeatureModule
   | CloudBackupFeatureModule;

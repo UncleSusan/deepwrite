@@ -26,10 +26,6 @@ const envelopeContext = {
   resourceId: "longbook_create_content"
 };
 
-function contentRevision(content: string, hashDigit: string): string {
-  return `v2:${new TextEncoder().encode(content).byteLength}:${hashDigit.repeat(64)}`;
-}
-
 function event<Type extends SystemEventEnvelope["type"]>(
   type: Type,
   payload: Extract<SystemEventEnvelope, { type: Type }>["payload"]
@@ -44,7 +40,6 @@ function event<Type extends SystemEventEnvelope["type"]>(
 describe("long file proposal batch adaptation", () => {
   it("keeps create-mode initial content for a worldbuilding item", () => {
     const content = "每次施法都会遗忘一段童年。";
-    const revision = contentRevision(content, "1");
     const itemId = "worlditem_memory";
     const fileId = longWorldbuildingItemFileId(itemId);
     const filePath = longWorldbuildingItemContentPath("world_magic", itemId);
@@ -56,9 +51,7 @@ describe("long file proposal batch adaptation", () => {
       agentId: "long",
       summary: "新建魔法条目",
       runtime,
-      baseProjectRevision: 3,
       batch: {
-        baseRevision: 2,
         updatedAt: timestamp,
         operations: [
           {
@@ -68,12 +61,7 @@ describe("long file proposal batch adaptation", () => {
               id: itemId,
               title: "记忆代价",
               order: 1,
-              file: {
-                id: fileId,
-                path: filePath,
-                revision,
-                updatedAt: timestamp
-              }
+              file: { id: fileId, path: filePath, updatedAt: timestamp }
             }
           }
         ],
@@ -83,8 +71,6 @@ describe("long file proposal batch adaptation", () => {
             fileId,
             content,
             mode: "create",
-            expectedRevision: null,
-            nextRevision: revision,
             updatedAt: timestamp,
             reason: "新建魔法条目"
           }
@@ -99,9 +85,7 @@ describe("long file proposal batch adaptation", () => {
           title: "魔法体系 / 记忆代价",
           operation: "create",
           beforeText: "",
-          afterText: content,
-          beforeRevision: null,
-          nextRevision: revision
+          afterText: content
         }
       ]
     });
@@ -113,16 +97,12 @@ describe("long file proposal batch adaptation", () => {
 
   it("keeps the core-profile content when creating a character", () => {
     const content = "林岚是雾港巡夜人，始终随身携带旧信。";
-    const revision = contentRevision(content, "2");
     const characterId = "character_lan";
-    const coreProfile = {
-      ...createEmptyLongMarkdownFileReference(
-        longCharacterCoreProfileFileId(characterId),
-        longCharacterFilePath(characterId, "core-profile.md"),
-        timestamp
-      ),
-      revision
-    };
+    const coreProfile = createEmptyLongMarkdownFileReference(
+      longCharacterCoreProfileFileId(characterId),
+      longCharacterFilePath(characterId, "core-profile.md"),
+      timestamp
+    );
     const relationships = createEmptyLongMarkdownFileReference(
       longCharacterRelationshipsFileId(characterId),
       longCharacterFilePath(characterId, "relationships.md"),
@@ -136,9 +116,7 @@ describe("long file proposal batch adaptation", () => {
       agentId: "long",
       summary: "新建林岚",
       runtime,
-      baseProjectRevision: 3,
       batch: {
-        baseRevision: 2,
         updatedAt: timestamp,
         operations: [
           {
@@ -163,8 +141,6 @@ describe("long file proposal batch adaptation", () => {
             fileId: coreProfile.id,
             content,
             mode: "create",
-            expectedRevision: null,
-            nextRevision: revision,
             updatedAt: timestamp,
             reason: "新建林岚"
           }
@@ -180,9 +156,7 @@ describe("long file proposal batch adaptation", () => {
           title: "林岚 / 核心档案",
           operation: "create",
           beforeText: "",
-          afterText: content,
-          beforeRevision: null,
-          nextRevision: revision
+          afterText: content
         }
       ]
     });

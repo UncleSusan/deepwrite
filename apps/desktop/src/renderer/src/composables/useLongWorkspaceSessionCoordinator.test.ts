@@ -1,7 +1,6 @@
 import {
   type LongBookSummary,
   type LongFileId,
-  type LongFileRevision,
   type LongListBooksResult,
   type LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
@@ -42,15 +41,14 @@ async function flushMicrotasks(): Promise<void> {
   }
 }
 
-function index(bookId: string, revision = 1): LongWorkspaceIndexSnapshot {
+function index(bookId: string, sequence = 1): LongWorkspaceIndexSnapshot {
   const stableBookId = bookId.startsWith("longbook_")
     ? bookId
     : `longbook_${bookId.replace(/[^A-Za-z0-9._:-]/g, "_")}`;
   return {
     schemaVersion: 1,
-    revision,
     bookId: stableBookId,
-    updatedAt: NOW,
+    updatedAt: `2026-08-14T08:00:0${sequence}.000Z`,
     worldbuilding: [],
     characterTypes: [{ id: "protagonist", title: "主角", order: 1 }],
     characters: [],
@@ -77,18 +75,29 @@ function index(bookId: string, revision = 1): LongWorkspaceIndexSnapshot {
   } as unknown as LongWorkspaceIndexSnapshot;
 }
 
-function summary(
-  bookId: string,
-  revision = 1,
-  projectRevision = revision
-): LongBookSummary {
+function summary(bookId: string, sequence = 1): LongBookSummary {
   return {
+    schemaVersion: 1,
+    kind: "deepwrite.long-book",
     id: bookId,
     title: `长篇 ${bookId}`,
-    projectRevision,
-    updatedAt: NOW,
+    bookType: "long",
+    genre: "测试",
+    status: "editing",
+    linkedMaterialIdsByKind: {
+      character: [],
+      gimmick: [],
+      plot: [],
+      draft: [],
+      other: []
+    },
+    linkedSkillIdsByKind: { general: [], plot: [], style: [], other: [] },
+    createdAt: NOW,
+    updatedAt: `2026-08-14T08:00:0${sequence}.000Z`,
     navigation: {
-      revision,
+      schemaVersion: 1,
+      bookId,
+      updatedAt: `2026-08-14T08:00:0${sequence}.000Z`,
       worldbuilding: [],
       characterTypes: [],
       characters: [],
@@ -101,11 +110,14 @@ function summary(
         arcs: 0,
         volumes: 0,
         chapterCards: 0,
+        storyEvents: 0,
+        storyPlots: 0,
         foreshadowingThreads: 0,
         committedChapters: 0
-      }
+      },
+      committedThroughChapterId: null
     }
-  } as unknown as LongBookSummary;
+  };
 }
 
 function listResult(
@@ -113,7 +125,6 @@ function listResult(
   diagnostics: LongListBooksResult["diagnostics"] = []
 ): LongListBooksResult {
   return {
-    revision: books.length,
     updatedAt: NOW,
     books: [...books],
     diagnostics
@@ -148,8 +159,6 @@ function editorPort(overrides: Partial<LongWorkspaceEditorPort> = {}) {
       beatId: null
     })),
     ensureDocumentsLoaded: vi.fn(async () => true),
-    synchronizeProjectRevisions: vi.fn(),
-    synchronizeProjectRevisionsIfClean: vi.fn(() => true),
     ...overrides
   } satisfies LongWorkspaceEditorPort;
 }
@@ -183,9 +192,7 @@ function createHarness(apiOverrides: Record<string, unknown> = {}) {
       selection: refs.selection,
       fileContext: refs.fileContext,
       refreshStatus: refs.refreshStatus,
-      activeRefreshStatus: refs.activeRefreshStatus,
-      revisionRequirement: refs.revisionRequirement,
-      activeRevisionRequirement: refs.activeRevisionRequirement
+      activeRefreshStatus: refs.activeRefreshStatus
     },
     api: () => api as unknown as LongWorkspaceRendererApi,
     isWorkspaceActive: () => false,
@@ -272,23 +279,23 @@ describe("long workspace session coordinator", () => {
 
     pendingOpen.resolve({
       book: { workspaceIndex: index("longbook_b", 2) },
-      summary: summary("longbook_b", 2, 3)
+      summary: summary("longbook_b", 2)
     });
     await opening;
-    expect(harness.refs.workspaceIndex.value?.revision).toBe(2);
+    expect(harness.refs.workspaceIndex.value?.updatedAt).toBe(
+      "2026-08-14T08:00:02.000Z"
+    );
     expect(harness.prepareOpenDependencies).toHaveBeenCalledOnce();
   });
 
-  it("publishes only the latest monotonic refresh and synchronizes layout after publication", async () => {
+  it("publishes only the latest refresh request and synchronizes layout", async () => {
     const first = deferred<{
       bookId: string;
       workspaceIndex: LongWorkspaceIndexSnapshot;
-      projectRevision: number;
     }>();
     const second = deferred<{
       bookId: string;
       workspaceIndex: LongWorkspaceIndexSnapshot;
-      projectRevision: number;
     }>();
     const harness = createHarness({
       getWorkspaceIndex: vi
@@ -297,113 +304,37 @@ describe("long workspace session coordinator", () => {
         .mockImplementationOnce(() => second.promise)
         .mockResolvedValueOnce({
           bookId: "longbook_a",
-          workspaceIndex: index("longbook_a", 2),
-          projectRevision: 5
+          workspaceIndex: index("longbook_a", 2)
         })
     });
-    harness.store.publishBook(
-      summary("longbook_a", 1, 1),
-      index("longbook_a", 1)
-    );
-    harness.synchronizeSelectedResourceForLayout.mockImplementation(() => {
-      expect(harness.refs.workspaceIndex.value?.revision).toBe(3);
-      expect(harness.refs.activeBookSummary.value?.projectRevision).toBe(4);
-    });
-
+    harness.store.publishBook(summary("longbook_a", 1), index("longbook_a", 1));
     const staleRefresh =
       harness.coordinator.refreshActiveWorkspace("longbook_a");
     const currentRefresh =
       harness.coordinator.refreshActiveWorkspace("longbook_a");
     second.resolve({
       bookId: "longbook_a",
-      workspaceIndex: index("longbook_a", 3),
-      projectRevision: 4
+      workspaceIndex: index("longbook_a", 3)
     });
     await expect(currentRefresh).resolves.toBe(true);
+    expect(harness.refs.workspaceIndex.value?.updatedAt).toBe(
+      "2026-08-14T08:00:03.000Z"
+    );
     first.resolve({
       bookId: "longbook_a",
-      workspaceIndex: index("longbook_a", 2),
-      projectRevision: 2
+      workspaceIndex: index("longbook_a", 2)
     });
     await expect(staleRefresh).resolves.toBe(false);
-    expect(harness.refs.workspaceIndex.value?.revision).toBe(3);
+    expect(harness.refs.workspaceIndex.value?.updatedAt).toBe(
+      "2026-08-14T08:00:03.000Z"
+    );
     expect(harness.synchronizeSelectedResourceForLayout).toHaveBeenCalledOnce();
 
     await expect(
       harness.coordinator.refreshActiveWorkspace("longbook_a")
     ).resolves.toBe(true);
-    expect(harness.refs.workspaceIndex.value?.revision).toBe(3);
-    expect(harness.refs.activeBookSummary.value?.projectRevision).toBe(4);
-  });
-
-  it("keeps the revision barrier until both revisions are reached and adopted", async () => {
-    const harness = createHarness({
-      getWorkspaceIndex: vi
-        .fn()
-        .mockResolvedValueOnce({
-          bookId: "longbook_a",
-          workspaceIndex: index("longbook_a", 2),
-          projectRevision: 4
-        })
-        .mockResolvedValueOnce({
-          bookId: "longbook_a",
-          workspaceIndex: index("longbook_a", 3),
-          projectRevision: 5
-        })
-    });
-    harness.store.publishBook(
-      summary("longbook_a", 1, 1),
-      index("longbook_a", 1)
-    );
-    harness.store.setRevisionRequirement({
-      bookId: "longbook_a",
-      workspaceRevision: 3,
-      projectRevision: 5
-    });
-    const currentEditor = editorPort();
-    harness.coordinator.editor.value = currentEditor;
-
-    await expect(
-      harness.coordinator.refreshAndSynchronizeRequiredRevision("longbook_a")
-    ).resolves.toBe(true);
-    expect(harness.api.getWorkspaceIndex).toHaveBeenCalledTimes(2);
-    expect(currentEditor.synchronizeProjectRevisions).toHaveBeenCalledWith(
-      3,
-      5
-    );
-    expect(harness.refs.revisionRequirement.value).toBeNull();
-  });
-
-  it("preserves the revision barrier and exposes a retry error when editor adoption fails", async () => {
-    const harness = createHarness({
-      getWorkspaceIndex: vi.fn(async () => ({
-        bookId: "longbook_a",
-        workspaceIndex: index("longbook_a", 3),
-        projectRevision: 5
-      }))
-    });
-    harness.store.publishBook(
-      summary("longbook_a", 1, 1),
-      index("longbook_a", 1)
-    );
-    harness.store.setRevisionRequirement({
-      bookId: "longbook_a",
-      workspaceRevision: 3,
-      projectRevision: 5
-    });
-    harness.coordinator.editor.value = editorPort({
-      synchronizeProjectRevisions: vi.fn(() => {
-        throw new Error("editor rejected baseline");
-      })
-    });
-
-    await expect(
-      harness.coordinator.refreshAndSynchronizeRequiredRevision("longbook_a")
-    ).resolves.toBe(false);
-    expect(harness.api.getWorkspaceIndex).toHaveBeenCalledTimes(2);
-    expect(harness.refs.revisionRequirement.value).not.toBeNull();
-    expect(harness.refs.activeRefreshStatus.value?.error).toContain(
-      "正文编辑已锁定"
+    expect(harness.refs.workspaceIndex.value?.updatedAt).toBe(
+      "2026-08-14T08:00:02.000Z"
     );
   });
 
@@ -411,7 +342,6 @@ describe("long workspace session coordinator", () => {
     const order: string[] = [];
     const firstFileId = "long-file-first" as LongFileId;
     const preferredFileId = "long-file-preferred" as LongFileId;
-    const revision = "v2:test-placeholder" as LongFileRevision;
     const currentEditor = editorPort({
       saveAllChanges: vi.fn(async () => {
         order.push("save");
@@ -435,7 +365,6 @@ describe("long workspace session coordinator", () => {
           file: {
             id: firstFileId,
             path: "drafts/first.md",
-            revision,
             updatedAt: NOW
           }
         },
@@ -445,7 +374,6 @@ describe("long workspace session coordinator", () => {
           file: {
             id: preferredFileId,
             path: "drafts/preferred.md",
-            revision,
             updatedAt: NOW
           }
         }
@@ -499,45 +427,15 @@ describe("long workspace session coordinator", () => {
     expect(harness.refs.activeBookId.value).toBeNull();
   });
 
-  it("refreshes on focus and preserves an editor baseline when live content is dirty", async () => {
-    const harness = createHarness({
-      getWorkspaceIndex: vi.fn(async () => ({
-        bookId: "longbook_a",
-        workspaceIndex: index("longbook_a", 2),
-        projectRevision: 3
-      }))
-    });
-    harness.store.publishBook(
-      summary("longbook_a", 1, 1),
-      index("longbook_a", 1)
-    );
-    const currentEditor = editorPort({
-      synchronizeProjectRevisionsIfClean: vi.fn(() => false)
-    });
-    harness.coordinator.editor.value = currentEditor;
-
-    await harness.coordinator.refreshOnWindowFocus("longbook_a");
-    expect(
-      currentEditor.synchronizeProjectRevisionsIfClean
-    ).toHaveBeenCalledWith("longbook_a", 2, 3);
-    expect(harness.notifications.warning).toHaveBeenCalledWith(
-      expect.stringContaining("当前有未保存内容")
-    );
-  });
-
   it("keeps the editor writable during a passive window-focus refresh", async () => {
     const pendingRefresh = deferred<{
       bookId: string;
       workspaceIndex: LongWorkspaceIndexSnapshot;
-      projectRevision: number;
     }>();
     const harness = createHarness({
       getWorkspaceIndex: vi.fn(() => pendingRefresh.promise)
     });
-    harness.store.publishBook(
-      summary("longbook_a", 1, 1),
-      index("longbook_a", 1)
-    );
+    harness.store.publishBook(summary("longbook_a", 1), index("longbook_a", 1));
 
     const refreshing = harness.coordinator.refreshOnWindowFocus("longbook_a");
     await flushMicrotasks();
@@ -545,8 +443,7 @@ describe("long workspace session coordinator", () => {
 
     pendingRefresh.resolve({
       bookId: "longbook_a",
-      workspaceIndex: index("longbook_a", 1),
-      projectRevision: 1
+      workspaceIndex: index("longbook_a", 1)
     });
     await refreshing;
     expect(harness.refs.activeRefreshStatus.value).toBeNull();

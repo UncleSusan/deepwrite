@@ -55,8 +55,6 @@ export interface LongBookLifecycleState {
   continuationImportPreview: Ref<LongChooseContinuationImportSourceResult | null>;
   legacySyncPreview: Ref<LongChooseLegacySyncSourceResult | null>;
   legacySyncResult: Ref<LongApplyLegacySyncResult | null>;
-  rollbackDialogOpen: Ref<boolean>;
-  rollbackCommitId: Ref<string | null>;
   structureDialogOpen: Ref<boolean>;
   structureAgentsMd: Ref<string | null>;
   structureAgentsMdPending: Ref<boolean>;
@@ -105,13 +103,6 @@ export interface LongBookLifecycleResourcePort {
   revealEditor(): void;
 }
 
-export interface LongBookLifecycleEditorRevisionPort {
-  synchronizeProjectRevisions(
-    workspaceRevision: number,
-    projectRevision: number
-  ): void;
-}
-
 export interface LongBookLifecycleManuscriptPort {
   available(): boolean;
   createInput(input: {
@@ -138,7 +129,6 @@ export interface LongBookLifecycleCoordinatorOptions {
   conversations: LongBookLifecycleConversationPort;
   catalog: LongBookLifecycleCatalogPort;
   resources: LongBookLifecycleResourcePort;
-  editorRevisions: LongBookLifecycleEditorRevisionPort;
   manuscript: LongBookLifecycleManuscriptPort;
   scheduler: LongBookLifecycleSchedulerPort;
   notifications: LongBookLifecycleNotifications;
@@ -173,7 +163,6 @@ export function useLongBookLifecycleCoordinator(
   const {
     catalog,
     conversations,
-    editorRevisions,
     manuscript,
     notifications: uiMessage,
     resources,
@@ -307,18 +296,12 @@ export function useLongBookLifecycleCoordinator(
     );
     if (state.activeBookId.value !== opened.book.id) return;
     state.workspaceIndex.value = opened.book.workspaceIndex;
-    editorRevisions.synchronizeProjectRevisions(
-      opened.book.workspaceIndex.revision,
-      opened.summary.projectRevision
-    );
   }
 
   function activateLongBookWorkspace(opened: LongOpenBookResult): void {
     if (disposed) return;
     issueTrackedBackground(() => session.loadAgentSettings());
     session.activateOpenedBook(opened);
-    state.rollbackDialogOpen.value = false;
-    state.rollbackCommitId.value = null;
     state.selectedResourceId.value = longBookResourceId(opened.book.id);
     resources.showConversation();
     resources.revealEditor();
@@ -629,7 +612,7 @@ export function useLongBookLifecycleCoordinator(
         }
         if (!(await session.refreshActiveWorkspace(bookId))) {
           if (leaseIsCurrent(lease)) {
-            uiMessage.error("无法读取长篇最新版本，本次同步未执行。");
+            uiMessage.error("无法读取长篇工作区，本次同步未执行。");
           }
           return;
         }
@@ -644,7 +627,6 @@ export function useLongBookLifecycleCoordinator(
         const result = await api.applyLegacySync({
           bookId,
           previewId: preview.previewId,
-          expectedProjectRevision: summary.projectRevision,
           modules: [...modules]
         });
         if (!leaseIsCurrent(lease)) return;
@@ -800,7 +782,7 @@ export function useLongBookLifecycleCoordinator(
           }
           if (!(await session.refreshActiveWorkspace(target.bookId))) {
             if (leaseIsCurrent(lease)) {
-              uiMessage.error("无法读取长篇最新版本，本次改名未执行。");
+              uiMessage.error("无法读取长篇工作区，本次改名未执行。");
             }
             return;
           }
@@ -823,7 +805,6 @@ export function useLongBookLifecycleCoordinator(
         }
         const updated = await api.rename({
           bookId: target.bookId,
-          expectedProjectRevision: summary.projectRevision,
           title
         });
         if (!leaseIsCurrent(lease)) return;
@@ -918,7 +899,7 @@ export function useLongBookLifecycleCoordinator(
         }
         if (!(await session.refreshActiveWorkspace(target.bookId))) {
           if (leaseIsCurrent(lease)) {
-            uiMessage.error("无法读取长篇最新版本，本次绑定修改未执行。");
+            uiMessage.error("无法读取长篇工作区，本次绑定修改未执行。");
           }
           return;
         }
@@ -933,7 +914,6 @@ export function useLongBookLifecycleCoordinator(
         }
         const updated = await api.updateBindings({
           bookId: target.bookId,
-          expectedProjectRevision: summary.projectRevision,
           linkedMaterialIdsByKind: payload.linkedMaterialIdsByKind,
           linkedSkillIdsByKind: payload.linkedSkillIdsByKind,
           linkedResourceStageScopes: payload.linkedResourceStageScopes ??

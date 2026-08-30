@@ -78,12 +78,7 @@ const workspaceTypeOptions: PopupSelectOption[] = [
   { value: "script", label: "剧本" },
   { value: "long", label: "长篇" }
 ];
-const sortedTeams = computed(() => {
-  const teams = props.catalog?.teams ?? [];
-  return [...teams].sort(
-    (left, right) => Number(isEnabled(right)) - Number(isEnabled(left))
-  );
-});
+const catalogTeams = computed(() => props.catalog?.teams ?? []);
 
 watch(
   () => props.catalog,
@@ -273,7 +268,7 @@ function leaveEditor(): void {
     </div>
     <div v-else class="team-grid">
       <article
-        v-for="team in sortedTeams"
+        v-for="team in catalogTeams"
         :key="team.id"
         class="team-card"
         :class="{ 'is-active': isEnabled(team) }"

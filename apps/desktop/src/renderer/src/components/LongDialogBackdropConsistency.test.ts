@@ -7,8 +7,6 @@ import worldbuildingItemDialogSource from "./CreateLongWorldbuildingItemDialog.v
 import volumeDialogSource from "./CreateLongVolumeDialog.vue?raw";
 import removalDialogSource from "./LongBookRemovalDialog.vue?raw";
 import migrationDialogSource from "./LongMigrationReportDialog.vue?raw";
-import plotManagerSource from "./LongPlotStructureManager.vue?raw";
-import rollbackDialogSource from "./LongRollbackDialog.vue?raw";
 import structureDialogSource from "./LongStructureDialog.vue?raw";
 import structureManagerSource from "./LongStructureManager.vue?raw";
 import workspaceEditorSource from "./LongEditorDeleteDialogs.vue?raw";
@@ -24,8 +22,6 @@ describe("long-form dialog backdrops", () => {
       volumeDialogSource,
       removalDialogSource,
       migrationDialogSource,
-      plotManagerSource,
-      rollbackDialogSource,
       structureDialogSource,
       structureManagerSource,
       workspaceEditorSource

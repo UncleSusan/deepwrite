@@ -6,7 +6,6 @@ import {
 import { EnvelopeBaseSchema } from "./envelope";
 import {
   LongCommitChapterInputSchema,
-  LongRollbackLastCommitInputSchema,
   LongWriteChapterInputSchema
 } from "./long-ledger";
 import {
@@ -24,7 +23,6 @@ import {
   LongCharacterGroupSchema,
   LongChapterCardIdSchema,
   LongFileIdSchema,
-  LongFileRevisionSchema,
   LongForeshadowingBeatIdSchema,
   LongForeshadowingIdSchema,
   LongForeshadowingSpanSchema,
@@ -525,10 +523,7 @@ export const LongWorkspaceRuntimeContextSchema = z
     activeRoot: LongWorkspaceRootSchema,
     activeAgentId: LongAgentIdSchema,
     activeFileId: LongFileIdSchema.optional(),
-    activeFileRevision: LongFileRevisionSchema.optional(),
     activeChapterCardId: LongChapterCardIdSchema.optional(),
-    workspaceRevision: z.number().int().nonnegative(),
-    projectRevision: z.number().int().nonnegative(),
     navigation: LongWorkspaceNavigationSnapshotSchema,
     worldbuildingDirectory: LongWorldbuildingDirectorySnapshotSchema.optional(),
     worldbuildingFocus: LongWorldbuildingFocusSnapshotSchema.optional(),
@@ -548,14 +543,6 @@ export const LongWorkspaceRuntimeContextSchema = z
         message: "Long runtime navigation must belong to the active book."
       });
     }
-    if (value.navigation.revision !== value.workspaceRevision) {
-      context.addIssue({
-        code: "custom",
-        path: ["navigation", "revision"],
-        message:
-          "Long runtime navigation revision must match the active workspace revision."
-      });
-    }
     if (
       value.activeChapterCardId !== undefined &&
       !value.navigation.chapterCards.some(
@@ -567,14 +554,6 @@ export const LongWorkspaceRuntimeContextSchema = z
         path: ["activeChapterCardId"],
         message:
           "Long runtime active chapter must exist in the navigation snapshot."
-      });
-    }
-    if (Boolean(value.activeFileId) !== Boolean(value.activeFileRevision)) {
-      context.addIssue({
-        code: "custom",
-        path: ["activeFileRevision"],
-        message:
-          "Long runtime active file id and revision must be provided together."
       });
     }
     if (
@@ -862,7 +841,6 @@ export const LongApplyLegacySyncInputSchema = z
   .object({
     bookId: LongBookIdSchema,
     previewId: z.string().trim().min(1).max(256),
-    expectedProjectRevision: z.number().int().nonnegative(),
     modules: z.array(LongLegacySyncModuleSchema).min(1).max(3)
   })
   .strict()
@@ -882,7 +860,6 @@ export type LongApplyLegacySyncInput = z.infer<
 export const LongApplyLegacySyncAtPathInputSchema = z
   .object({
     bookId: LongBookIdSchema,
-    expectedProjectRevision: z.number().int().nonnegative(),
     modules: z.array(LongLegacySyncModuleSchema).min(1).max(3),
     sourcePath: z.string().trim().min(1),
     expectedFingerprint: z.string().regex(/^[a-f0-9]{64}$/u)
@@ -905,7 +882,6 @@ export const LongApplyLegacySyncResultSchema = z
   .object({
     bookId: LongBookIdSchema,
     summary: LongBookSummarySchema,
-    projectRevision: z.number().int().nonnegative(),
     imported: LongLegacySyncCountsSchema,
     skipped: LongLegacySyncCountsSchema,
     warnings: z.array(z.string().trim().min(1).max(4_000)).max(10_000)
@@ -1125,7 +1101,6 @@ export type LongOpenBookInput = z.infer<typeof LongOpenBookInputSchema>;
 export const LongRenameBookInputSchema = z
   .object({
     bookId: LongBookIdSchema,
-    expectedProjectRevision: z.number().int().nonnegative(),
     title: z.string().trim().min(1).max(256)
   })
   .strict();
@@ -1134,7 +1109,6 @@ export type LongRenameBookInput = z.infer<typeof LongRenameBookInputSchema>;
 export const LongUpdateBindingsInputSchema = z
   .object({
     bookId: LongBookIdSchema,
-    expectedProjectRevision: z.number().int().nonnegative(),
     linkedMaterialIdsByKind: LongLinkedMaterialIdsByKindInputSchema,
     linkedSkillIdsByKind: LongLinkedSkillIdsByKindInputSchema,
     linkedResourceStageScopes: LongLinkedResourceStageScopesSchema.optional()
@@ -1146,7 +1120,6 @@ export type LongUpdateBindingsInput = z.infer<
 
 export const LongListBooksResultSchema = z
   .object({
-    revision: z.number().int().nonnegative(),
     updatedAt: z.string().datetime(),
     books: z.array(LongBookSummarySchema).max(100_000),
     diagnostics: z
@@ -1225,9 +1198,7 @@ export const LongReadDocumentResultSchema = z
     content: z.string().max(LONG_DOCUMENT_PAGE_MAX_CHARACTERS * 2),
     offset: z.number().int().nonnegative(),
     totalCharacters: z.number().int().nonnegative(),
-    nextOffset: z.number().int().positive().nullable(),
-    workspaceRevision: z.number().int().nonnegative(),
-    projectRevision: z.number().int().nonnegative()
+    nextOffset: z.number().int().positive().nullable()
   })
   .strict()
   .superRefine((value, context) => {
@@ -1304,8 +1275,7 @@ export const LongSearchHitSchema = z
     title: z.string().trim().min(1).max(512),
     start: z.number().int().nonnegative(),
     end: z.number().int().positive(),
-    snippet: z.string().max(2_000),
-    revision: LongFileRevisionSchema
+    snippet: z.string().max(2_000)
   })
   .strict()
   .refine((hit) => hit.end > hit.start, {
@@ -1320,9 +1290,7 @@ export const LongSearchResultSchema = z
     query: z.string().min(1).max(256),
     scope: LongSearchScopeSchema,
     hits: z.array(LongSearchHitSchema).max(100),
-    nextCursor: z.string().min(1).max(2_048).nullable(),
-    workspaceRevision: z.number().int().nonnegative(),
-    projectRevision: z.number().int().nonnegative()
+    nextCursor: z.string().min(1).max(2_048).nullable()
   })
   .strict();
 export type LongSearchResult = z.infer<typeof LongSearchResultSchema>;
@@ -1331,10 +1299,7 @@ export const LongWriteDocumentInputSchema = z
   .object({
     bookId: LongBookIdSchema,
     fileId: LongFileIdSchema,
-    content: z.string().max(16 * 1024 * 1024),
-    baseRevision: LongFileRevisionSchema,
-    baseWorkspaceRevision: z.number().int().nonnegative(),
-    baseProjectRevision: z.number().int().nonnegative()
+    content: z.string().max(16 * 1024 * 1024)
   })
   .strict();
 export type LongWriteDocumentInput = z.infer<
@@ -1345,8 +1310,6 @@ export const LongWriteDocumentResultSchema = z
   .object({
     bookId: LongBookIdSchema,
     file: LongWorkspaceFileReferenceSchema,
-    workspaceRevision: z.number().int().nonnegative(),
-    projectRevision: z.number().int().nonnegative(),
     summary: LongBookSummarySchema
   })
   .strict();
@@ -1414,8 +1377,7 @@ export type LongWriteAgentsMdResult = z.infer<
 export const LongWorkspaceIndexResultSchema = z
   .object({
     bookId: LongBookIdSchema,
-    workspaceIndex: LongWorkspaceIndexSnapshotSchema,
-    projectRevision: z.number().int().nonnegative()
+    workspaceIndex: LongWorkspaceIndexSnapshotSchema
   })
   .strict();
 export type LongWorkspaceIndexResult = z.infer<
@@ -1435,8 +1397,7 @@ export type LongPreviewOperationsInput = z.infer<
 export const LongPreviewOperationsResultSchema = z
   .object({
     bookId: LongBookIdSchema,
-    preview: LongWorkspaceImpactPreviewSchema,
-    projectRevision: z.number().int().nonnegative()
+    preview: LongWorkspaceImpactPreviewSchema
   })
   .strict();
 export type LongPreviewOperationsResult = z.infer<
@@ -1446,8 +1407,7 @@ export type LongPreviewOperationsResult = z.infer<
 export const LongApplyOperationsInputSchema = z
   .object({
     bookId: LongBookIdSchema,
-    batch: LongWorkspaceOperationBatchSchema,
-    baseProjectRevision: z.number().int().nonnegative()
+    batch: LongWorkspaceOperationBatchSchema
   })
   .strict();
 export type LongApplyOperationsInput = z.infer<
@@ -1458,7 +1418,6 @@ export const LongApplyOperationsResultSchema = z
   .object({
     bookId: LongBookIdSchema,
     operationResult: LongWorkspaceOperationResultSchema,
-    projectRevision: z.number().int().nonnegative(),
     summary: LongBookSummarySchema
   })
   .strict();
@@ -1616,12 +1575,6 @@ export const LongCommitChapterCommandEnvelopeSchema = EnvelopeBaseSchema.extend(
     payload: LongCommitChapterInputSchema
   }
 );
-export const LongRollbackLastCommitCommandEnvelopeSchema =
-  EnvelopeBaseSchema.extend({
-    type: z.literal("long.rollbackLastCommit"),
-    payload: LongRollbackLastCommitInputSchema
-  });
-
 export const LongWorkspaceCommandEnvelopeSchema = z.discriminatedUnion("type", [
   LongCreateBookCommandEnvelopeSchema,
   LongCreateBookAtPathCommandEnvelopeSchema,
@@ -1653,8 +1606,7 @@ export const LongWorkspaceCommandEnvelopeSchema = z.discriminatedUnion("type", [
   LongPreviewOperationsCommandEnvelopeSchema,
   LongApplyOperationsCommandEnvelopeSchema,
   LongWriteChapterCommandEnvelopeSchema,
-  LongCommitChapterCommandEnvelopeSchema,
-  LongRollbackLastCommitCommandEnvelopeSchema
+  LongCommitChapterCommandEnvelopeSchema
 ]);
 export type LongWorkspaceCommandEnvelope = z.infer<
   typeof LongWorkspaceCommandEnvelopeSchema

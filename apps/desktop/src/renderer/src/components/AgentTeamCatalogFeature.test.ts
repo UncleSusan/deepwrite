@@ -22,6 +22,14 @@ describe("AgentTeamCatalogFeature", () => {
     expect(source).toContain('class="danger-button"');
   });
 
+  it("keeps the catalog order when a team is enabled", () => {
+    expect(source).toContain(
+      "const catalogTeams = computed(() => props.catalog?.teams ?? [])"
+    );
+    expect(source).toContain('v-for="team in catalogTeams"');
+    expect(source).not.toContain("Number(isEnabled(right))");
+  });
+
   it("creates blank named profiles through the catalog API without auto activation", () => {
     expect(source).toContain(
       'emit("create", { name, workspaceType: createWorkspaceType.value })'

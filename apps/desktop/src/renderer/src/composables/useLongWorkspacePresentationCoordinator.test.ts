@@ -11,7 +11,6 @@ import {
   longWorldbuildingFileId,
   type LongAgentProfile,
   type LongBookSummary,
-  type LongLedgerCommitIndexEntry,
   type LongWorkspaceIndexSnapshot
 } from "@deepwrite/contracts";
 import { createPinia, setActivePinia, storeToRefs } from "pinia";
@@ -20,8 +19,7 @@ import { describe, expect, it, vi } from "vitest";
 import { useConversationStore } from "../stores/conversationStore";
 import type {
   LongWorkspaceFileContext,
-  LongWorkspaceRefreshStatus,
-  LongWorkspaceRevisionSyncRequirement
+  LongWorkspaceRefreshStatus
 } from "../stores/longWorkspaceStore";
 import type { LongWorkspaceSelection } from "../types/longWorkspace";
 import type { WorkspaceDocument } from "../types/workspace";
@@ -31,16 +29,14 @@ import {
   useLongWorkspacePresentationCoordinator,
   type LongWorkspacePresentationConversationState,
   type LongWorkspacePresentationCoordinatorOptions,
-  type LongWorkspacePresentationEditorPort,
-  type LongWorkspacePresentationWorkflowPort
+  type LongWorkspacePresentationEditorPort
 } from "./useLongWorkspacePresentationCoordinator";
 
 const NOW = "2026-08-14T08:00:00.000Z";
-const REVISION = "v1:0:00000000";
 const BOOK_ID = "longbook_presentation";
 
 function file(id: string, path: string) {
-  return { id, path, revision: REVISION, updatedAt: NOW };
+  return { id, path, updatedAt: NOW };
 }
 
 function chapterFiles(chapterCardId: string, slug: string) {
@@ -69,7 +65,6 @@ function chapterFiles(chapterCardId: string, slug: string) {
 function workspaceIndex(): LongWorkspaceIndexSnapshot {
   return LongWorkspaceIndexSnapshotSchema.parse({
     schemaVersion: 1,
-    revision: 3,
     bookId: BOOK_ID,
     updatedAt: NOW,
     bookLine: file(LONG_BOOK_LINE_FILE_ID, "long/plot/book-line.md"),
@@ -148,7 +143,6 @@ function bookSummary(index: LongWorkspaceIndexSnapshot): LongBookSummary {
     },
     createdAt: NOW,
     updatedAt: NOW,
-    projectRevision: index.revision,
     navigation: createLongWorkspaceNavigationSnapshot(index)
   };
 }
@@ -183,25 +177,6 @@ function document(
   };
 }
 
-function commit(
-  id: string,
-  sequence: number,
-  chapterCardId: string
-): LongLedgerCommitIndexEntry {
-  return {
-    id,
-    mode: "structured",
-    sequence,
-    chapterCardId,
-    committedAt: NOW,
-    reversible: true,
-    sourceRevision: 3,
-    placementIds: [],
-    foreshadowingBeatIds: [],
-    recordFile: file(`file_${id}:ledger`, `long/ledger/${id}.json`)
-  };
-}
-
 function createHarness() {
   const index = workspaceIndex();
   const summary = bookSummary(index);
@@ -217,11 +192,7 @@ function createHarness() {
   const agentSettings = shallowRef(
     structuredClone(DEFAULT_LONG_AGENT_SETTINGS)
   );
-  const rollbackCommitId = ref<string | null>(null);
-  const rollbackPending = ref(false);
   const refreshStatus = shallowRef<LongWorkspaceRefreshStatus | null>(null);
-  const revisionRequirement =
-    shallowRef<LongWorkspaceRevisionSyncRequirement | null>(null);
   const sendPreflightPending = ref(false);
   const proposalApprovalPending = ref(false);
   const documents = shallowRef<readonly WorkspaceDocument[]>([]);
@@ -249,10 +220,7 @@ function createHarness() {
       fileContext,
       contextReady,
       agentSettings,
-      rollbackCommitId,
-      rollbackPending,
       refreshStatus,
-      revisionRequirement,
       sendPreflightPending,
       proposalApprovalPending
     },
@@ -276,10 +244,7 @@ function createHarness() {
     activeSelection,
     fileContext,
     contextReady,
-    rollbackCommitId,
-    rollbackPending,
     refreshStatus,
-    revisionRequirement,
     sendPreflightPending,
     proposalApprovalPending,
     documents,
@@ -294,27 +259,12 @@ function createHarness() {
 }
 
 describe("useLongWorkspacePresentationCoordinator", () => {
-  it("keeps late-bound workflow and editor presentation conservative", () => {
+  it("keeps late-bound editor presentation conservative", () => {
     const { coordinator } = createHarness();
     expect(coordinator.longEditorLocked.value).toBe(false);
     expect(coordinator.editorLocked.value).toBe(false);
     expect(coordinator.editorLockedLabel.value).toBeUndefined();
     expect(coordinator.editorSaving.value).toBe(false);
-
-    const activeConversationProposalItems = ref<
-      Array<{ readonly status: string }>
-    >([{ status: "pending" }]);
-    const workflow: LongWorkspacePresentationWorkflowPort = {
-      activeConversationProposalItems
-    };
-    coordinator.bindWorkflow(workflow);
-    coordinator.bindWorkflow(workflow);
-    expect(coordinator.longEditorLocked.value).toBe(true);
-    activeConversationProposalItems.value = [{ status: "accepted" }];
-    expect(coordinator.longEditorLocked.value).toBe(false);
-    expect(() =>
-      coordinator.bindWorkflow({ activeConversationProposalItems: ref([]) })
-    ).toThrow("workflow port is already bound");
 
     const activeDocument = ref(document("document_one"));
     const editor: LongWorkspacePresentationEditorPort = {
@@ -345,8 +295,7 @@ describe("useLongWorkspacePresentationCoordinator", () => {
     });
     fileContext.value = {
       bookId: "longbook_stale",
-      fileId: worldFile.id,
-      fileRevision: worldFile.revision
+      fileId: worldFile.id
     };
     contextReady.value = true;
     expect(coordinator.activeLongRuntimeContext.value).toMatchObject({
@@ -363,12 +312,10 @@ describe("useLongWorkspacePresentationCoordinator", () => {
 
     fileContext.value = {
       bookId: BOOK_ID,
-      fileId: worldFile.id,
-      fileRevision: worldFile.revision
+      fileId: worldFile.id
     };
     expect(coordinator.activeLongRuntimeContext.value).toMatchObject({
-      activeFileId: worldFile.id,
-      activeFileRevision: worldFile.revision
+      activeFileId: worldFile.id
     });
 
     activeSelection.value = selection("character_design", {
@@ -519,24 +466,11 @@ describe("useLongWorkspacePresentationCoordinator", () => {
     ).toEqual(["skill"]);
   });
 
-  it("indexes an unordered ledger and resolves rollback chapter titles", () => {
-    const { coordinator, activeIndex, rollbackCommitId, index } =
-      createHarness();
-    const first = commit("commit_first", 1, "chapter_one");
-    const second = commit("commit_second", 2, "chapter_two");
-    activeIndex.value = {
-      ...index,
-      ledger: {
-        ...index.ledger,
-        commits: [second, first]
-      }
-    };
-    rollbackCommitId.value = first.id;
-    expect(coordinator.latestLongLedgerCommit.value?.id).toBe(second.id);
-    expect(coordinator.longRollbackCommit.value?.id).toBe(first.id);
-    expect(coordinator.longRollbackChapterTitle.value).toBe("第一章");
-    rollbackCommitId.value = "commit_missing";
-    expect(coordinator.longRollbackChapterTitle.value).toBe("对应章节");
+  it("does not expose the removed rollback presentation state", () => {
+    const { coordinator } = createHarness();
+    expect(coordinator).not.toHaveProperty("latestLongLedgerCommit");
+    expect(coordinator).not.toHaveProperty("longRollbackCommit");
+    expect(coordinator).not.toHaveProperty("longRollbackChapterTitle");
   });
 
   it("reacts to stable-map registration and preserves lock reason priority", () => {
@@ -546,9 +480,7 @@ describe("useLongWorkspacePresentationCoordinator", () => {
       scopesByKey,
       controllerMap,
       scopeMap,
-      rollbackPending,
       refreshStatus,
-      revisionRequirement,
       sendPreflightPending,
       proposalApprovalPending
     } = createHarness();
@@ -564,16 +496,16 @@ describe("useLongWorkspacePresentationCoordinator", () => {
     scopeMap.set("conversation", `long:${BOOK_ID}`);
     triggerRef(controllers);
     triggerRef(scopesByKey);
-    expect(coordinator.longEditorLocked.value).toBe(true);
-    expect(coordinator.longEditorLockedReason.value).toBe(
-      "长篇智能体运行中 · 暂停编辑以防止版本冲突"
+    expect(coordinator.agentRunScopeHasWriteBarrier(`long:${BOOK_ID}`)).toBe(
+      true
     );
+    expect(coordinator.longEditorLocked.value).toBe(false);
 
     busy.value = false;
     pendingEditReview.value = true;
-    expect(coordinator.longEditorLockedReason.value).toBe(
-      "请先接受或拒绝待审阅变更，再继续编辑"
-    );
+    expect(
+      coordinator.agentRunScopeHasPendingEditReview(`long:${BOOK_ID}`)
+    ).toBe(true);
     expect(coordinator.agentRunScopeHasWriteBarrier("general")).toBe(false);
 
     proposalApprovalPending.value = true;
@@ -591,19 +523,7 @@ describe("useLongWorkspacePresentationCoordinator", () => {
       error: null
     };
     expect(coordinator.longEditorLockedReason.value).toBe(
-      "正在同步长篇工作区最新版本，编辑暂时锁定"
-    );
-    revisionRequirement.value = {
-      bookId: BOOK_ID,
-      workspaceRevision: 4,
-      projectRevision: 4
-    };
-    expect(coordinator.longEditorLockedReason.value).toBe(
-      "账本已回滚，正在等待最新版本同步，编辑暂时锁定"
-    );
-    rollbackPending.value = true;
-    expect(coordinator.longEditorLockedReason.value).toBe(
-      "正在回滚连续性账本并同步最新版本，编辑暂时锁定"
+      "正在同步长篇工作区，编辑暂时锁定"
     );
   });
 
@@ -630,14 +550,18 @@ describe("useLongWorkspacePresentationCoordinator", () => {
       ...harness.options,
       conversations: { controllers, scopesByKey }
     });
-    expect(coordinator.longEditorLocked.value).toBe(true);
+    expect(coordinator.agentRunScopeHasWriteBarrier(`long:${BOOK_ID}`)).toBe(
+      true
+    );
 
     expect(store.removeController("pending-review")).toBe(
       pendingReviewController
     );
     expect(controllers.value.has("pending-review")).toBe(false);
     expect(scopesByKey.value.has("pending-review")).toBe(false);
-    expect(coordinator.longEditorLocked.value).toBe(false);
+    expect(coordinator.agentRunScopeHasWriteBarrier(`long:${BOOK_ID}`)).toBe(
+      false
+    );
     expect(pendingReviewController.dispose).toHaveBeenCalledOnce();
   });
 

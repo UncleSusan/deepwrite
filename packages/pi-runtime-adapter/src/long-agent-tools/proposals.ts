@@ -1,6 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import {
-  EMPTY_LONG_MARKDOWN_REVISION,
   LONG_CHARACTER_OVERVIEW_CHANGE_ID,
   LongWorkspaceOperationBatchSchema,
   type LongChapterBodyChange,
@@ -12,7 +11,6 @@ import {
   type LongWorldbuildingFileChange
 } from "@deepwrite/contracts";
 import {
-  nextContentRevision,
   preflightLongMutationProposal,
   stableHash,
   textResult
@@ -41,10 +39,6 @@ export function longContinuityRole(
   return CONTINUITY_ROLES[document];
 }
 
-export function contentRevision(content: string): string {
-  return nextContentRevision(EMPTY_LONG_MARKDOWN_REVISION, content);
-}
-
 export function proposalId(
   ctx: LongToolContext,
   toolCallId: string,
@@ -60,8 +54,6 @@ export interface LongFileChangeInput {
   operation: LongFileOperation;
   beforeText: string;
   afterText: string;
-  beforeRevision: string | null;
-  nextRevision: string;
   file: LongWorkspaceFileReference;
 }
 
@@ -79,9 +71,7 @@ function routeChange(input: LongFileChangeInput): RoutedChange {
     filePath: input.file.path,
     operation: input.operation,
     beforeText: input.beforeText,
-    afterText: input.afterText,
-    beforeRevision: input.beforeRevision,
-    nextRevision: input.nextRevision
+    afterText: input.afterText
   };
 
   if (target.stage === "worldbuilding") {
@@ -125,8 +115,7 @@ function routeChange(input: LongFileChangeInput): RoutedChange {
       change: {
         chapterCardId: target.id,
         chapterTitle: target.chapterTitle!,
-        ...shared,
-        beforeRevision: input.beforeRevision!
+        ...shared
       } satisfies LongChapterBodyChange
     };
   }
@@ -153,8 +142,6 @@ export interface LongProposalInput {
   toolCallId: string;
   changes: readonly LongFileChangeInput[];
   operations: readonly LongWorkspaceOperation[];
-  baseRevision: number;
-  projectRevision: number;
   timestamp: string;
   summary: string;
   message: string;
@@ -176,7 +163,6 @@ export function formLongProposal(
     throw new Error("A long proposal may only target one stage at a time.");
   }
   const batch = LongWorkspaceOperationBatchSchema.parse({
-    baseRevision: input.baseRevision,
     updatedAt: input.timestamp,
     operations: input.operations,
     documentWrites: input.changes.map((change, changeIndex) => ({
@@ -187,9 +173,6 @@ export function formLongProposal(
         change.operation === "create"
           ? ("create" as const)
           : ("replace" as const),
-      expectedRevision:
-        change.operation === "create" ? null : change.beforeRevision,
-      nextRevision: change.nextRevision,
       updatedAt: input.timestamp,
       reason: input.summary
     }))
@@ -199,9 +182,7 @@ export function formLongProposal(
   ctx.rememberProposal({
     operations: input.operations,
     changes: input.changes,
-    timestamp: input.timestamp,
-    workspaceRevision: input.baseRevision,
-    projectRevision: input.projectRevision
+    timestamp: input.timestamp
   });
 
   const message = longProposalResultSummary(ctx.input, input.message);
@@ -209,7 +190,6 @@ export function formLongProposal(
     bookId: ctx.workspace.bookId,
     agentId: ctx.profile.id,
     batch,
-    baseProjectRevision: input.projectRevision,
     summary: input.summary
   };
   const route = routed[0]?.route ?? "mutation";

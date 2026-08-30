@@ -8,6 +8,7 @@ import {
   CharacterStructureMutationSchema,
   LongCharacterFileChangeSchema,
   LongChapterBodyChangeSchema,
+  LongWorkspaceImpactConfirmationSchema,
   LongWorldbuildingFileChangeSchema,
   LongWorkspaceOperationBatchSchema
 } from "@deepwrite/contracts";
@@ -36,6 +37,11 @@ import {
   parseStoredDiscardSnapshot,
   parseStoredDiscardState
 } from "../../utils/acceptedEditDiscardPersistence";
+import {
+  isStoredLongProposalCandidate,
+  normalizeStoredLongProposalStatusMessage,
+  normalizeStoredLongProposalTarget
+} from "./long-proposal-persistence-compatibility";
 
 function parseStoredLibraryTarget(
   value: unknown
@@ -346,51 +352,57 @@ function parseStoredPlotStructureTarget(
 function parseStoredLongWorldbuildingTarget(
   value: unknown
 ): AgentEditProposal["longWorldbuildingTarget"] | undefined {
-  const appliedProjectRevision = isRecord(value)
-    ? value.appliedProjectRevision
-    : undefined;
+  value = normalizeStoredLongProposalTarget(value);
   if (
     !isRecord(value) ||
     typeof value.bookId !== "string" ||
-    !value.bookId.trim() ||
-    !nonnegativeInteger(value.baseProjectRevision) ||
-    (appliedProjectRevision !== undefined &&
-      !nonnegativeInteger(appliedProjectRevision))
+    !value.bookId.trim()
   ) {
     return undefined;
   }
   const batch = LongWorkspaceOperationBatchSchema.safeParse(value.batch);
   const file = LongWorldbuildingFileChangeSchema.safeParse(value.file);
-  if (!batch.success || !file.success) return undefined;
+  const expectedImpact =
+    value.expectedImpact === undefined
+      ? undefined
+      : LongWorkspaceImpactConfirmationSchema.safeParse(value.expectedImpact);
+  if (
+    !batch.success ||
+    !file.success ||
+    (expectedImpact !== undefined && !expectedImpact.success)
+  )
+    return undefined;
   return {
     bookId: value.bookId,
     batch: batch.data,
-    baseProjectRevision: value.baseProjectRevision,
-    ...(appliedProjectRevision === undefined ? {} : { appliedProjectRevision }),
-    file: file.data
+    file: file.data,
+    ...(expectedImpact?.success ? { expectedImpact: expectedImpact.data } : {})
   };
 }
 
 function parseStoredLongCharacterTarget(
   value: unknown
 ): AgentEditProposal["longCharacterTarget"] | undefined {
-  const appliedProjectRevision = isRecord(value)
-    ? value.appliedProjectRevision
-    : undefined;
+  value = normalizeStoredLongProposalTarget(value);
   if (
     !isRecord(value) ||
     typeof value.bookId !== "string" ||
     !value.bookId.trim() ||
-    !nonnegativeInteger(value.baseProjectRevision) ||
-    (appliedProjectRevision !== undefined &&
-      !nonnegativeInteger(appliedProjectRevision)) ||
     !Array.isArray(value.files) ||
     value.files.length < 1
   ) {
     return undefined;
   }
   const batch = LongWorkspaceOperationBatchSchema.safeParse(value.batch);
-  if (!batch.success) return undefined;
+  const expectedImpact =
+    value.expectedImpact === undefined
+      ? undefined
+      : LongWorkspaceImpactConfirmationSchema.safeParse(value.expectedImpact);
+  if (
+    !batch.success ||
+    (expectedImpact !== undefined && !expectedImpact.success)
+  )
+    return undefined;
   const files: LongCharacterFileChange[] = [];
   for (const file of value.files) {
     const parsed = LongCharacterFileChangeSchema.safeParse(file);
@@ -400,41 +412,43 @@ function parseStoredLongCharacterTarget(
   return {
     bookId: value.bookId,
     batch: batch.data,
-    baseProjectRevision: value.baseProjectRevision,
-    ...(appliedProjectRevision === undefined ? {} : { appliedProjectRevision }),
-    files
+    files,
+    ...(expectedImpact?.success ? { expectedImpact: expectedImpact.data } : {})
   };
 }
 
 function parseStoredLongPlotDesignTarget(
   value: unknown
 ): AgentEditProposal["longPlotDesignTarget"] | undefined {
-  const appliedProjectRevision = isRecord(value)
-    ? value.appliedProjectRevision
-    : undefined;
+  value = normalizeStoredLongProposalTarget(value);
   if (
     !isRecord(value) ||
     typeof value.bookId !== "string" ||
-    !value.bookId.trim() ||
-    !nonnegativeInteger(value.baseProjectRevision) ||
-    (appliedProjectRevision !== undefined &&
-      !nonnegativeInteger(appliedProjectRevision))
+    !value.bookId.trim()
   ) {
     return undefined;
   }
   const batch = LongWorkspaceOperationBatchSchema.safeParse(value.batch);
-  if (!batch.success) return undefined;
+  const expectedImpact =
+    value.expectedImpact === undefined
+      ? undefined
+      : LongWorkspaceImpactConfirmationSchema.safeParse(value.expectedImpact);
+  if (
+    !batch.success ||
+    (expectedImpact !== undefined && !expectedImpact.success)
+  )
+    return undefined;
   return {
     bookId: value.bookId,
     batch: batch.data,
-    baseProjectRevision: value.baseProjectRevision,
-    ...(appliedProjectRevision === undefined ? {} : { appliedProjectRevision })
+    ...(expectedImpact?.success ? { expectedImpact: expectedImpact.data } : {})
   };
 }
 
 function parseStoredLongDraftTarget(
   value: unknown
 ): AgentEditProposal["longDraftTarget"] | undefined {
+  value = normalizeStoredLongProposalTarget(value);
   if (
     !isRecord(value) ||
     typeof value.bookId !== "string" ||
@@ -444,33 +458,29 @@ function parseStoredLongDraftTarget(
   }
   const batch = LongWorkspaceOperationBatchSchema.safeParse(value.batch);
   const file = LongChapterBodyChangeSchema.safeParse(value.file);
+  const expectedImpact =
+    value.expectedImpact === undefined
+      ? undefined
+      : LongWorkspaceImpactConfirmationSchema.safeParse(value.expectedImpact);
   if (
     !batch.success ||
     !file.success ||
-    typeof value.baseProjectRevision !== "number" ||
-    !Number.isInteger(value.baseProjectRevision) ||
-    value.baseProjectRevision < 0
+    (expectedImpact !== undefined && !expectedImpact.success)
   ) {
     return undefined;
   }
-  const appliedProjectRevision =
-    typeof value.appliedProjectRevision === "number" &&
-    Number.isInteger(value.appliedProjectRevision) &&
-    value.appliedProjectRevision >= 0
-      ? value.appliedProjectRevision
-      : undefined;
   return {
     bookId: value.bookId,
     batch: batch.data,
-    baseProjectRevision: value.baseProjectRevision,
-    ...(appliedProjectRevision === undefined ? {} : { appliedProjectRevision }),
-    file: file.data
+    file: file.data,
+    ...(expectedImpact?.success ? { expectedImpact: expectedImpact.data } : {})
   };
 }
 
 function parseStoredEditProposal(
   value: unknown
 ): AgentEditProposal | undefined {
+  const isLongFormProposalCandidate = isStoredLongProposalCandidate(value);
   if (
     !isRecord(value) ||
     typeof value.id !== "string" ||
@@ -490,8 +500,9 @@ function parseStoredEditProposal(
       "conflict",
       "error"
     ].includes(String(value.status)) ||
-    typeof value.baseRevision !== "string" ||
-    typeof value.proposedRevision !== "string" ||
+    (!isLongFormProposalCandidate && typeof value.baseRevision !== "string") ||
+    (!isLongFormProposalCandidate &&
+      typeof value.proposedRevision !== "string") ||
     (value.proposedText !== undefined &&
       typeof value.proposedText !== "string") ||
     !Array.isArray(value.toolCallIds) ||
@@ -510,7 +521,8 @@ function parseStoredEditProposal(
       value.approvalMode !== "auto-approve") ||
     (value.predecessorProposalId !== undefined &&
       typeof value.predecessorProposalId !== "string") ||
-    (value.sourceBaseRevision !== undefined &&
+    (!isLongFormProposalCandidate &&
+      value.sourceBaseRevision !== undefined &&
       typeof value.sourceBaseRevision !== "string") ||
     (value.decisionToken !== undefined &&
       typeof value.decisionToken !== "string") ||
@@ -534,6 +546,12 @@ function parseStoredEditProposal(
     value.longPlotDesignTarget
   );
   const longDraftTarget = parseStoredLongDraftTarget(value.longDraftTarget);
+  const isLongFormProposal = Boolean(
+    longWorldbuildingTarget ||
+    longCharacterTarget ||
+    longPlotDesignTarget ||
+    longDraftTarget
+  );
   if (
     (value.stageId === "library" && !libraryTarget) ||
     (value.stageId !== "library" && value.libraryTarget !== undefined) ||
@@ -599,9 +617,15 @@ function parseStoredEditProposal(
   if (hunks.length !== value.hunks.length) return undefined;
   const discardSnapshot = parseStoredDiscardSnapshot(value.discardSnapshot);
   const discardState = parseStoredDiscardState(value.discardState);
+  const statusMessage = isLongFormProposal
+    ? value.status === "conflict"
+      ? undefined
+      : normalizeStoredLongProposalStatusMessage(value.statusMessage)
+    : (value.statusMessage as string | undefined);
   if (
-    (value.discardSnapshot !== undefined && !discardSnapshot) ||
-    (value.discardState !== undefined && !discardState)
+    !isLongFormProposal &&
+    ((value.discardSnapshot !== undefined && !discardSnapshot) ||
+      (value.discardState !== undefined && !discardState))
   ) {
     return undefined;
   }
@@ -617,9 +641,9 @@ function parseStoredEditProposal(
     ...(value.predecessorProposalId === undefined
       ? {}
       : { predecessorProposalId: value.predecessorProposalId }),
-    ...(value.sourceBaseRevision === undefined
-      ? {}
-      : { sourceBaseRevision: value.sourceBaseRevision }),
+    ...(!isLongFormProposal && typeof value.sourceBaseRevision === "string"
+      ? { sourceBaseRevision: value.sourceBaseRevision }
+      : {}),
     ...(value.decisionToken === undefined
       ? {}
       : { decisionToken: value.decisionToken }),
@@ -630,11 +654,16 @@ function parseStoredEditProposal(
     title: value.title,
     summary: value.summary,
     status:
-      value.status === "accepting"
+      value.status === "accepting" ||
+      (isLongFormProposal && value.status === "conflict")
         ? "pending"
         : (value.status as AgentEditProposal["status"]),
-    baseRevision: value.baseRevision,
-    proposedRevision: value.proposedRevision,
+    ...(!isLongFormProposal && typeof value.baseRevision === "string"
+      ? { baseRevision: value.baseRevision }
+      : {}),
+    ...(!isLongFormProposal && typeof value.proposedRevision === "string"
+      ? { proposedRevision: value.proposedRevision }
+      : {}),
     ...(value.proposedText === undefined
       ? {}
       : { proposedText: value.proposedText }),
@@ -643,13 +672,11 @@ function parseStoredEditProposal(
     deletions: value.deletions,
     hunks,
     ...(value.truncated === undefined ? {} : { truncated: value.truncated }),
-    ...(value.statusMessage === undefined
-      ? {}
-      : { statusMessage: value.statusMessage }),
+    ...(statusMessage === undefined ? {} : { statusMessage }),
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
-    ...(discardSnapshot ? { discardSnapshot } : {}),
-    ...(discardState ? { discardState } : {}),
+    ...(!isLongFormProposal && discardSnapshot ? { discardSnapshot } : {}),
+    ...(!isLongFormProposal && discardState ? { discardState } : {}),
     ...(libraryTarget ? { libraryTarget } : {}),
     ...(longWorldbuildingTarget ? { longWorldbuildingTarget } : {}),
     ...(longCharacterTarget ? { longCharacterTarget } : {}),

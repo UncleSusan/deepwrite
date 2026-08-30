@@ -5,6 +5,7 @@ import {
   resolveScriptWorkspaceAgentIdForStage,
   resolveShortWorkspaceAgentIdForStage,
   type Book,
+  type AgentTeamRunMode,
   type CatalogIndexSnapshot,
   type CatalogSnapshot,
   type GeneralPermissionMode,
@@ -517,6 +518,17 @@ export function useShortConversationCoordinator(
     }
   );
 
+  const stopWebSearchSync = watch(
+    () => activeConversation.value.webSearchEnabled.value,
+    () => {
+      if (disposed) return;
+      const conversation = activeConversation.value;
+      options.runtime.synchronizeSessionModelSelection(conversation);
+      synchronizeActiveRunPreferences(conversation);
+    },
+    { flush: "sync" }
+  );
+
   function captureSendTarget(): ShortConversationSendTarget {
     const conversation = activeConversation.value;
     const document = options.resource.activeAgentDocument.value;
@@ -837,6 +849,13 @@ export function useShortConversationCoordinator(
     synchronizeActiveRunPreferences(conversation);
   }
 
+  function selectWebSearch(enabled: boolean): void {
+    const conversation = activeConversation.value;
+    conversation.selectWebSearchEnabled(enabled);
+    options.runtime.synchronizeSessionModelSelection(conversation);
+    synchronizeActiveRunPreferences(conversation);
+  }
+
   function selectTemperature(value: number): void {
     activeConversation.value.selectTemperature(value);
     synchronizeActiveRunPreferences();
@@ -846,6 +865,12 @@ export function useShortConversationCoordinator(
     options.settings.updatePermissionMode(mode);
     activeConversation.value.selectApprovalMode(mode);
     synchronizeActiveRunPreferences();
+  }
+
+  function selectAgentTeamMode(mode: AgentTeamRunMode): void {
+    const conversation = activeConversation.value;
+    conversation.selectAgentTeamMode(mode);
+    synchronizeActiveRunPreferences(conversation);
   }
 
   async function drain(): Promise<void> {
@@ -861,6 +886,7 @@ export function useShortConversationCoordinator(
     invalidateSendTarget();
     stopResourceInvalidation();
     stopConversationError();
+    stopWebSearchSync();
     if (pending && conversation?.isBusy.value) {
       try {
         await conversation.stopGeneration();
@@ -878,11 +904,13 @@ export function useShortConversationCoordinator(
     dispose,
     drain,
     newConversation,
+    selectAgentTeamMode,
     selectApprovalMode,
     selectConversation,
     selectModel,
     selectTemperature,
     selectThinking,
+    selectWebSearch,
     resendMessage,
     sendMessage,
     sendPreflightPending,

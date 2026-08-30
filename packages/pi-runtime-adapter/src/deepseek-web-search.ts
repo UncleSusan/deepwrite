@@ -26,6 +26,18 @@ export function assertDeepSeekWebSearchCompatible(
   );
 }
 
+export function renderDeepSeekWebSearchCapabilityPrompt(): string {
+  return [
+    "【智能搜索能力】",
+    "本轮已启用 DeepSeek 服务端智能搜索工具 web_search。用户请求实时、近期或其它外部公开信息时，应按需调用该工具，并基于实际返回的搜索结果回答。",
+    "智能搜索是只读且按需使用的能力，不必为无需外部信息的问题强制搜索。只有实际获得搜索结果后才能声称已经搜索或引用实时信息；搜索失败时应如实说明。"
+  ].join("\n");
+}
+
+export function renderDeepSeekWebSearchNetworkBoundary(): string {
+  return "网络能力仅限本轮列出的 DeepSeek 服务端 web_search，不具备浏览器控制、任意 HTTP 请求或其它联网能力。";
+}
+
 export function appendDeepSeekWebSearchTool(
   payload: unknown,
   api: ModelApi

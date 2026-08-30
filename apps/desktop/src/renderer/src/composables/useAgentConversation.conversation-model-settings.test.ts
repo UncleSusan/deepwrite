@@ -247,20 +247,24 @@ describe("agent conversation controller: conversation-model-settings", () => {
     controller.selectThinkingLevel("off");
     controller.selectTemperature(1.2);
     controller.selectApprovalMode("auto-approve");
+    controller.selectAgentTeamMode("team");
 
     controller.newConversation();
     expect(controller.selectedModelId.value).toBe("writer");
     expect(controller.thinkingLevel.value).toBe("off");
     expect(controller.temperature.value).toBe(1.2);
     expect(controller.approvalMode.value).toBe("auto-approve");
+    expect(controller.agentTeamMode.value).toBe("team");
 
     controller.selectThinkingLevel("low");
     controller.selectApprovalMode("request-approval");
+    controller.selectAgentTeamMode("normal");
     expect(controller.selectConversation(firstSessionId)).toBe(true);
     expect(controller.selectedModelId.value).toBe("writer");
     expect(controller.thinkingLevel.value).toBe("low");
     expect(controller.temperature.value).toBe(1.2);
     expect(controller.approvalMode.value).toBe("request-approval");
+    expect(controller.agentTeamMode.value).toBe("normal");
     controller.dispose();
   });
 
@@ -288,6 +292,7 @@ describe("agent conversation controller: conversation-model-settings", () => {
     controller.selectThinkingLevel("off");
     controller.selectTemperature(1.2);
     controller.selectApprovalMode("auto-approve");
+    controller.selectAgentTeamMode("team");
 
     controller.applyModelSettings(settings);
 
@@ -295,6 +300,7 @@ describe("agent conversation controller: conversation-model-settings", () => {
     expect(controller.thinkingLevel.value).toBe("off");
     expect(controller.temperature.value).toBe(1.2);
     expect(controller.approvalMode.value).toBe("auto-approve");
+    expect(controller.agentTeamMode.value).toBe("team");
     controller.dispose();
   });
 

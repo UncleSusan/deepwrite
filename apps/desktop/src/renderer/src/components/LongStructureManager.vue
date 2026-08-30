@@ -2,6 +2,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import { LONG_AGENTS_MD_MAX_CHARACTERS } from "@deepwrite/contracts";
 import type {
+  LongWorkspaceImpactConfirmation,
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch,
   LongWorldbuildingFormat,
@@ -9,30 +10,35 @@ import type {
 } from "@deepwrite/contracts";
 import { uiMessage } from "../ui-feedback";
 import {
+  useLongStructureDeleteConfirmation,
+  type LongStructureDeleteRow
+} from "../composables/useLongStructureDeleteConfirmation";
+import { useLongStructureFormImpact } from "../composables/useLongStructureFormImpact";
+import {
   createLongStructureMutationBuilder,
   type LongOrderDirection,
   type LongStructureMutationBuilder
 } from "../types/longStructureMutations";
 import {
   isLongMigrationEvidenceCategoryId,
-  type LongStructureMutationCompletion
+  type LongStructureMutationCompletion,
+  type LongWorldbuildingSyncCompletion,
+  type LongWorldbuildingSyncPreparedChange,
+  type LongWorldbuildingSyncRequest
 } from "../types/longWorkspace";
 import type { LongWorldbuildingSyncBookOption } from "../utils/longWorldbuildingSync";
 import PopupSelect, {
   type PopupSelectOption,
   type PopupSelectValue
 } from "./PopupSelect.vue";
+import LongImpactConfirmationDetails from "./LongImpactConfirmationDetails.vue";
+import LongStructureDeleteDialog from "./LongStructureDeleteDialog.vue";
+import LongWorldbuildingSyncDialog from "./LongWorldbuildingSyncDialog.vue";
 
 type StructurePanel = "foundation" | "features" | "agents";
 type FoundationSection = "worldbuilding" | "characterTypes";
 
-interface ManagerRow {
-  kind: "worldbuilding" | "characterType";
-  id: string;
-  title: string;
-  detail: string;
-  readOnly?: boolean;
-}
+type ManagerRow = LongStructureDeleteRow;
 
 interface StructureDraft {
   id: string | null;
@@ -61,13 +67,17 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
+  previewMutation: [
+    batch: LongWorkspaceOperationBatch,
+    completion: (impact?: LongWorkspaceImpactConfirmation) => void
+  ];
   mutation: [
     batch: LongWorkspaceOperationBatch,
     completion: LongStructureMutationCompletion
   ];
   syncWorldbuilding: [
-    payload: { sourceBookId: string; sourceTitle: string },
-    completion: LongStructureMutationCompletion
+    payload: LongWorldbuildingSyncRequest,
+    completion: LongWorldbuildingSyncCompletion
   ];
   saveAgentsMd: [content: string, completion: LongStructureMutationCompletion];
   modalActiveChange: [active: boolean];
@@ -109,11 +119,42 @@ const activeFoundationSection = ref<FoundationSection>("worldbuilding");
 const agentsMdDraft = ref(props.agentsMd ?? "");
 const formOpen = ref(false);
 const formMode = ref<"create" | "edit">("create");
-const pendingDelete = ref<ManagerRow | null>(null);
-const cascadeDelete = ref(false);
-const moveCharactersToTypeId = ref("");
 const syncOpen = ref(false);
 const selectedSyncBookId = ref<string>("");
+const syncPreparedChange = ref<LongWorldbuildingSyncPreparedChange | null>(
+  null
+);
+type MutationSurface = "form" | "sync" | "background" | "agents";
+const pendingMutation = ref<{
+  id: number;
+  surface: MutationSurface;
+} | null>(null);
+let mutationClock = 0;
+const {
+  pendingDelete,
+  moveCharactersToTypeId,
+  characterTypeDeleteMode,
+  submitting: deleteSubmitting,
+  deletingCharacterCount,
+  deletingLastCharacterType,
+  characterTypeMoveOptions,
+  pendingWorldbuildingDeleteDescription,
+  openDelete,
+  closeDelete,
+  setMoveCharactersToTypeId,
+  setCharacterTypeDeleteMode,
+  confirmDelete
+} = useLongStructureDeleteConfirmation({
+  snapshot: computed(() => props.snapshot),
+  locked: () => props.disabled || pendingMutation.value !== null,
+  preview: (batch, completion) => emit("previewMutation", batch, completion),
+  mutate: (batch, completion) => emit("mutation", batch, completion),
+  notify: uiMessage
+});
+const mutationLocked = computed(
+  () =>
+    props.disabled || pendingMutation.value !== null || deleteSubmitting.value
+);
 const activeModal = computed<"form" | "sync" | "delete" | null>(() =>
   formOpen.value
     ? "form"
@@ -122,15 +163,6 @@ const activeModal = computed<"form" | "sync" | "delete" | null>(() =>
       : pendingDelete.value
         ? "delete"
         : null
-);
-type MutationSurface = "form" | "delete" | "sync" | "background" | "agents";
-const pendingMutation = ref<{
-  id: number;
-  surface: MutationSurface;
-} | null>(null);
-let mutationClock = 0;
-const mutationLocked = computed(
-  () => props.disabled || pendingMutation.value !== null
 );
 
 const syncBookSelectOptions = computed<PopupSelectOption[]>(() =>
@@ -151,7 +183,6 @@ const selectedSyncBook = computed(
       (book) => book.id === selectedSyncBookId.value
     ) ?? null
 );
-
 function emptyDraft(): StructureDraft {
   return {
     id: null,
@@ -161,6 +192,15 @@ function emptyDraft(): StructureDraft {
 }
 
 const draft = reactive<StructureDraft>(emptyDraft());
+const {
+  pendingFormImpact,
+  clearPendingFormImpact,
+  capturePendingFormImpact,
+  confirmedFormBatch
+} = useLongStructureFormImpact({
+  fields: () => [draft.title, draft.format] as const,
+  mutationPending: () => pendingMutation.value !== null
+});
 
 const worldbuildingRows = computed<ManagerRow[]>(() =>
   [...props.snapshot.worldbuilding]
@@ -194,20 +234,6 @@ const rows = computed(() =>
     ? worldbuildingRows.value
     : characterTypeRows.value
 );
-const deletingCharacterCount = computed(() =>
-  pendingDelete.value?.kind === "characterType"
-    ? props.snapshot.characters.filter(
-        ({ group }) => group === pendingDelete.value?.id
-      ).length
-    : 0
-);
-const characterTypeMoveOptions = computed<PopupSelectOption[]>(() =>
-  props.snapshot.characterTypes
-    .filter(({ id }) => id !== pendingDelete.value?.id)
-    .sort((left, right) => left.order - right.order)
-    .map(({ id, title }) => ({ value: id, label: title }))
-);
-
 const formTitle = computed(() =>
   activeFoundationSection.value === "characterTypes"
     ? formMode.value === "create"
@@ -324,6 +350,7 @@ function resetDraft(): void {
 
 function openCreate(): void {
   resetDraft();
+  clearPendingFormImpact();
   formMode.value = "create";
   formOpen.value = true;
 }
@@ -334,6 +361,7 @@ function openEdit(row: ManagerRow): void {
     return;
   }
   resetDraft();
+  clearPendingFormImpact();
   formMode.value = "edit";
   if (row.kind === "characterType") {
     const characterType = props.snapshot.characterTypes.find(
@@ -358,6 +386,7 @@ function openEdit(row: ManagerRow): void {
 function closeForm(): void {
   if (mutationLocked.value) return;
   formOpen.value = false;
+  clearPendingFormImpact();
 }
 
 function finishMutation(
@@ -370,13 +399,11 @@ function finishMutation(
   if (outcome === "failed") return;
   if (pending.surface === "form") {
     formOpen.value = false;
-  } else if (pending.surface === "delete") {
-    pendingDelete.value = null;
-    cascadeDelete.value = false;
-    moveCharactersToTypeId.value = "";
+    clearPendingFormImpact();
   } else if (pending.surface === "sync") {
     syncOpen.value = false;
     selectedSyncBookId.value = "";
+    syncPreparedChange.value = null;
   }
 }
 
@@ -389,6 +416,7 @@ function openSync(): void {
   selectedSyncBookId.value = String(
     syncBookSelectOptions.value[0]?.value ?? ""
   );
+  syncPreparedChange.value = null;
   syncOpen.value = true;
 }
 
@@ -396,10 +424,12 @@ function closeSync(): void {
   if (mutationLocked.value) return;
   syncOpen.value = false;
   selectedSyncBookId.value = "";
+  syncPreparedChange.value = null;
 }
 
 function setSyncBook(value: PopupSelectValue): void {
   selectedSyncBookId.value = typeof value === "string" ? value : "";
+  syncPreparedChange.value = null;
 }
 
 function confirmSync(): void {
@@ -413,16 +443,34 @@ function confirmSync(): void {
     uiMessage.warning("所选长篇没有可同步的世界观分类。");
     return;
   }
+  const prepared = syncPreparedChange.value;
   const requestId = ++mutationClock;
   pendingMutation.value = { id: requestId, surface: "sync" };
   emit(
     "syncWorldbuilding",
-    { sourceBookId: source.id, sourceTitle: source.title },
+    {
+      sourceBookId: source.id,
+      sourceTitle: source.title,
+      ...(prepared ? { prepared } : {})
+    },
     {
       succeed: () => finishMutation(requestId, "succeeded"),
-      fail: () => finishMutation(requestId, "failed"),
+      fail: (_message, changedImpact) => {
+        finishMutation(requestId, "failed");
+        if (!changedImpact || !prepared) return;
+        syncPreparedChange.value = {
+          ...prepared,
+          confirmation: changedImpact
+        };
+      },
       appliedButRefreshFailed: () =>
-        finishMutation(requestId, "applied-refresh-failed")
+        finishMutation(requestId, "applied-refresh-failed"),
+      review: (nextPrepared) => {
+        const pending = pendingMutation.value;
+        if (!pending || pending.id !== requestId) return;
+        pendingMutation.value = null;
+        syncPreparedChange.value = nextPrepared;
+      }
     }
   );
 }
@@ -434,15 +482,7 @@ function emitMutation(
   if (mutationLocked.value) return false;
   try {
     const batch = build(createLongStructureMutationBuilder(props.snapshot));
-    const requestId = ++mutationClock;
-    pendingMutation.value = { id: requestId, surface };
-    emit("mutation", batch, {
-      succeed: () => finishMutation(requestId, "succeeded"),
-      fail: () => finishMutation(requestId, "failed"),
-      appliedButRefreshFailed: () =>
-        finishMutation(requestId, "applied-refresh-failed")
-    });
-    return true;
+    return applyMutationBatch(batch, surface);
   } catch (error) {
     uiMessage.warning(
       error instanceof Error ? error.message : "无法生成长篇结构变更。"
@@ -451,10 +491,37 @@ function emitMutation(
   }
 }
 
+function applyMutationBatch(
+  batch: LongWorkspaceOperationBatch,
+  surface: MutationSurface
+): boolean {
+  if (mutationLocked.value) return false;
+  const requestId = ++mutationClock;
+  pendingMutation.value = { id: requestId, surface };
+  emit("mutation", batch, {
+    succeed: () => finishMutation(requestId, "succeeded"),
+    fail: (_message, changedImpact) => {
+      finishMutation(requestId, "failed");
+      if (surface === "form" && changedImpact) {
+        capturePendingFormImpact(batch, changedImpact);
+      }
+    },
+    appliedButRefreshFailed: () =>
+      finishMutation(requestId, "applied-refresh-failed")
+  });
+  return true;
+}
+
 function submitForm(): void {
   const title = draft.title.trim();
   if (!title) {
     uiMessage.warning("请输入标题。");
+    return;
+  }
+
+  const confirmed = confirmedFormBatch();
+  if (confirmed) {
+    applyMutationBatch(confirmed, "form");
     return;
   }
 
@@ -499,58 +566,6 @@ function reorder(row: ManagerRow, direction: LongOrderDirection): void {
     row.kind === "characterType"
       ? builder.reorderCharacterType(row.id, direction)
       : builder.reorderWorldbuilding(row.id, direction)
-  );
-}
-
-function openDelete(row: ManagerRow): void {
-  if (row.readOnly) {
-    uiMessage.info("迁移证据是只读资料，不能删除。");
-    return;
-  }
-  if (
-    row.kind === "characterType" &&
-    props.snapshot.characterTypes.length <= 1
-  ) {
-    uiMessage.warning("至少需要保留一个人物类型。");
-    return;
-  }
-  cascadeDelete.value = false;
-  moveCharactersToTypeId.value = "";
-  pendingDelete.value = row;
-}
-
-function closeDelete(): void {
-  if (mutationLocked.value) return;
-  pendingDelete.value = null;
-  cascadeDelete.value = false;
-  moveCharactersToTypeId.value = "";
-}
-
-function setMoveCharactersToTypeId(value: PopupSelectValue): void {
-  moveCharactersToTypeId.value = typeof value === "string" ? value : "";
-}
-
-function confirmDelete(): void {
-  const target = pendingDelete.value;
-  if (!target) return;
-  if (target.kind === "characterType") {
-    if (deletingCharacterCount.value > 0 && !moveCharactersToTypeId.value) {
-      uiMessage.warning("请选择这些人物要迁移到的目标类型。");
-      return;
-    }
-    emitMutation(
-      (builder) =>
-        builder.deleteCharacterType(
-          target.id,
-          moveCharactersToTypeId.value || undefined
-        ),
-      "delete"
-    );
-    return;
-  }
-  emitMutation(
-    (builder) => builder.deleteWorldbuilding(target.id, cascadeDelete.value),
-    "delete"
   );
 }
 
@@ -939,6 +954,11 @@ defineExpose({
                   @update:model-value="setFormat"
                 />
               </label>
+              <LongImpactConfirmationDetails
+                v-if="pendingFormImpact"
+                :confirmation="pendingFormImpact.confirmation"
+                fallback="格式转换不会删除现有从属内容。"
+              />
             </fieldset>
 
             <footer class="modal-actions">
@@ -957,9 +977,11 @@ defineExpose({
                 {{
                   pendingMutation?.surface === "form"
                     ? "保存中…"
-                    : formMode === "create"
-                      ? "创建"
-                      : "保存修改"
+                    : pendingFormImpact
+                      ? "确认按上述影响转换并保存"
+                      : formMode === "create"
+                        ? "创建"
+                        : "保存修改"
                 }}
               </button>
             </footer>
@@ -968,179 +990,35 @@ defineExpose({
       </div>
     </Teleport>
 
-    <Teleport to="body">
-      <div
-        v-if="activeModal === 'sync'"
-        class="dialog-backdrop structure-modal-overlay"
-        @mousedown.self="closeSync"
-        @keydown.esc.stop="closeSync"
-      >
-        <section
-          class="structure-modal sync-modal"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="long-structure-sync-title"
-          aria-describedby="long-structure-sync-description"
-        >
-          <header class="modal-header">
-            <div>
-              <span>SYNC</span>
-              <h3 id="long-structure-sync-title">加载其他书籍世界观</h3>
-            </div>
-            <button
-              class="close-button"
-              type="button"
-              aria-label="关闭"
-              :disabled="mutationLocked"
-              @click="closeSync"
-            >
-              ×
-            </button>
-          </header>
-          <fieldset class="modal-body" :disabled="mutationLocked">
-            <p id="long-structure-sync-description" class="sync-copy">
-              同步其他长篇书籍世界观，会把对方的<strong>全部世界观数据</strong>覆盖到当前书籍，
-              <strong>包括分类结构与各分类正文</strong
-              >。当前书籍中的可编辑世界观会被替换；
-              迁移证据只读分类会保留。此操作不可撤销。
-            </p>
-            <label class="form-field">
-              <span>选择来源长篇</span>
-              <PopupSelect
-                :model-value="selectedSyncBookId"
-                :options="syncBookSelectOptions"
-                accessible-label="选择要同步世界观的长篇书籍"
-                :menu-z-index="2300"
-                @update:model-value="setSyncBook"
-              />
-            </label>
-            <p v-if="selectedSyncBook" class="sync-summary">
-              将同步「{{ selectedSyncBook.title }}」的
-              {{ selectedSyncBook.categoryCount }} 个世界观分类及其全部内容。
-            </p>
-          </fieldset>
-          <footer class="modal-actions">
-            <button type="button" :disabled="mutationLocked" @click="closeSync">
-              取消
-            </button>
-            <button
-              class="danger-button"
-              type="button"
-              :disabled="mutationLocked || !selectedSyncBookId"
-              @click="confirmSync"
-            >
-              {{
-                pendingMutation?.surface === "sync"
-                  ? "同步中…"
-                  : "确认同步全部数据"
-              }}
-            </button>
-          </footer>
-        </section>
-      </div>
-    </Teleport>
+    <LongWorldbuildingSyncDialog
+      :open="activeModal === 'sync'"
+      :current-book-id="currentBookId"
+      :selected-book-id="selectedSyncBookId"
+      :book-options="syncBookOptions"
+      :prepared="syncPreparedChange"
+      :locked="mutationLocked"
+      :pending="pendingMutation?.surface === 'sync'"
+      @close="closeSync"
+      @confirm="confirmSync"
+      @update:selected-book-id="setSyncBook"
+    />
 
-    <Teleport to="body">
-      <div
-        v-if="activeModal === 'delete' && pendingDelete"
-        class="dialog-backdrop structure-modal-overlay"
-        @mousedown.self="closeDelete"
-        @keydown.esc.stop="closeDelete"
-      >
-        <section
-          class="structure-modal delete-modal"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="long-structure-delete-title"
-          aria-describedby="long-structure-delete-description"
-        >
-          <header class="modal-header">
-            <div>
-              <span>DELETE</span>
-              <h3 id="long-structure-delete-title">
-                删除“{{ pendingDelete.title }}”
-              </h3>
-            </div>
-          </header>
-          <fieldset class="modal-body" :disabled="mutationLocked">
-            <p
-              v-if="pendingDelete.kind === 'worldbuilding'"
-              id="long-structure-delete-description"
-              class="delete-copy"
-            >
-              删除会直接保存到本机。默认只删除当前分类；如分类中仍有内容，
-              保存会被阻止，你可以核对后再选择同时删除分类内容。
-            </p>
-            <label
-              v-if="pendingDelete.kind === 'worldbuilding'"
-              class="cascade-option"
-            >
-              <input v-model="cascadeDelete" type="checkbox" />
-              <span>
-                同时删除分类内容
-                <small>会一并删除当前世界观分类中的现有内容。</small>
-              </span>
-            </label>
-            <template v-else>
-              <p id="long-structure-delete-description" class="delete-copy">
-                删除人物类型不会删除人物文档。
-                <template v-if="deletingCharacterCount > 0">
-                  当前类型中有
-                  {{ deletingCharacterCount }} 个人物，请选择迁移目标。
-                </template>
-              </p>
-              <label v-if="deletingCharacterCount > 0" class="form-field">
-                <span>迁移到</span>
-                <PopupSelect
-                  :model-value="moveCharactersToTypeId"
-                  :options="characterTypeMoveOptions"
-                  accessible-label="选择人物迁移目标类型"
-                  :menu-z-index="2300"
-                  @update:model-value="setMoveCharactersToTypeId"
-                />
-              </label>
-            </template>
-          </fieldset>
-          <footer class="modal-actions">
-            <button
-              type="button"
-              :disabled="mutationLocked"
-              autofocus
-              @click="closeDelete"
-            >
-              取消
-            </button>
-            <button
-              class="danger-button"
-              type="button"
-              :disabled="
-                mutationLocked ||
-                (pendingDelete.kind === 'characterType' &&
-                  deletingCharacterCount > 0 &&
-                  !moveCharactersToTypeId)
-              "
-              @click="confirmDelete"
-            >
-              {{
-                pendingDelete.kind === "characterType"
-                  ? pendingMutation?.surface === "delete"
-                    ? "删除中…"
-                    : deletingCharacterCount > 0
-                      ? "迁移人物并删除"
-                      : "确认删除"
-                  : cascadeDelete
-                    ? pendingMutation?.surface === "delete"
-                      ? "删除中…"
-                      : "确认并删除分类内容"
-                    : pendingMutation?.surface === "delete"
-                      ? "删除中…"
-                      : "确认删除"
-              }}
-            </button>
-          </footer>
-        </section>
-      </div>
-    </Teleport>
+    <LongStructureDeleteDialog
+      :open="activeModal === 'delete'"
+      :target="pendingDelete"
+      :locked="mutationLocked"
+      :pending="deleteSubmitting"
+      :worldbuilding-fallback="pendingWorldbuildingDeleteDescription"
+      :character-count="deletingCharacterCount"
+      :last-character-type="deletingLastCharacterType"
+      :character-delete-mode="characterTypeDeleteMode"
+      :move-target-id="moveCharactersToTypeId"
+      :move-options="characterTypeMoveOptions"
+      @close="closeDelete"
+      @confirm="confirmDelete"
+      @update:character-delete-mode="setCharacterTypeDeleteMode"
+      @update:move-target-id="setMoveCharactersToTypeId"
+    />
   </section>
 </template>
 
@@ -1583,70 +1461,6 @@ button:disabled {
   justify-content: flex-end;
   border-top: 1px solid var(--theme-line-soft);
   background: var(--surface-muted);
-}
-
-.delete-modal,
-.sync-modal {
-  width: min(31rem, 100%);
-}
-
-.delete-copy,
-.sync-copy,
-.sync-summary {
-  margin: 0;
-  color: var(--text-secondary);
-  line-height: 1.55;
-}
-
-.sync-copy strong {
-  color: var(--text-primary);
-  font-weight: 650;
-}
-
-.sync-summary {
-  padding: 0.75rem;
-  border: 1px solid var(--theme-line);
-  border-radius: 0.65rem;
-  background: var(--surface-muted);
-}
-
-.cascade-option {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: 0.6rem;
-  padding: 0.75rem;
-  border: 1px solid var(--theme-line);
-  border-radius: 0.65rem;
-  color: var(--text-primary);
-  background: var(--surface-muted);
-}
-
-.cascade-option span {
-  display: grid;
-  gap: 0.2rem;
-}
-
-.cascade-option small {
-  color: var(--text-tertiary);
-}
-
-.cascade-option input {
-  margin-top: 0.18rem;
-  accent-color: var(--danger);
-}
-
-.danger-button {
-  border-color: var(--danger);
-  color: #fff;
-  background: var(--danger);
-  font-weight: 650;
-}
-
-.danger-button:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--danger) 84%, var(--text-primary));
-  color: #fff;
-  background: color-mix(in srgb, var(--danger) 84%, var(--text-primary));
 }
 
 @media (max-width: 42rem) {

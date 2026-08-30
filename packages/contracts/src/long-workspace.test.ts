@@ -14,7 +14,6 @@ import {
   LongBookSummarySchema,
   LongContinuityProjectionSchema,
   LongEventConnectionSchema,
-  LongFileRevisionSchema,
   LongProjectManifestSchema,
   LongWorkspaceIndexSnapshotSchema,
   LongWorkspaceSchemaVersionSchema,
@@ -40,10 +39,9 @@ import {
 import { resolveLongAgentIdForRoot as rendererResolveLongAgentIdForRoot } from "./renderer";
 
 const now = "2026-07-26T10:00:00.000Z";
-const revision = "v1:0:00000000";
 
 function file(id: string, path: string) {
-  return { id, path, revision, updatedAt: now };
+  return { id, path, updatedAt: now };
 }
 
 function chapterFiles(chapterCardId: string, order: number) {
@@ -72,7 +70,6 @@ function chapterFiles(chapterCardId: string, order: number) {
 function workspaceIndex() {
   return {
     schemaVersion: 1 as const,
-    revision: 4,
     bookId: "longbook_alpha",
     updatedAt: now,
     bookLine: file(LONG_BOOK_LINE_FILE_ID, "long/plot/book-line.md"),
@@ -233,8 +230,6 @@ function workspaceIndex() {
         sequence: number;
         chapterCardId: string;
         committedAt: string;
-        reversible: boolean;
-        sourceRevision: number;
         placementIds: string[];
         foreshadowingBeatIds: string[];
         recordFile: ReturnType<typeof file>;
@@ -261,8 +256,6 @@ function commitFirstChapter(workspace: ReturnType<typeof workspaceIndex>) {
     sequence: 1,
     chapterCardId: "chapter_one",
     committedAt: now,
-    reversible: true,
-    sourceRevision: workspace.revision,
     placementIds: ["placement_receive_letter"],
     foreshadowingBeatIds: ["beat_first_clue"],
     recordFile: file(
@@ -294,7 +287,6 @@ function longBook() {
       style: [],
       other: []
     },
-    projectRevision: 4,
     createdAt: now,
     updatedAt: now,
     workspaceIndex: workspaceIndex()
@@ -362,7 +354,6 @@ describe("independent long-form workspace contracts", () => {
     const summary = createLongBookSummary(book);
     const manifest = {
       schemaVersion: 1,
-      revision: 4,
       kind: "deepwrite.long-book",
       id: "longbook_alpha",
       title: "雨夜来信",
@@ -580,12 +571,6 @@ describe("independent long-form workspace contracts", () => {
     expect(
       LongWorkspaceIndexSnapshotSchema.safeParse(portableDuplicatePath).success
     ).toBe(false);
-
-    expect(
-      LongFileRevisionSchema.safeParse(
-        `v2:${"1".repeat(100)}:${"a".repeat(64)}`
-      ).success
-    ).toBe(false);
   });
 
   it("rejects duplicate and unresolved entity references", () => {
@@ -678,25 +663,14 @@ describe("independent long-form workspace contracts", () => {
     ).toBe(false);
   });
 
-  it("keeps full books and lightweight summaries on one revision", () => {
-    const mismatchedBookRevision = longBook();
-    mismatchedBookRevision.projectRevision = 5;
-    expect(LongBookSchema.safeParse(mismatchedBookRevision).success).toBe(
-      false
-    );
-
+  it("keeps full books and lightweight summaries on one update time", () => {
     const mismatchedBookTime = longBook();
     mismatchedBookTime.updatedAt = "2026-07-26T11:00:00.000Z";
     expect(LongBookSchema.safeParse(mismatchedBookTime).success).toBe(false);
 
     const summary = createLongBookSummary(LongBookSchema.parse(longBook()));
-    expect(summary.projectRevision).toBe(summary.navigation.revision);
-    expect(
-      LongBookSummarySchema.safeParse({
-        ...summary,
-        projectRevision: summary.projectRevision + 1
-      }).success
-    ).toBe(false);
+    expect(summary).not.toHaveProperty("projectRevision");
+    expect(summary.navigation).not.toHaveProperty("revision");
     expect(
       LongBookSummarySchema.safeParse({
         ...summary,
@@ -744,8 +718,6 @@ describe("independent long-form workspace contracts", () => {
       sequence: 1,
       chapterCardId: "chapter_two",
       committedAt: now,
-      reversible: true,
-      sourceRevision: skippedFirst.revision,
       placementIds: [],
       foreshadowingBeatIds: [],
       recordFile: file(
@@ -1069,7 +1041,7 @@ describe("independent long-form workspace contracts", () => {
     }
     expect(systemPrompt).not.toContain("bookId");
     expect(systemPrompt).toContain(
-      "Do not request, infer, or repeat implementation details such as file paths, file_id, or revision."
+      "Do not request, infer, or repeat implementation details such as file paths or file_id."
     );
   });
 });

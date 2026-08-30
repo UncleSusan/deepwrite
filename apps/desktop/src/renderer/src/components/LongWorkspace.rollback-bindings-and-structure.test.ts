@@ -10,7 +10,6 @@ import {
   lazyLongStructureTransactionsSource,
   legacySyncSource,
   longBookLifecycleSource,
-  longRollbackSource,
   longStructureTransactionsSource,
   longWorkspaceDraftTreeSource,
   longWorkspaceModuleSource,
@@ -28,75 +27,24 @@ import {
   workspaceDialogLayerSource
 } from "./LongWorkspace.test-support";
 
-describe("long-form renderer vertical slice: rollback-bindings-and-structure", () => {
-  it("keeps a write barrier until rollback revisions are refreshed and adopted", () => {
-    const confirmRollbackSource =
-      longRollbackSource
-        .split("function confirmLongRollback(): Promise<void> {")[1]
-        ?.split("function currentTarget():")[0] ?? "";
+describe("long-form renderer vertical slice: bindings-and-structure", () => {
+  it("keeps refresh and agent-run write barriers without revision or rollback state", () => {
     const editorLockSource =
       presentationCoordinatorSource
         .split("const longEditorLocked = computed(")[1]
         ?.split("const longEditorLockedReason = computed(")[0] ?? "";
-    const retryRefreshSource =
-      longWorkspaceRefreshSource
-        .split("async function retryActiveRefresh(")[1]
-        ?.split("async function refreshOnWindowFocus(")[0] ?? "";
-
-    expect(
-      confirmRollbackSource.indexOf("await scheduler.settleUi()")
-    ).toBeLessThan(
-      confirmRollbackSource.indexOf("session.saveActiveEditorChanges()")
-    );
-    expect(
-      confirmRollbackSource.indexOf("session.saveActiveEditorChanges()")
-    ).toBeLessThan(
-      confirmRollbackSource.indexOf("session.refreshActiveWorkspace(")
-    );
-    expect(confirmRollbackSource).toContain(
-      "const rollback = await api.rollbackLastCommit({"
-    );
-    expect(longRollbackSource).toContain(
-      "const requirement: LongWorkspaceRevisionSyncRequirement = {"
-    );
-    expect(longRollbackSource).toContain(
-      "workspaceRevision: result.workspaceRevision"
-    );
-    expect(longRollbackSource).toContain(
-      "projectRevision: result.projectRevision"
-    );
-    const afterRevisionRequirement =
-      confirmRollbackSource.split(
-        "const requirement = publishRevisionRequirement(rollback);"
-      )[1] ?? "";
-    expect(
-      afterRevisionRequirement.indexOf(
-        "session.refreshAndSynchronizeRequiredRevision("
-      )
-    ).toBeLessThan(
-      afterRevisionRequirement.indexOf("completeCurrentTarget(operationTarget)")
-    );
-    expect(longRollbackSource).toContain(
-      "preserveRevisionRequirement(requirement)"
-    );
-
-    expect(editorLockSource).toContain("options.long.rollbackPending.value");
     expect(editorLockSource).toContain(
       "options.long.refreshStatus.value?.pending"
     );
-    expect(editorLockSource).toContain(
-      "options.long.revisionRequirement.value !== null"
-    );
-    expect(longWorkspaceStoreSource).toContain(
-      "activeRevisionRequirement.value === null"
+    expect(editorLockSource).toContain("acceptingWorkspaceIds.value.has");
+    expect(presentationCoordinatorSource).toContain(
+      "function agentRunScopeHasWriteBarrier(scope: string)"
     );
     expect(longWorkspaceRefreshSource).toContain(
-      "hasReachedLongWorkspaceRevisionTarget("
+      "createLongWorkspaceRefreshClock"
     );
-    expect(retryRefreshSource).toContain(
-      "refreshAndSynchronizeRequiredRevision(bookId)"
-    );
-    expect(longWorkspaceModuleSource).toContain("正文编辑已锁定以防止版本冲突");
+    expect(longWorkspaceStoreSource).not.toContain("revisionRequirement");
+    expect(longWorkspaceModuleSource).not.toContain("版本冲突");
   });
 
   it("provides a continuity review entry without replacing chapter authoring", () => {
@@ -111,7 +59,7 @@ describe("long-form renderer vertical slice: rollback-bindings-and-structure", (
     expect(longWorkspaceTypeSource).toContain('root: "continuity_ledger"');
     expect(longWorkspaceTypeSource).toContain("chapterCardId: chapter.id");
     expect(longWorkspaceTypeSource).toContain("正文仍可继续修改");
-    expect(editorSource).toContain("回滚最后提交");
+    expect(editorSource).not.toContain("回滚最后提交");
     expect(editorSource).toContain(
       "本章已有连续性记录；记录仅供参考，不限制正文修改"
     );
@@ -178,21 +126,15 @@ describe("long-form renderer vertical slice: rollback-bindings-and-structure", (
     expect(longWorkspaceSessionSource).toContain("catalogRetryAttempts < 2");
   });
 
-  it("updates long resource bindings through an isolated CAS command", () => {
+  it("updates long resource bindings through the isolated command", () => {
     expect(workspaceDialogLayerSource).toContain("<LongBookBindingsDialog");
     expect(appSource).toContain(
       '@submit-long-bindings="updateLongBookBindings"'
     );
     expect(longBookLifecycleSource).toContain("api.updateBindings({");
-    expect(longBookLifecycleSource).toContain(
-      "expectedProjectRevision: summary.projectRevision"
-    );
-    expect(appSource).toContain(
-      "longWorkspaceEditor.value?.synchronizeProjectRevisions"
-    );
-    expect(editorSessionSource).toContain(
-      "function synchronizeProjectRevisions("
-    );
+    expect(longBookLifecycleSource).not.toContain("expectedProjectRevision");
+    expect(appSource).not.toContain("synchronizeProjectRevisions");
+    expect(editorSessionSource).not.toContain("synchronizeProjectRevisions");
     expect(bindingsSource).toContain("<PopupSelect");
     expect(bindingsSource).toContain("create-short-binding-panel");
     expect(bindingsSource).toContain("create-short-kind-grid");
@@ -239,7 +181,7 @@ describe("long-form renderer vertical slice: rollback-bindings-and-structure", (
       "const applyResult = await workspaceApi.applyOperations({"
     );
     expect(longStructureTransactionsSource).toContain(
-      "expectedImpact: preview.preview.impact"
+      "preview.preview.confirmation"
     );
     expect(longStructureTransactionsSource).not.toContain(
       "longWorkspaceProposals.enqueueManualMutation({"
@@ -260,15 +202,7 @@ describe("long-form renderer vertical slice: rollback-bindings-and-structure", (
     const lazyMutationLoads = longStructureTransactionsSource.match(
       /await loadLongStructureMutationModule\(\)/g
     );
-    expect(lazyMutationLoads).toHaveLength(11);
-
-    for (const resumedPath of longStructureTransactionsSource
-      .split("await loadLongStructureMutationModule()")
-      .slice(1)) {
-      expect(resumedPath.slice(0, 600)).toContain(
-        "assertCurrentLongStructureMutationTarget("
-      );
-    }
+    expect(lazyMutationLoads).toHaveLength(12);
 
     const targetGuard = longStructureTransactionsSource.slice(
       longStructureTransactionsSource.indexOf(
@@ -279,7 +213,7 @@ describe("long-form renderer vertical slice: rollback-bindings-and-structure", (
     expect(targetGuard).toContain("activeLongBookId.value !== expectedBookId");
     expect(targetGuard).toContain("summary?.id !== expectedBookId");
     expect(targetGuard).toContain("current.index !== target.index");
-    expect(targetGuard).toContain("current.revision !== target.revision");
+    expect(targetGuard).not.toContain("current.revision");
 
     const applyMutation = longStructureTransactionsSource.slice(
       longStructureTransactionsSource.indexOf(
@@ -324,8 +258,9 @@ describe("long-form renderer vertical slice: rollback-bindings-and-structure", (
 
     expect(longWorkspaceStoreSource).toContain("const volumeCreateTarget");
     expect(longWorkspaceStoreSource).toContain(
-      "shallowRef<{ readonly bookId: string } | null>"
+      "shallowRef<LongVolumeCreateTarget | null>(null)"
     );
+    expect(longWorkspaceStoreSource).toContain('source: "book-line" | "draft"');
     expect(longStructureTransactionsSource).toContain(
       "longVolumeCreate.value !== target"
     );

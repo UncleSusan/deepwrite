@@ -1,93 +1,19 @@
-import type {
-  CatalogSnapshot,
-  DeepWriteApi,
-  MarketplaceSession
-} from "@deepwrite/contracts";
-import { computed, ref, watch, type ComputedRef, type Ref } from "vue";
-import type { WorkspaceFeatureModule } from "../components/WorkspaceFeatureModules.types";
-import type { AppView, WorkspaceMainView } from "../stores/layoutStore";
-import type { useSettingsStore } from "../stores/settingsStore";
+import type { MarketplaceSession } from "@deepwrite/contracts";
+import { computed, ref, watch } from "vue";
 import type { DialogMode } from "../types/workspace";
 import type {
-  LazyLearningImitationController,
-  LazySubagentAuthoringController
-} from "./useLazyFeatureControllers";
-
-export type ActiveFeature = WorkspaceMainView | "settings" | "long-workspace";
-
-export interface WorkspaceFeatureHostNotifications {
-  error(message: string): void;
-  success(message: string): void;
-}
-
-export interface WorkspaceFeatureHostApi {
-  marketplace: Pick<DeepWriteApi["marketplace"], "session">;
-  workspaceDirectory: Pick<
-    DeepWriteApi["workspaceDirectory"],
-    "choose" | "list"
-  >;
-}
-
-export interface WorkspaceFeatureHostCoordinatorOptions {
-  api(): WorkspaceFeatureHostApi | undefined;
-  view: {
-    current: Ref<AppView>;
-    settingsInitialCategory: Ref<string>;
-    workspaceMain: Ref<WorkspaceMainView>;
-    activeLongBookId: Readonly<Ref<string | null>>;
-  };
-  settingsStore: ReturnType<typeof useSettingsStore>;
-  catalogSnapshot: Readonly<Ref<CatalogSnapshot | null>>;
-  features: {
-    learningImitation: {
-      controller: LazyLearningImitationController["controller"];
-      ensureLoaded(): Promise<unknown>;
-    };
-    subagentAuthoring: {
-      controller: LazySubagentAuthoringController["controller"];
-      ensureLoaded(): Promise<unknown>;
-    };
-  };
-  actions: {
-    saveActiveLongEditorBeforeLeaving(): Promise<boolean>;
-    newShortConversation(): void;
-    newLongConversation(): void;
-  };
-  loaders: {
-    loadModelSettings(): Promise<unknown>;
-    loadOfficialModels(): Promise<unknown>;
-    loadShortAndScriptAgentSettings(): Promise<unknown>;
-    ensureLongAgentSettingsLoaded(): Promise<unknown>;
-    loadWorkspaceAgentSettings(): Promise<unknown>;
-    loadAgentTeamSettings(): Promise<unknown>;
-    loadLibraryAgentSettings(): Promise<unknown>;
-    loadLearningImitationSettings(): Promise<unknown>;
-    loadCatalogSnapshot(): Promise<unknown>;
-  };
-  notifications: WorkspaceFeatureHostNotifications;
-}
-
-export interface WorkspaceFeatureHostCoordinator {
-  isLongWorkspaceActive: ComputedRef<boolean>;
-  activeFeature: ComputedRef<ActiveFeature>;
-  workspaceFeatureModule: ComputedRef<WorkspaceFeatureModule | null>;
-  marketplaceDisplayName: Ref<string | undefined>;
-  showConversation(): void;
-  newConversation(): void;
-  openWorkspaceDialog(mode: DialogMode): Promise<void>;
-  openSettings(category?: string): Promise<void>;
-  openOfficialModelsSettings(): void;
-  openAgentTeams(): Promise<void>;
-  openMarketplace(): Promise<void>;
-  openCloudBackup(): Promise<void>;
-  loadWorkspaceDirectory(): Promise<void>;
-  chooseWorkspaceDirectory(): Promise<void>;
-  closeSettings(): void;
-  applyMarketplaceSession(session: MarketplaceSession): void;
-  loadMarketplaceSession(): Promise<void>;
-  ensureActiveFeatureDependencies(feature: ActiveFeature): Promise<void>;
-  dispose(): void;
-}
+  ActiveFeature,
+  WorkspaceFeatureHostCoordinator,
+  WorkspaceFeatureHostCoordinatorOptions
+} from "./workspaceFeatureHostTypes";
+import { buildWorkspaceFeatureModule } from "./workspaceFeatureHostModule";
+export type {
+  ActiveFeature,
+  WorkspaceFeatureHostApi,
+  WorkspaceFeatureHostCoordinator,
+  WorkspaceFeatureHostCoordinatorOptions,
+  WorkspaceFeatureHostNotifications
+} from "./workspaceFeatureHostTypes";
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
@@ -125,106 +51,14 @@ export function useWorkspaceFeatureHostCoordinator(
         : options.view.workspaceMain.value
   );
 
-  const workspaceFeatureModule = computed<WorkspaceFeatureModule | null>(() => {
-    switch (activeFeature.value) {
-      case "settings":
-        return {
-          kind: "settings",
-          initialCategory: options.view.settingsInitialCategory.value,
-          permissionMode: settingsStore.generalSettings.permissionMode,
-          autoApproveCrossStageOperations:
-            settingsStore.generalSettings.autoApproveCrossStageOperations,
-          autoSaveEnabled: settingsStore.editorAutoSaveEnabled,
-          language: settingsStore.generalSettings.language,
-          showInMenuBar: settingsStore.generalSettings.showInMenuBar,
-          workspacePaneLayout:
-            settingsStore.generalSettings.workspacePaneLayout,
-          defaultTextViewMode:
-            settingsStore.generalSettings.defaultTextViewMode,
-          workspaceAgentSettings: settingsStore.workspaceAgentSettings,
-          creativePlotStages:
-            options.catalogSnapshot.value?.creativePlotStages ?? [],
-          longAgentSettings: settingsStore.longAgentSettings,
-          workspaceAgentLoading: settingsStore.workspaceAgentLoading,
-          workspaceAgentSaving: settingsStore.workspaceAgentSaving,
-          longAgentLoading: settingsStore.longAgentLoading,
-          longAgentSaving: settingsStore.longAgentSaving,
-          longAgentError: settingsStore.longAgentLoadError,
-          libraryAgentSettings: settingsStore.libraryAgentSettings,
-          libraryAgentLoading: settingsStore.libraryAgentLoading,
-          libraryAgentSaving: settingsStore.libraryAgentSaving,
-          learningImitationSettings: settingsStore.learningImitationSettings,
-          learningImitationLoading: settingsStore.learningImitationLoading,
-          learningImitationSaving: settingsStore.learningImitationSaving,
-          modelUsageDashboard: settingsStore.modelUsageDashboard,
-          modelUsageLoading: settingsStore.modelUsageLoading,
-          modelSettings: settingsStore.modelSettings,
-          modelLoading: settingsStore.modelLoading,
-          modelSaving: settingsStore.modelSaving,
-          freeModelsRefreshing: settingsStore.freeModelsRefreshing,
-          freeModelsSaving: settingsStore.freeModelsSaving,
-          modelError: settingsStore.modelError,
-          modelTestMessage: settingsStore.modelTestMessage,
-          testingModelId: settingsStore.testingModelId,
-          officialModelUsageDashboard:
-            settingsStore.officialModelUsageDashboard,
-          officialModelBalance: settingsStore.officialModelBalance,
-          officialModelsLoading: settingsStore.officialModelsLoading,
-          officialModelsSaving: settingsStore.officialModelsSaving,
-          runtimeAvailable: Boolean(options.api())
-        };
-      case "agent-team":
-        return {
-          kind: "agent-team",
-          navigationEpoch: agentTeamNavigationEpoch.value,
-          catalog: settingsStore.agentTeamCatalog,
-          models: settingsStore.modelSettings?.models ?? [],
-          skills: options.catalogSnapshot.value?.skills ?? [],
-          preferredModelId: settingsStore.modelSettings?.defaultModelId ?? null,
-          loading: settingsStore.agentTeamLoading,
-          saving: settingsStore.agentTeamSaving,
-          loadError: settingsStore.agentTeamLoadError,
-          runtimeAvailable: Boolean(options.api()),
-          authoring: options.features.subagentAuthoring.controller.value
-        };
-      case "directory":
-        return {
-          kind: "directory",
-          path: settingsStore.workspaceDirectoryPath,
-          loading: settingsStore.workspaceDirectoryLoading
-        };
-      case "models":
-        return {
-          kind: "models",
-          settings: settingsStore.modelSettings,
-          loading: settingsStore.modelLoading,
-          saving: settingsStore.modelSaving,
-          error: settingsStore.modelError,
-          testMessage: settingsStore.modelTestMessage,
-          testingModelId: settingsStore.testingModelId,
-          alertMessages: settingsStore.modelAlertMessages
-        };
-      case "imitation":
-        return {
-          kind: "imitation",
-          controller: options.features.learningImitation.controller.value,
-          models: settingsStore.modelSettings?.models ?? [],
-          catalogSnapshot: options.catalogSnapshot.value,
-          approvalMode: settingsStore.generalSettings.permissionMode
-        };
-      case "marketplace":
-        return {
-          kind: "marketplace",
-          catalogSnapshot: options.catalogSnapshot.value,
-          session: knownMarketplaceSession.value
-        };
-      case "cloud-backup":
-        return { kind: "cloud-backup" };
-      case "conversation":
-      case "long-workspace":
-        return null;
-    }
-  });
+  const workspaceFeatureModule = computed(() =>
+    buildWorkspaceFeatureModule(
+      activeFeature.value,
+      options,
+      agentTeamNavigationEpoch.value,
+      knownMarketplaceSession.value
+    )
+  );
 
   const stopLearningErrorWatch = watch(
     () =>
@@ -236,6 +70,13 @@ export function useWorkspaceFeatureHostCoordinator(
   const stopAuthoringErrorWatch = watch(
     () =>
       options.features.subagentAuthoring.controller.value?.error.value ?? null,
+    (message) => {
+      if (active && message) options.notifications.error(message);
+    }
+  );
+  const stopLongBookAnalysisErrorWatch = watch(
+    () =>
+      options.features.longBookAnalysis.controller.value?.error.value ?? null,
     (message) => {
       if (active && message) options.notifications.error(message);
     }
@@ -281,13 +122,20 @@ export function useWorkspaceFeatureHostCoordinator(
   async function openWorkspaceDialog(mode: DialogMode): Promise<void> {
     const generation = beginNavigation();
     if (!(await canApplyNavigation(generation))) return;
-    if (mode === "imitation") {
+    if (mode === "imitation" || mode === "long-book-analysis") {
       try {
-        await options.features.learningImitation.ensureLoaded();
+        await (mode === "imitation"
+          ? options.features.learningImitation.ensureLoaded()
+          : options.features.longBookAnalysis.ensureLoaded());
       } catch (error: unknown) {
         if (navigationIsCurrent(generation)) {
           options.notifications.error(
-            errorMessage(error, "加载学习仿写模块失败。")
+            errorMessage(
+              error,
+              mode === "imitation"
+                ? "加载学习仿写模块失败。"
+                : "加载长篇拆书模块失败。"
+            )
           );
         }
         return;
@@ -299,7 +147,9 @@ export function useWorkspaceFeatureHostCoordinator(
       issueBackground(loadWorkspaceDirectory);
     }
     if (
-      (mode === "models" || mode === "imitation") &&
+      (mode === "models" ||
+        mode === "imitation" ||
+        mode === "long-book-analysis") &&
       !settingsStore.modelSettings &&
       options.api()
     ) {
@@ -457,14 +307,16 @@ export function useWorkspaceFeatureHostCoordinator(
     if (feature === "conversation") {
       await Promise.all([
         options.loaders.loadModelSettings(),
-        options.loaders.loadShortAndScriptAgentSettings()
+        options.loaders.loadShortAndScriptAgentSettings(),
+        options.loaders.loadAgentTeamSettings()
       ]);
       return;
     }
     if (feature === "long-workspace") {
       await Promise.all([
         options.loaders.loadModelSettings(),
-        options.loaders.ensureLongAgentSettingsLoaded()
+        options.loaders.ensureLongAgentSettingsLoaded(),
+        options.loaders.loadAgentTeamSettings()
       ]);
       return;
     }
@@ -486,6 +338,7 @@ export function useWorkspaceFeatureHostCoordinator(
     }
     stopLearningErrorWatch();
     stopAuthoringErrorWatch();
+    stopLongBookAnalysisErrorWatch();
   }
 
   return {

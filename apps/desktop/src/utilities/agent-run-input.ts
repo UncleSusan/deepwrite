@@ -82,8 +82,9 @@ export function createAgentRunInput(
     ...(payload.chatAssistantRuntimeContext
       ? { chatAssistantRuntimeContext: payload.chatAssistantRuntimeContext }
       : {}),
-    ...(payload.mode === "chat-assistant" &&
-    payload.chatAssistant?.webSearchEnabled === true
+    ...(payload.webSearchEnabled === true ||
+    (payload.mode === "chat-assistant" &&
+      payload.chatAssistant?.webSearchEnabled === true)
       ? { webSearchEnabled: true }
       : {}),
     ...(payload.agentProfile ? { agentProfile: payload.agentProfile } : {}),
@@ -107,6 +108,9 @@ export function createAgentRunInput(
       : {}),
     ...(payload.learningImitationProfile
       ? { learningImitationProfile: payload.learningImitationProfile }
+      : {}),
+    ...(payload.longBookAnalysisProfile
+      ? { longBookAnalysisProfile: payload.longBookAnalysisProfile }
       : {}),
     ...(payload.workspaceContext
       ? { workspaceContext: payload.workspaceContext }

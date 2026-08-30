@@ -119,6 +119,34 @@ export function toPiThinkingLevel(
   return "xhigh";
 }
 
+export function buildWorkspaceProviderRuntimes(
+  config: AgentProviderRuntimeConfig,
+  temperature?: number,
+  configuredThinkingLevel?: ConfiguredThinkingLevel,
+  compatibility: ProviderRuntimeCompatibilityOptions = {}
+): {
+  model: Model<Api>;
+  streamFn: StreamFn;
+  spawnStreamFn: StreamFn;
+} {
+  const parent = buildProviderRuntime(
+    config,
+    temperature,
+    configuredThinkingLevel,
+    compatibility
+  );
+  if (compatibility.webSearchEnabled !== true) {
+    return { ...parent, spawnStreamFn: parent.streamFn };
+  }
+  const spawn = buildProviderRuntime(
+    config,
+    temperature,
+    configuredThinkingLevel,
+    { ...compatibility, webSearchEnabled: false }
+  );
+  return { ...parent, spawnStreamFn: spawn.streamFn };
+}
+
 /** @internal Exported for runtime-configuration regression tests. */
 export function buildProviderRuntime(
   config: AgentProviderRuntimeConfig,

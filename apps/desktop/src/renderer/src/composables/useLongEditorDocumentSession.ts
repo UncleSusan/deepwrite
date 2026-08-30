@@ -10,7 +10,6 @@ import {
 import {
   type LongArcId,
   type LongFileId,
-  type LongFileRevision,
   type LongReadDocumentResult,
   type LongWorkspaceFileReference,
   type LongWriteDocumentResult,
@@ -30,8 +29,6 @@ export interface LongDocumentState {
   file: LongWorkspaceFileReference;
   content: string;
   savedContent: string;
-  workspaceRevision: number;
-  projectRevision: number;
   loading: boolean;
   saving: boolean;
   loaded: boolean;
@@ -46,7 +43,6 @@ export interface LongVolumeOutlineDraft {
 
 interface EditorViewportSnapshot {
   documentKey: string;
-  fileRevision: string | undefined;
   scrollTop: number;
   selectionStart: number;
   selectionEnd: number;
@@ -69,7 +65,6 @@ export function useLongEditorDocumentSession(options: {
       context: {
         bookId: string;
         fileId: LongFileId;
-        fileRevision: LongFileRevision;
       } | null
     ): void;
   };
@@ -81,7 +76,6 @@ export function useLongEditorDocumentSession(options: {
   currentDirty: ComputedRef<boolean>;
   currentIsStructuredText: ComputedRef<boolean>;
   currentIsWorldbuildingList: ComputedRef<boolean>;
-  currentStaleRecovery: ComputedRef<LongEditorRecoveryRecord | null>;
   viewMode: Ref<TextViewMode>;
   editorInput: Ref<HTMLTextAreaElement | null>;
   activeWorldbuildingItemId: Ref<string | null>;
@@ -89,7 +83,6 @@ export function useLongEditorDocumentSession(options: {
   activeBookLineContentTab: Ref<"outline" | "foreshadowing">;
   activePlotPointTab: Ref<"summary" | "storyline" | "foreshadowing">;
   activeStoryPlotId: Ref<string | null>;
-  workspaceRevision: () => number | undefined;
   saveVolumeOutline: (volumeId: string) => Promise<boolean>;
   savePlotPointContent: (
     plotPointId: LongArcId,
@@ -104,9 +97,7 @@ export function useLongEditorDocumentSession(options: {
     bookId: string,
     fileId: string
   ) => void;
-  removeStaleRecoveryState: (key: string) => void;
   persistRecoveryForKey: (key: string) => void;
-  staleRecoveryByKey: Ref<Record<string, LongEditorRecoveryRecord>>;
 }): {
   heldSelectionFile: Ref<LongWorkspaceSelectionFile | null>;
   workspaceSavePending: Ref<boolean>;
@@ -124,8 +115,6 @@ export function useLongEditorDocumentSession(options: {
   loadSelectedDocument: (force?: boolean) => Promise<void>;
   prefetchWorldbuildingSelectionFiles: () => Promise<void>;
   prefetchActiveSelectionFiles: () => Promise<void>;
-  restoreStaleRecovery: () => void;
-  copyStaleRecovery: () => Promise<void>;
   ensureDocumentsLoaded: (
     files: LongWorkspaceSelectionFile[]
   ) => Promise<boolean>;
@@ -135,16 +124,6 @@ export function useLongEditorDocumentSession(options: {
   ) => Promise<boolean>;
   saveCurrentDocument: () => Promise<void>;
   saveAllChanges: () => Promise<boolean>;
-  synchronizeProjectRevisions: (
-    workspaceRevision: number,
-    projectRevision: number
-  ) => void;
-  synchronizeProjectRevisionsIfClean: (
-    bookId: string,
-    workspaceRevision: number,
-    projectRevision: number,
-    includeVolumeDrafts?: boolean
-  ) => boolean;
 } {
   const { props, emit } = options;
   const { documentStates } = options;
@@ -223,7 +202,6 @@ export function useLongEditorDocumentSession(options: {
     if (!input || options.viewMode.value !== "edit") return null;
     return {
       documentKey: currentEditorViewportKey(),
-      fileRevision: options.currentSelectionFile.value?.file.revision,
       scrollTop: input.scrollTop,
       selectionStart: input.selectionStart,
       selectionEnd: input.selectionEnd,
@@ -323,11 +301,9 @@ export function useLongEditorDocumentSession(options: {
       file,
       content: existing?.content ?? "",
       savedContent: existing?.savedContent ?? "",
-      workspaceRevision: existing?.workspaceRevision ?? 0,
-      projectRevision: existing?.projectRevision ?? 0,
       loading: true,
       saving: false,
-      // Keep the just-saved editor mounted while its new CAS baseline is read.
+      // Keep the just-saved editor mounted while the refreshed file is read.
       // `loading` still makes the textarea read-only, without flashing a loading
       // placeholder or swapping the editor background during the refresh.
       loaded: dirty || refreshingJustSavedDocument,
@@ -341,9 +317,7 @@ export function useLongEditorDocumentSession(options: {
   ): void {
     if (
       first.file.id !== next.file.id ||
-      first.file.revision !== next.file.revision ||
-      first.workspaceRevision !== next.workspaceRevision ||
-      first.projectRevision !== next.projectRevision ||
+      first.file.updatedAt !== next.file.updatedAt ||
       first.totalCharacters !== next.totalCharacters
     ) {
       throw new Error("长篇文件在分页读取期间发生变化，请重新打开。");
@@ -363,8 +337,6 @@ export function useLongEditorDocumentSession(options: {
         file: selectedFile.file,
         content,
         savedContent: content,
-        workspaceRevision: options.workspaceRevision() ?? 0,
-        projectRevision: 0,
         loading: false,
         saving: false,
         loaded: true,
@@ -384,7 +356,7 @@ export function useLongEditorDocumentSession(options: {
       !force &&
       existing?.loaded &&
       !existing.loading &&
-      (existing.file.revision === selectedFile.file.revision ||
+      (existing.file.updatedAt === selectedFile.file.updatedAt ||
         existing.content !== existing.savedContent)
     ) {
       return;
@@ -393,7 +365,7 @@ export function useLongEditorDocumentSession(options: {
     if (
       !force &&
       inflight &&
-      existing?.file.revision === selectedFile.file.revision
+      existing?.file.updatedAt === selectedFile.file.updatedAt
     ) {
       await inflight;
       return;
@@ -443,28 +415,13 @@ export function useLongEditorDocumentSession(options: {
         const recovery = editable
           ? options.readRecoveryRecord(bookId, firstPage.file.id)
           : null;
-        const recoveryMatchesDisk =
-          recovery?.baseRevision === firstPage.file.revision;
         const recoveredContent =
-          recoveryMatchesDisk && recovery.content !== content
-            ? recovery.content
-            : content;
-        const latestState = documentStates.value[key];
+          recovery && recovery.content !== content ? recovery.content : content;
         replaceDocumentState(key, {
           bookId,
           file: firstPage.file,
           content: recoveredContent,
           savedContent: content,
-          // Another document save can advance the shared CAS baseline while this
-          // file is being paged in. Never regress to the older read baseline.
-          workspaceRevision: Math.max(
-            firstPage.workspaceRevision,
-            latestState?.workspaceRevision ?? 0
-          ),
-          projectRevision: Math.max(
-            firstPage.projectRevision,
-            latestState?.projectRevision ?? 0
-          ),
           loading: false,
           saving: false,
           loaded: true,
@@ -472,21 +429,10 @@ export function useLongEditorDocumentSession(options: {
         });
         if (recovery?.content === content) {
           options.clearRecoveryRecordForKey(key, bookId, firstPage.file.id);
-        } else if (recoveryMatchesDisk) {
-          options.removeStaleRecoveryState(key);
+        } else if (recovery) {
           uiMessage.info(
             `已恢复“${props.selection?.title ?? firstPage.file.path}”的本机未保存内容。`
           );
-        } else if (recovery) {
-          options.staleRecoveryByKey.value = {
-            ...options.staleRecoveryByKey.value,
-            [key]: recovery
-          };
-          uiMessage.warning(
-            "检测到基于旧版本的长篇恢复副本：磁盘内容未被覆盖，副本已保留供你核对。"
-          );
-        } else {
-          options.removeStaleRecoveryState(key);
         }
         if (
           props.bookId === bookId &&
@@ -494,8 +440,7 @@ export function useLongEditorDocumentSession(options: {
         ) {
           emit("contextChange", {
             bookId,
-            fileId: firstPage.file.id,
-            fileRevision: firstPage.file.revision
+            fileId: firstPage.file.id
           });
         }
       } catch (error: unknown) {
@@ -506,8 +451,7 @@ export function useLongEditorDocumentSession(options: {
           replaceDocumentState(key, {
             ...latest,
             loading: false,
-            // Preserve any previously shown text, but never keep it editable after
-            // a failed refresh against a newer CAS baseline.
+            // Preserve previously shown text while the failed read is retried.
             loaded: false,
             loadError: message
           });
@@ -578,51 +522,6 @@ export function useLongEditorDocumentSession(options: {
     );
   }
 
-  function restoreStaleRecovery(): void {
-    const selectedFile = options.currentSelectionFile.value;
-    const state = currentState.value;
-    const recovery = options.currentStaleRecovery.value;
-    if (
-      !selectedFile ||
-      !state ||
-      !recovery ||
-      options.currentReadOnly.value ||
-      state.loading ||
-      recovery.bookId !== state.bookId ||
-      recovery.fileId !== state.file.id
-    ) {
-      return;
-    }
-    const key = stateKey(state.file.id, state.bookId);
-    replaceDocumentState(key, {
-      ...state,
-      content: recovery.content
-    });
-    options.removeStaleRecoveryState(key);
-    if (recovery.content === state.savedContent) {
-      options.clearRecoveryRecordForKey(key, state.bookId, state.file.id);
-    } else {
-      // This explicit action rebases only the local recovery record. The next
-      // disk save still uses the freshly-read disk CAS revisions in `state`.
-      options.persistRecoveryForKey(key);
-    }
-    uiMessage.info("已载入恢复副本供你核对；磁盘文件尚未被修改。");
-  }
-
-  async function copyStaleRecovery(): Promise<void> {
-    const recovery = options.currentStaleRecovery.value;
-    if (!recovery) return;
-    try {
-      if (!navigator.clipboard?.writeText) {
-        throw new Error("当前环境不支持剪贴板");
-      }
-      await navigator.clipboard.writeText(recovery.content);
-      uiMessage.success("恢复副本已复制到剪贴板。");
-    } catch {
-      uiMessage.warning("无法写入剪贴板；你仍可载入恢复副本后手工复制。");
-    }
-  }
-
   async function ensureDocumentsLoaded(
     files: LongWorkspaceSelectionFile[]
   ): Promise<boolean> {
@@ -660,35 +559,18 @@ export function useLongEditorDocumentSession(options: {
       const result = await api.writeDocument({
         bookId,
         fileId: state.file.id,
-        content: submittedContent,
-        baseRevision: state.file.revision,
-        baseWorkspaceRevision: state.workspaceRevision,
-        baseProjectRevision: state.projectRevision
+        content: submittedContent
       });
       const latest = documentStates.value[key];
       if (!latest) return false;
-      const bookKeyPrefix = `${bookId}\u0000`;
-      documentStates.value = Object.fromEntries(
-        Object.entries(documentStates.value).map(([stateKeyValue, value]) => [
-          stateKeyValue,
-          stateKeyValue.startsWith(bookKeyPrefix)
-            ? {
-                ...value,
-                ...(stateKeyValue === key
-                  ? {
-                      file: result.file,
-                      savedContent: submittedContent,
-                      saving: false,
-                      loaded: true,
-                      loadError: null
-                    }
-                  : {}),
-                workspaceRevision: result.workspaceRevision,
-                projectRevision: result.projectRevision
-              }
-            : value
-        ])
-      );
+      replaceDocumentState(key, {
+        ...latest,
+        file: result.file,
+        savedContent: submittedContent,
+        saving: false,
+        loaded: true,
+        loadError: null
+      });
       emit("saved", result);
       if (
         props.bookId === bookId &&
@@ -696,8 +578,7 @@ export function useLongEditorDocumentSession(options: {
       ) {
         emit("contextChange", {
           bookId,
-          fileId: result.file.id,
-          fileRevision: result.file.revision
+          fileId: result.file.id
         });
       }
       const savedState = documentStates.value[key];
@@ -712,7 +593,7 @@ export function useLongEditorDocumentSession(options: {
             `已保存“${props.selection?.title ?? state.file.path}”`
           );
         } else {
-          uiMessage.info("已保存提交时版本；保存期间的新修改仍待保存。");
+          uiMessage.info("已保存提交时内容；保存期间的新修改仍待保存。");
         }
       }
       return true;
@@ -723,13 +604,7 @@ export function useLongEditorDocumentSession(options: {
       }
       const message =
         error instanceof Error ? error.message : "保存长篇文件失败。";
-      if (/revision|冲突|conflict/iu.test(message)) {
-        uiMessage.warning(
-          "文件已在其他位置更新，本次修改未覆盖磁盘内容；请保留当前文本并重新打开后合并。"
-        );
-      } else {
-        uiMessage.error(message);
-      }
+      uiMessage.error(message);
       return false;
     }
   }
@@ -788,8 +663,7 @@ export function useLongEditorDocumentSession(options: {
 
   /**
    * App.vue calls this before changing books or unmounting the long editor.
-   * Writes are sequential because each CAS write advances the shared workspace
-   * and project revisions consumed by the next dirty document.
+   * Writes are sequential so leaving a workspace has deterministic completion.
    */
   async function saveAllChanges(): Promise<boolean> {
     if (activeSavePromise && !(await activeSavePromise)) {
@@ -870,78 +744,6 @@ export function useLongEditorDocumentSession(options: {
     return saved;
   }
 
-  function synchronizeProjectRevisions(
-    workspaceRevision: number,
-    projectRevision: number
-  ): void {
-    if (
-      !synchronizeProjectRevisionsIfClean(
-        props.bookId,
-        workspaceRevision,
-        projectRevision,
-        false
-      )
-    ) {
-      throw new Error("存在未保存的长篇文档，不能刷新项目版本基线。");
-    }
-  }
-
-  function synchronizeProjectRevisionsIfClean(
-    bookId: string,
-    workspaceRevision: number,
-    projectRevision: number,
-    includeVolumeDrafts = true
-  ): boolean {
-    // A ref can briefly outlive a book switch until Vue applies the new props.
-    // Treat an inactive book as a no-op; `false` is reserved for a dirty current
-    // book so App.vue only shows a conflict warning for real unsaved content.
-    if (bookId !== props.bookId) return true;
-    const prefix = `${bookId}\u0000`;
-    const currentBookStates = Object.entries(documentStates.value).filter(
-      ([key]) => key.startsWith(prefix)
-    );
-    if (
-      includeVolumeDrafts &&
-      (Object.values(options.volumeOutlineDrafts.value).some(
-        (draft) => !draft.saving && draft.content !== draft.savedContent
-      ) ||
-        Object.values(options.plotPointSummaryDrafts.value).some(
-          (draft) => !draft.saving && draft.content !== draft.savedContent
-        ))
-    ) {
-      return false;
-    }
-    if (
-      currentBookStates.every(
-        ([, state]) =>
-          state.workspaceRevision === workspaceRevision &&
-          state.projectRevision === projectRevision
-      )
-    ) {
-      return true;
-    }
-    if (
-      currentBookStates.some(
-        ([, state]) => state.loaded && state.content !== state.savedContent
-      )
-    ) {
-      return false;
-    }
-    documentStates.value = Object.fromEntries(
-      Object.entries(documentStates.value).map(([key, state]) => [
-        key,
-        key.startsWith(prefix)
-          ? {
-              ...state,
-              workspaceRevision,
-              projectRevision
-            }
-          : state
-      ])
-    );
-    return true;
-  }
-
   watch(
     () => props.bookId,
     () => {
@@ -1004,27 +806,6 @@ export function useLongEditorDocumentSession(options: {
   );
 
   watch(
-    () => options.workspaceRevision(),
-    () => {
-      const snapshot = pendingSaveViewport;
-      if (!snapshot) return;
-      if (currentEditorViewportKey() !== snapshot.documentKey) {
-        pendingSaveViewport = null;
-        return;
-      }
-      if (
-        options.currentSelectionFile.value?.file.revision !==
-        snapshot.fileRevision
-      ) {
-        return;
-      }
-      pendingSaveViewport = null;
-      void restoreCurrentEditorViewport(snapshot);
-    },
-    { flush: "post" }
-  );
-
-  watch(
     () =>
       [
         props.bookId,
@@ -1044,7 +825,7 @@ export function useLongEditorDocumentSession(options: {
       [
         props.bookId,
         options.currentSelectionFile.value?.file.id,
-        options.currentSelectionFile.value?.file.revision
+        options.currentSelectionFile.value?.file.updatedAt
       ] as const,
     () => {
       const selectedFile = options.currentSelectionFile.value;
@@ -1053,8 +834,7 @@ export function useLongEditorDocumentSession(options: {
         selectedFile
           ? {
               bookId: props.bookId,
-              fileId: selectedFile.file.id,
-              fileRevision: selectedFile.file.revision
+              fileId: selectedFile.file.id
             }
           : null
       );
@@ -1089,13 +869,9 @@ export function useLongEditorDocumentSession(options: {
     loadSelectedDocument,
     prefetchWorldbuildingSelectionFiles,
     prefetchActiveSelectionFiles,
-    restoreStaleRecovery,
-    copyStaleRecovery,
     ensureDocumentsLoaded,
     saveDocumentState,
     saveCurrentDocument,
-    saveAllChanges,
-    synchronizeProjectRevisions,
-    synchronizeProjectRevisionsIfClean
+    saveAllChanges
   };
 }

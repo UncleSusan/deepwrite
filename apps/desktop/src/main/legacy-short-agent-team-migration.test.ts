@@ -9,7 +9,7 @@ import { migrateLegacyShortAgentTeamSettings } from "./legacy-short-agent-team-m
 
 function definition(
   index: number,
-  parent: "character" | "plot" | "draft"
+  parent: "character" | "plot" | "outline" | "draft" | "writer"
 ): ShortAgentSubagentDefinition {
   return {
     id: `helper_${index}`,
@@ -50,11 +50,30 @@ function legacySettings(count = 20) {
   };
 }
 
+function earliestLegacySettings(count = 20) {
+  const parents = [
+    ["character_design", "character"],
+    ["plot_design", "plot"],
+    ["outline", "outline"],
+    ["expert_draft_coordinator", "draft"],
+    ["expert_section_writer", "writer"]
+  ] as const;
+  return {
+    workspaceType: "short",
+    teams: parents.map(([parentAgentId, parent]) => ({
+      parentAgentId,
+      subagents: Array.from({ length: count }, (_, index) =>
+        definition(index + 1, parent)
+      )
+    }))
+  };
+}
+
 describe("legacy short agent team migration", () => {
   it("merges three full teams in stage order without losing runtime fields", () => {
     const migrated = migrateLegacyShortAgentTeamSettings(legacySettings());
-    expect(migrated?.teams).toHaveLength(1);
-    const definitions = migrated?.teams[0]?.subagents ?? [];
+    expect(migrated).toHaveLength(1);
+    const definitions = migrated?.[0]?.teams[0]?.subagents ?? [];
     expect(definitions).toHaveLength(60);
     expect(
       new Set(definitions.map(({ id }) => id.toLocaleLowerCase())).size
@@ -93,6 +112,32 @@ describe("legacy short agent team migration", () => {
     ).toBeUndefined();
   });
 
+  it("migrates the earliest five-parent format and splits overflow without data loss", () => {
+    const migrated = migrateLegacyShortAgentTeamSettings(
+      earliestLegacySettings()
+    );
+    expect(migrated?.map(({ teams }) => teams[0]!.subagents.length)).toEqual([
+      60, 40
+    ]);
+    const definitions =
+      migrated?.flatMap(({ teams }) => teams[0]!.subagents) ?? [];
+    expect(definitions).toHaveLength(100);
+    expect(new Set(definitions.map(({ id }) => id)).size).toBe(100);
+    expect(
+      definitions.some(({ id }) => id.endsWith("_expert_section_writer"))
+    ).toBe(true);
+  });
+
+  it("accepts the intermediate four-parent format", () => {
+    const raw = earliestLegacySettings(1);
+    raw.teams = raw.teams.filter(
+      ({ parentAgentId }) => parentAgentId !== "outline"
+    );
+    expect(
+      migrateLegacyShortAgentTeamSettings(raw)?.[0]?.teams[0]?.subagents
+    ).toHaveLength(4);
+  });
+
   it("adds an incrementing suffix when the stage suffix is already occupied", () => {
     const raw = legacySettings(0);
     raw.teams[0]!.subagents = [
@@ -107,8 +152,9 @@ describe("legacy short agent team migration", () => {
       { ...definition(1, "draft"), id: "HELPER", name: "助手" }
     ];
 
-    const definitions =
-      migrateLegacyShortAgentTeamSettings(raw)?.teams[0]?.subagents ?? [];
+    const migrated = migrateLegacyShortAgentTeamSettings(raw);
+    expect(migrated).toHaveLength(1);
+    const definitions = migrated?.[0]?.teams[0]?.subagents ?? [];
     expect(definitions[2]).toMatchObject({
       id: "HELPER_expert_draft_coordinator_2",
       name: "助手（正文）_2"

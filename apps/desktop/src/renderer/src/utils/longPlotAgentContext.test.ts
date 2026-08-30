@@ -8,7 +8,6 @@ import { buildLongPlotFocusSnapshot } from "./longPlotAgentContext";
 
 const navigation: LongWorkspaceNavigationSnapshot = {
   schemaVersion: 1,
-  revision: 3,
   bookId: "longbook_plot_focus",
   updatedAt: "2026-07-30T10:00:00.000Z",
   counts: {

@@ -10,6 +10,7 @@ import type {
   LongDraftSectionDeleteTarget,
   LongPlotPointCreateTarget,
   LongTreeItemDeleteTarget,
+  LongVolumeCreateTarget,
   LongWorldbuildingItemCreateTarget
 } from "../../stores/longWorkspaceStore";
 import type {
@@ -41,7 +42,7 @@ export interface LongStructureTransactionsState {
   chapterCardCreateTarget: Ref<LongChapterCardCreateTarget | null>;
   draftSectionDeleteTarget: Ref<LongDraftSectionDeleteTarget | null>;
   treeItemDeleteTarget: Ref<LongTreeItemDeleteTarget | null>;
-  volumeCreateTarget: Ref<{ readonly bookId: string } | null>;
+  volumeCreateTarget: Ref<LongVolumeCreateTarget | null>;
   selectedResourceId: Ref<string>;
 }
 
@@ -77,7 +78,6 @@ export interface LongStructureTransactionsCoordinatorOptions {
 export interface LongStructureMutationTargetSnapshot {
   readonly bookId: string;
   readonly index: LongWorkspaceIndexSnapshot;
-  readonly revision: number;
 }
 
 export interface LongStructureMutationLease {

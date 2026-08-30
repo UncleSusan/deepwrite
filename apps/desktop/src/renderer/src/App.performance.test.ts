@@ -8,11 +8,9 @@ import libraryTransactionsSource from "./composables/useCatalogLibraryTransactio
 import lifecycleSource from "./composables/useWorkspaceLifecycleCoordinator.ts?raw";
 import layoutStoreSource from "./stores/layoutStore.ts?raw";
 import lazyLongBookLifecycleSource from "./composables/useLazyLongBookLifecycleCoordinator.ts?raw";
-import lazyLongRollbackSource from "./composables/useLazyLongRollbackCoordinator.ts?raw";
 import lazyLongStructureTransactionsSource from "./composables/useLazyLongStructureTransactionsCoordinator.ts?raw";
 import lazyShortBookLifecycleSource from "./composables/useLazyShortBookLifecycleCoordinator.ts?raw";
 import longBookLifecycleSource from "./composables/useLongBookLifecycleCoordinator.ts?raw";
-import longRollbackSource from "./composables/useLongRollbackCoordinator.ts?raw";
 import longStructureTransactionsSource from "./composables/useLongStructureTransactionsCoordinator.ts?raw";
 import longStructureTransactionsSyncSource from "./composables/long-structure-transactions/sync.ts?raw";
 import resourceSource from "./composables/useWorkspaceResourceCoordinator.ts?raw";
@@ -42,7 +40,7 @@ describe("App performance boundaries", () => {
     expect(source).toContain("useLazyLongStructureTransactionsCoordinator");
     expect(source).toContain("useLongProposalRuntimeCoordinator");
     expect(source).toContain("useLazyLongBookLifecycleCoordinator");
-    expect(source).toContain("useLazyLongRollbackCoordinator");
+    expect(source).not.toContain("useLazyLongRollbackCoordinator");
     expect(source).toContain("useCatalogLibraryTransactionsCoordinator");
     expect(source).toContain("useCatalogDocumentPersistence");
     expect(source).toContain("useCatalogWorkspaceProjectionCoordinator");
@@ -109,9 +107,6 @@ describe("App performance boundaries", () => {
     );
     expect(shortBookLifecycleSource).toContain("function updateBookBindings(");
     expect(shortBookLifecycleSource).toContain("function removeBook(");
-    expect(longRollbackSource).toContain("function openLongRollbackDialog(");
-    expect(longRollbackSource).toContain("function closeLongRollbackDialog(");
-    expect(longRollbackSource).toContain("function confirmLongRollback(");
   });
 
   it("keeps whole-book lifecycle behavior behind a lazy static boundary", () => {
@@ -121,9 +116,7 @@ describe("App performance boundaries", () => {
     expect(source).toContain(
       'import { useLazyShortBookLifecycleCoordinator } from "./composables/useLazyShortBookLifecycleCoordinator";'
     );
-    expect(source).toContain(
-      'import { useLazyLongRollbackCoordinator } from "./composables/useLazyLongRollbackCoordinator";'
-    );
+    expect(source).not.toContain("useLazyLongRollbackCoordinator");
     expect(source).toContain(
       'import { useLazyLongStructureTransactionsCoordinator } from "./composables/useLazyLongStructureTransactionsCoordinator";'
     );
@@ -133,9 +126,7 @@ describe("App performance boundaries", () => {
     expect(source).not.toContain(
       'from "./composables/useShortBookLifecycleCoordinator"'
     );
-    expect(source).not.toContain(
-      'from "./composables/useLongRollbackCoordinator"'
-    );
+    expect(source).not.toContain("useLongRollbackCoordinator");
     expect(source).not.toContain(
       'from "./composables/useLongStructureTransactionsCoordinator"'
     );
@@ -157,15 +148,6 @@ describe("App performance boundaries", () => {
     );
     expect(lazyShortBookLifecycleSource).toContain(
       'return import("./useShortBookLifecycleCoordinator")'
-    );
-    expect(lazyLongRollbackSource).toContain(
-      "import type {\n  LongRollbackCoordinator,"
-    );
-    expect(lazyLongRollbackSource).not.toContain(
-      "import { useLongRollbackCoordinator }"
-    );
-    expect(lazyLongRollbackSource).toContain(
-      'return import("./useLongRollbackCoordinator")'
     );
     expect(lazyLongStructureTransactionsSource).toContain(
       'import type { LongWorldbuildingSyncBookOption } from "../utils/longWorldbuildingSync"'
@@ -215,9 +197,6 @@ describe("App performance boundaries", () => {
       cleanup.indexOf("disposeLazyApprovalNavigationCoordinator")
     );
     expect(cleanup.indexOf("disposeShortBookLifecycle")).toBeLessThan(
-      cleanup.indexOf("disposeLongRollback")
-    );
-    expect(cleanup.indexOf("disposeLongRollback")).toBeLessThan(
       cleanup.indexOf("disposeLongBookLifecycle")
     );
     expect(cleanup.indexOf("disposeLongBookLifecycle")).toBeLessThan(

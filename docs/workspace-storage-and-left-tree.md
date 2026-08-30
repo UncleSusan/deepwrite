@@ -111,7 +111,7 @@
 
 ## 2. 长篇的磁盘结构
 
-长篇项目同样是一个文件夹 + `deepwrite.json`，但清单刻意保持极简，结构和文件索引全部在 `long/index.json`（见 `book.ts:210-224` 注释）。ID 全部是不透明稳定 id（`longbook_`、`volume_`、`arc_`、`chapter_`、`character_`、`world_`、`commit_`、`file_` 等前缀，见 `long-workspace/ids.ts:141-206`）。
+长篇项目同样是一个文件夹 + `deepwrite.json`，但清单刻意保持极简，结构和文件索引全部在 `long/index.json`（见 `book.ts` 中 `LongProjectManifestSchema` 注释）。ID 全部是不透明稳定 id（`longbook_`、`volume_`、`arc_`、`chapter_`、`character_`、`world_`、`commit_`、`file_` 等前缀，见 `long-workspace/ids.ts`）。`commit_` 只标识章节连续性账本记录，不是可回滚的内容版本。
 
 ```text
 我的长篇/
@@ -151,20 +151,20 @@
     │                   ├── current-state.md   # 该人物本章后当前状态
     │                   └── history.md         # 该人物历史轨迹增量
     └── ledger/
-        └── <commit_*>.json           # 每次章节提交的账本记录（JSON，含正文快照与变更）
+        └── <commit_*>.json           # 每次章节提交的账本记录（JSON，语义审计，无正文快照）
 ```
 
-路径规则：目录名是实体 id 的 `sha256` 前 32 位十六进制（`long-project-store/paths.ts:20-22` 的 `storageKey`），这样展示名/顺序变化永远不影响身份。契约层另有「兼容路径」：旧版项目的 `long/characters/<原名>/` 等未哈希目录在读取时仍然兼容（`paths.ts:234-268`）。文件引用统一是 `{id, path, revision, updatedAt}` 四元组，`revision` 为 `v2:<字节数>:<sha256>` 内容哈希，用于并发冲突检测。
+路径规则：目录名是实体 id 的 `sha256` 前 32 位十六进制（`long-project-store/paths.ts` 的 `storageKey`），这样展示名/顺序变化永远不影响身份。契约层另有「兼容路径」：旧版项目的 `long/characters/<原名>/` 等未哈希目录在读取时仍然兼容（`paths.ts` 的 `isCompatibleRolePath`）。文件引用统一是 `{id, path, updatedAt}` 三元组。长篇不再保存内容 `revision`、回滚快照或乐观并发哈希；打开旧项目时会剥离这些字段后按当前内容继续编辑（`long-project-store/migrations/version-metadata.ts`）。
 
 ### 2.1 `deepwrite.json`（长篇清单，schemaVersion 1）
 
-字段（`long-workspace/book.ts:215-223`）：`schemaVersion`、`revision`、`kind: "deepwrite.long-book"`、`id`（`longbook_*`）、`title`、`bookType: "long"`、`genre`（自由字符串）、`status`（editing/completed）、`linkedMaterialIdsByKind` / `linkedSkillIdsByKind`（同短篇）、`linkedResourceStageScopes`（可选：按库限制启用的长篇阶段）、`createdAt` / `updatedAt`、`workspaceIndexFile`（固定指向 `long/index.json` 的文件引用）。
+字段（`long-workspace/book.ts` 的 `LongProjectManifestSchema`）：`schemaVersion`、`kind: "deepwrite.long-book"`、`id`（`longbook_*`）、`title`、`bookType: "long"`、`genre`（自由字符串）、`status`（editing/completed）、`linkedMaterialIdsByKind` / `linkedSkillIdsByKind`（同短篇）、`linkedResourceStageScopes`（可选：按库限制启用的长篇阶段）、`createdAt` / `updatedAt`、`workspaceIndexFile`（固定指向 `long/index.json` 的文件引用）。清单没有项目修订号；`schemaVersion` 只标识结构格式。
 
 ### 2.2 `long/index.json`（工作区索引）
 
 `LongWorkspaceIndexSnapshotSchema`（`long-workspace/index-schema.ts`）字段：
 
-- `schemaVersion` / `revision` / `bookId` / `updatedAt`：版本与同步水位。
+- `schemaVersion` / `bookId` / `updatedAt`：结构格式版本与同步水位。索引同样没有内容修订号。
 - `bookLine`：`long/plot/book-line.md` 的文件引用。
 - `featureSettings`：三项条目布局开关（`worldbuildingItemLayout` / `characterAndContinuityItemLayout` / `plotItemLayout`），值 `top-tabs` / `right-list` / `left-tree`，**直接决定左侧树是否展开到条目级**（见第 3 节）。
 - `worldbuilding[]`：世界观分类。`format: "text"`（contentAuthority: markdown，一个 `content.md`）或 `format: "list"`（contentAuthority: files，`overview` + `items[]`，每个 item 有 `file` 引用）。新书默认建 7 个分类：规则/势力/地理/历史/术语/境界/物品（`long-project-store/types.ts:56-64`）。
@@ -182,7 +182,7 @@
   - `narrativePlacements[]`：叙事落点 `{eventId, chapterCardId, orderInChapter, mode: scene/flashback/…, disclosure: hint/partial/full/false, writingPrompt, status, commitId}`。
   - `foreshadowing[]`：伏笔线 `{id, title, coreQuestion, hiddenTruth?, plannedSpan?, truthEventId, expectedReaderEffect, status, beats[]}`；每个触点 beat 有类型（source/plant/reinforce/misdirect/partial_reveal/reveal/payoff/aftermath）、计划锚点（卷/剧情点）与执行锚点（事件/落点/章卡）。
 - `chapters[]`：每章的文件束 `{chapterCardId, body, card, characterState, handoff, foreshadowingChanges?, worldReveals?, characterContinuity[], bodyStatus: empty/written, commitId}`。
-- `ledger`：`{committedThroughChapterId, commits[], projection}`。`commits[]` 每项 `{id, mode: structured/text_files/import_checkpoint, sequence, chapterCardId, committedAt, reversible, sourceRevision, placementIds, foreshadowingBeatIds, recordFile}`；`recordFile` 指向 `long/ledger/<hash>.json`，记录文件内含章末摘要、覆盖度核验、事实/认知/开放循环变更、文件变更快照等（`long-ledger.ts`）。`projection` 是全部提交累计出的连续性投影（facts/knowledge/openLoops/latestHandoff）。
+- `ledger`：`{committedThroughChapterId, commits[], projection}`。`commits[]` 每项 `{id, mode: structured/text_files/import_checkpoint, sequence, chapterCardId, committedAt, placementIds, foreshadowingBeatIds, recordFile}`；`recordFile` 指向 `long/ledger/<hash>.json`，记录文件只保存本章语义审计（提交说明、章末摘要、覆盖度核验、落点/伏笔决策、事实/认知/开放循环变更、连续性文件清单、章末人物状态与接续包），不含正文快照、`before` 状态或 `reversible` 回滚元数据（`long-ledger.ts`）。`projection` 是全部提交累计出的连续性投影（facts/knowledge/openLoops/latestHandoff）。
 
 ### 2.3 导航快照（LongBookSummary）
 
@@ -224,7 +224,7 @@ LeftSidebar.vue → TreeSection.vue（每个 section）→ TreeNodeItem.vue（�
 
 定义在 `types/workspace.ts:156-212`。通用字段：`id`、`label`、`icon`、`badge`（角标）、`muted/readOnly/missing/unavailable`、`children`、`selectableBranch`（有子节点仍可被选中为上下文）、`targetDocumentId`（合成导航节点指向的真实编辑器文档）。领域字段：
 
-- 书籍节点：`catalogNodeType: "book" | "long-book"`、`workspaceType: "short" | "script" | "long"`、`projectRevision`、`boundSkill/MaterialLibraryIds(ByKind)`（绑定关系）。
+- 书籍节点：`catalogNodeType: "book" | "long-book"`、`workspaceType: "short" | "script" | "long"`、`boundSkill/MaterialLibraryIds(ByKind)`（绑定关系）。`projectRevision` 只用于短篇/剧本的乐观并发，长篇节点不带内容修订号。
 - 目录/分类节点：`catalogNodeType: "category"`、`stageCategoryId`（阶段 id）、`draftDirectoryId`、`characterDirectory`。
 - 文档/小节节点：`catalogNodeType: "document"`、`expertSectionId`（正文小节）、`characterStateDocumentId`（配套人物状态文档）、`characterItemId`（人物条目）、`catalogEntryId`（库条目）。
 - 长篇节点：`longBookId`、`longWorkspaceSelection`（选中后给长篇工作区的选择描述）、`longCharacterGroup`、`longDraftVolumeId`、`longTreeCollection` / `longTreeItem`（可增删排序的集合/条目标记）。
@@ -288,7 +288,7 @@ LeftSidebar.vue → TreeSection.vue（每个 section）→ TreeNodeItem.vue（�
 | 短篇/剧本/库清单 Schema | `packages/contracts/src/catalog/manifests.ts`、`kinds.ts`、`draft-directory.ts`、`character-structure.ts`、`plot-stages.ts` |
 | Folder Catalog 实现 | `apps/desktop/src/utilities/folder-catalog-store.ts` 及 `folder-catalog-store/`（manifest/lifecycle/registry/paths-io/snapshot/writing-context…） |
 | 长篇契约 | `packages/contracts/src/long-workspace/`（book/ids/index-schema/plot/characters/continuity/worldbuilding/navigation）、`long-ledger.ts` |
-| 长篇实现 | `apps/desktop/src/utilities/long-project-store.ts` 及 `long-project-store/`（paths/io/lifecycle/documents/operations/commit-chapter/write-chapter/revisions/rollback/search…）、`long-project-catalog.ts`、`long-workspace-service.ts` |
+| 长篇实现 | `apps/desktop/src/utilities/long-project-store.ts` 及 `long-project-store/`（paths/io/lifecycle/documents/operations/commit-chapter/write-chapter/search/migrations…）、`long-project-catalog.ts`、`long-workspace-service.ts` |
 | Core 命令路由 | `apps/desktop/src/utilities/core-entry.ts`（`catalog.*`、`long.*`） |
 | 树数据投影 | `apps/desktop/src/renderer/src/data/catalogWorkspace.ts`、`utils/longWorkspaceResourceTree.ts`、`utils/longWorkspaceDraftTree.ts`、`utils/resourceTreeLookup.ts` |
 | 树状态与编排 | `stores/catalogIndexStore.ts`、`stores/longWorkspaceStore.ts`、`composables/useWorkspaceResourceTreeCoordinator.ts`、`useWorkspaceResourceCoordinator.ts` |

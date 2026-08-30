@@ -190,8 +190,8 @@ describe("long import store integration", () => {
       committedChapterPolicy: "legacy-checkpoints"
     });
     expect(imported.book.workspaceIndex.ledger.commits).toHaveLength(1);
-    expect(imported.book.workspaceIndex.ledger.commits[0]!.reversible).toBe(
-      false
+    expect(imported.book.workspaceIndex.ledger.commits[0]).not.toHaveProperty(
+      "reversible"
     );
     expect(imported.book.workspaceIndex.chapters[0]!.commitId).toBe(
       imported.book.workspaceIndex.ledger.commits[0]!.id
@@ -207,7 +207,7 @@ describe("long import store integration", () => {
         fileId: migratedContinuityChapter.foreshadowingChanges.id
       })
     ).resolves.toMatchObject({
-      content: expect.stringContaining("旧版 structured 连续性提交")
+      content: expect.stringContaining("从旧版 structured 连续性记录")
     });
     expect(imported.book.linkedMaterialIdsByKind.plot).toEqual([
       "material-long-legacy"
@@ -229,10 +229,7 @@ describe("long import store integration", () => {
     await expect(
       store.writeDocument(imported.projectDirectory, {
         fileId: memoryCategory.file.id,
-        content: "不应允许覆盖",
-        expectedFileRevision: memoryDocument.revision,
-        expectedWorkspaceRevision: memoryDocument.workspaceRevision,
-        expectedProjectRevision: memoryDocument.projectRevision
+        content: "不应允许覆盖"
       })
     ).rejects.toThrow(/只读迁移证据/u);
     const memorySearch = await store.search(imported.projectDirectory, {

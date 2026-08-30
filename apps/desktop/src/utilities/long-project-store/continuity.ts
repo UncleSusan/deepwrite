@@ -155,11 +155,7 @@ export function materializeLongContinuityProjection(input: {
       sourceCommitId: input.commitId,
       sourceChapterCardId: input.chapterCardId
     };
-    const before = idIndex === undefined ? null : projection.facts[idIndex]!;
-    factChanges.push({
-      before: before === null ? null : { ...before },
-      after: { ...after }
-    });
+    factChanges.push({ after: { ...after } });
     if (idIndex === undefined) {
       const nextIndex = projection.facts.length;
       projection.facts.push(after);
@@ -190,12 +186,7 @@ export function materializeLongContinuityProjection(input: {
       sourceCommitId: input.commitId,
       sourceChapterCardId: input.chapterCardId
     };
-    const before =
-      existingIndex === undefined ? null : projection.knowledge[existingIndex]!;
-    knowledgeChanges.push({
-      before: before === null ? null : { ...before },
-      after: { ...after }
-    });
+    knowledgeChanges.push({ after: { ...after } });
     if (existingIndex === undefined) {
       knowledgeIndexByKey.set(key, projection.knowledge.length);
       projection.knowledge.push(after);
@@ -218,12 +209,7 @@ export function materializeLongContinuityProjection(input: {
       sourceCommitId: input.commitId,
       sourceChapterCardId: input.chapterCardId
     };
-    const before =
-      existingIndex === undefined ? null : projection.openLoops[existingIndex]!;
-    openLoopChanges.push({
-      before: before === null ? null : { ...before },
-      after: { ...after }
-    });
+    openLoopChanges.push({ after: { ...after } });
     if (existingIndex === undefined) {
       openLoopIndexById.set(after.loopId, projection.openLoops.length);
       projection.openLoops.push(after);
@@ -247,116 +233,6 @@ export function materializeLongContinuityProjection(input: {
     knowledgeChanges,
     openLoopChanges
   };
-}
-
-export function sameContinuityEntity(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-export function rollbackLongContinuityProjection(input: {
-  projection: LongContinuityProjection;
-  record: LongLedgerCommitRecord;
-  previousV3Record: LongLedgerCommitRecord | null;
-}): LongContinuityProjection {
-  if (input.record.schemaVersion !== 3) {
-    throw new Error("只有 v3 连续性账本记录包含可回滚的类型化投影。");
-  }
-  if (input.projection.throughCommitId !== input.record.id) {
-    throw new Error(
-      "连续性投影水位与最后一次 v3 账本提交不一致，不能安全回滚。"
-    );
-  }
-  const projection: LongContinuityProjection = {
-    throughCommitId: input.projection.throughCommitId,
-    facts: input.projection.facts.map((fact) => ({ ...fact })),
-    knowledge: input.projection.knowledge.map((knowledge) => ({
-      ...knowledge
-    })),
-    openLoops: input.projection.openLoops.map((loop) => ({ ...loop })),
-    latestHandoff:
-      input.projection.latestHandoff === null
-        ? null
-        : {
-            ...input.projection.latestHandoff,
-            mustCarry: [...input.projection.latestHandoff.mustCarry],
-            nextChapterConstraints: [
-              ...input.projection.latestHandoff.nextChapterConstraints
-            ],
-            openLoops: [...input.projection.latestHandoff.openLoops]
-          }
-  };
-
-  for (const change of [...input.record.openLoopChanges].reverse()) {
-    const index = projection.openLoops.findIndex(
-      ({ loopId }) => loopId === change.after.loopId
-    );
-    if (
-      index < 0 ||
-      !sameContinuityEntity(projection.openLoops[index], change.after)
-    ) {
-      throw new Error(
-        `未闭合事项 ${change.after.loopId} 已在提交后变化，不能安全回滚。`
-      );
-    }
-    if (change.before === null) {
-      projection.openLoops.splice(index, 1);
-    } else {
-      projection.openLoops[index] = { ...change.before };
-    }
-  }
-  for (const change of [...input.record.knowledgeChanges].reverse()) {
-    const key = continuityKnowledgeKey(change.after);
-    const index = projection.knowledge.findIndex(
-      (knowledge) => continuityKnowledgeKey(knowledge) === key
-    );
-    if (
-      index < 0 ||
-      !sameContinuityEntity(projection.knowledge[index], change.after)
-    ) {
-      throw new Error("正文认知状态已在提交后变化，不能安全回滚。");
-    }
-    if (change.before === null) {
-      projection.knowledge.splice(index, 1);
-    } else {
-      projection.knowledge[index] = { ...change.before };
-    }
-  }
-  for (const change of [...input.record.factChanges].reverse()) {
-    const index = projection.facts.findIndex(
-      ({ factId }) => factId === change.after.factId
-    );
-    if (
-      index < 0 ||
-      !sameContinuityEntity(projection.facts[index], change.after)
-    ) {
-      throw new Error(
-        `连续性事实 ${change.after.factId} 已在提交后变化，不能安全回滚。`
-      );
-    }
-    if (change.before === null) {
-      projection.facts.splice(index, 1);
-    } else {
-      projection.facts[index] = { ...change.before };
-    }
-  }
-
-  const previousV3Record =
-    input.previousV3Record?.schemaVersion === 3 ? input.previousV3Record : null;
-  projection.throughCommitId = previousV3Record?.id ?? null;
-  projection.latestHandoff =
-    previousV3Record === null
-      ? null
-      : {
-          ...previousV3Record.chapterOutputs.handoff,
-          mustCarry: [...previousV3Record.chapterOutputs.handoff.mustCarry],
-          nextChapterConstraints: [
-            ...previousV3Record.chapterOutputs.handoff.nextChapterConstraints
-          ],
-          openLoops: [...previousV3Record.chapterOutputs.handoff.openLoops],
-          chapterCardId: previousV3Record.chapterCardId,
-          commitId: previousV3Record.id
-        };
-  return LongContinuityProjectionSchema.parse(projection);
 }
 
 export function serializeLongContinuityHandoff(

@@ -49,8 +49,6 @@ function createContext(): LongBookLifecycleCoordinatorOptions {
       continuationImportPreview: shallowRef(null),
       legacySyncPreview: shallowRef(null),
       legacySyncResult: shallowRef(null),
-      rollbackDialogOpen: ref(false),
-      rollbackCommitId: ref(null),
       structureDialogOpen: ref(false),
       structureAgentsMd: ref<string | null>(null),
       structureAgentsMdPending: ref(false),
@@ -88,7 +86,6 @@ function createContext(): LongBookLifecycleCoordinatorOptions {
       showConversation: vi.fn(),
       revealEditor: vi.fn()
     },
-    editorRevisions: { synchronizeProjectRevisions: vi.fn() },
     manuscript: {
       available: vi.fn(() => false),
       createInput: vi.fn(),

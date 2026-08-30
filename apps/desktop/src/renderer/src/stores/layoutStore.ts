@@ -22,6 +22,7 @@ export type WorkspaceMainView =
   | "directory"
   | "models"
   | "imitation"
+  | "long-book-analysis"
   | "agent-team"
   | "marketplace"
   | "cloud-backup";
@@ -32,6 +33,7 @@ export type PrimaryFeature =
   | "directory"
   | "models"
   | "imitation"
+  | "long-book-analysis"
   | "chat-assistant"
   | "agent-teams"
   | "skill-marketplace"
@@ -104,6 +106,7 @@ export const useLayoutStore = defineStore("layout", () => {
       case "directory":
       case "models":
       case "imitation":
+      case "long-book-analysis":
         return workspaceMainView.value;
       default:
         return undefined;

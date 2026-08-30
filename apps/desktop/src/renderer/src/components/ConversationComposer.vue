@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import type {
+  AgentTeamRunMode,
   LibraryAgentDomain,
+  LongAgentId,
   ModelConfig,
   ThinkingLevel,
-  UserPromptAttachment
+  UserPromptAttachment,
+  WorkspaceAgentId
 } from "@deepwrite/contracts";
 import type {
   AgentApprovalMode,
@@ -19,9 +22,14 @@ import {
   formatFileSize
 } from "../composables/useConversationAttachments";
 import { useConversationComposer } from "../composables/useConversationComposer";
+import { useSettingsStore } from "../stores/settingsStore";
 import AppIcon from "./AppIcon.vue";
+import AgentTeamModeSelect from "./AgentTeamModeSelect.vue";
 import ContextWindowIndicator from "./ContextWindowIndicator.vue";
+import ConversationThinkingSelect from "./ConversationThinkingSelect.vue";
 import PopupSelect from "./PopupSelect.vue";
+
+const settingsStore = useSettingsStore();
 
 const props = defineProps<{
   draft: string;
@@ -40,12 +48,18 @@ const props = defineProps<{
   thinkingLevel: ThinkingLevel;
   temperature: number;
   approvalMode: AgentApprovalMode;
+  agentTeamMode: AgentTeamRunMode;
+  agentId: WorkspaceAgentId | LongAgentId | undefined;
+  agentWorkspaceType: "short" | "script" | "long" | undefined;
   libraryDomain: LibraryAgentDomain | undefined;
   availableSkills: ComposerReferenceOption[];
   availableMaterials: ComposerReferenceOption[];
   editorReferences: EditorTextReference[];
   modelOptions: Array<{ value: string; label: string }>;
   availableThinkingOptions: Array<{ value: ThinkingLevel; label: string }>;
+  webSearchEnabled: boolean;
+  webSearchAvailable: boolean;
+  webSearchDisabledReason: string;
   showsTemperature: boolean;
   temperatureSelectOptions: Array<{ value: number; label: string }>;
   approvalOptions: Array<{
@@ -65,8 +79,10 @@ const emit = defineEmits<{
   locateEditorReference: [reference: EditorTextReference];
   selectModel: [modelId: string];
   selectThinking: [level: ThinkingLevel];
+  toggleWebSearch: [enabled: boolean];
   selectTemperature: [temperature: number];
   selectApproval: [mode: AgentApprovalMode];
+  selectAgentTeamMode: [mode: AgentTeamRunMode];
 }>();
 
 const closeReferenceMenuHolder = { run() {} };
@@ -124,9 +140,6 @@ function editorReferenceTooltip(reference: EditorTextReference): string {
 }
 function handleModelChange(value: string | number): void {
   emit("selectModel", String(value));
-}
-function handleThinkingChange(value: string | number): void {
-  emit("selectThinking", String(value) as ThinkingLevel);
 }
 function handleTemperatureChange(value: string | number): void {
   emit("selectTemperature", Number(value));
@@ -363,17 +376,18 @@ function handleApprovalChange(value: string | number): void {
               >
                 <template #prefix><AppIcon name="model" :size="14" /></template>
               </PopupSelect>
-              <PopupSelect
-                :model-value="thinkingLevel"
+              <ConversationThinkingSelect
+                :thinking-level="thinkingLevel"
                 :options="availableThinkingOptions"
-                accessible-label="选择思考等级"
-                variant="compact"
-                :menu-min-width="180"
-                @update:model-value="handleThinkingChange"
-              >
-                <template #prefix><AppIcon name="brain" :size="14" /></template>
-              </PopupSelect>
+                :web-search-enabled="webSearchEnabled"
+                :web-search-available="webSearchAvailable"
+                :web-search-disabled-reason="webSearchDisabledReason"
+                :responding="responding"
+                @select-thinking="emit('selectThinking', $event)"
+                @toggle-web-search="emit('toggleWebSearch', $event)"
+              />
               <ContextWindowIndicator
+                v-if="settingsStore.generalSettings.showContextUsage"
                 :messages="messages"
                 :model="selectedModel"
               />
@@ -392,6 +406,13 @@ function handleApprovalChange(value: string | number): void {
               </PopupSelect>
             </div>
             <div class="composer-actions">
+              <AgentTeamModeSelect
+                v-if="agentWorkspaceType && agentId"
+                :model-value="agentTeamMode"
+                :workspace-type="agentWorkspaceType"
+                :parent-agent-id="agentId"
+                @update:model-value="emit('selectAgentTeamMode', $event)"
+              />
               <PopupSelect
                 :model-value="approvalMode"
                 :options="approvalOptions"

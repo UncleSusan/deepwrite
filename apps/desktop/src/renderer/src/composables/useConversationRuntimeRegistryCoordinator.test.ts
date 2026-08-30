@@ -53,11 +53,15 @@ function controllerFixture(name: string) {
   const approvalMode = ref<"request-approval" | "auto-approve">(
     "request-approval"
   );
+  const agentTeamMode = ref<"normal" | "team">("normal");
+  const webSearchEnabled = ref(false);
   const applyRunSettings = vi.fn((settings: AgentRunSettings) => {
     selectedModelId.value = settings.selectedModelId;
     thinkingLevel.value = settings.thinkingLevel;
     temperature.value = settings.temperature;
     approvalMode.value = settings.approvalMode;
+    agentTeamMode.value = settings.agentTeamMode ?? "normal";
+    webSearchEnabled.value = settings.webSearchEnabled === true;
   });
   const applyModelSettings = vi.fn((settings: ModelSettings) => {
     const selected =
@@ -71,6 +75,9 @@ function controllerFixture(name: string) {
       approvalMode.value = mode;
     }
   );
+  const selectAgentTeamMode = vi.fn((mode: "normal" | "team") => {
+    agentTeamMode.value = mode;
+  });
   const capturePersistenceSnapshot = vi.fn(() => ({ name }));
   const restorePersistenceSnapshot = vi.fn(async () => true);
   const holdPersistenceEmits = vi.fn();
@@ -80,8 +87,11 @@ function controllerFixture(name: string) {
     thinkingLevel,
     temperature,
     approvalMode,
+    agentTeamMode,
+    webSearchEnabled,
     applyRunSettings,
     applyModelSettings,
+    selectAgentTeamMode,
     selectApprovalMode,
     capturePersistenceSnapshot,
     restorePersistenceSnapshot,
@@ -92,12 +102,14 @@ function controllerFixture(name: string) {
   return {
     applyModelSettings,
     applyRunSettings,
+    agentTeamMode,
     approvalMode,
     capturePersistenceSnapshot,
     controller,
     holdPersistenceEmits,
     releasePersistenceEmits,
     restorePersistenceSnapshot,
+    selectAgentTeamMode,
     selectApprovalMode,
     selectedModelId,
     temperature,
@@ -146,7 +158,8 @@ function createHarness(input: { persistence?: boolean } = {}) {
           selectedModelId: selection.selectedModelId,
           thinkingLevel: selection.thinkingLevel,
           temperature: controller.temperature.value,
-          approvalMode: controller.approvalMode.value
+          approvalMode: controller.approvalMode.value,
+          agentTeamMode: controller.agentTeamMode.value
         });
       }
     }
@@ -171,7 +184,9 @@ function createHarness(input: { persistence?: boolean } = {}) {
           selectedModelId: controller.selectedModelId.value,
           thinkingLevel: controller.thinkingLevel.value,
           temperature: preferences.temperature,
-          approvalMode: preferences.approvalMode
+          approvalMode: preferences.approvalMode,
+          agentTeamMode:
+            preferences.agentTeamMode ?? controller.agentTeamMode.value
         });
       }
     }
@@ -431,7 +446,8 @@ describe("useConversationRuntimeRegistryCoordinator", () => {
     expect(test.setSessionAgentModelSelection).toHaveBeenCalledWith(
       {
         selectedModelId: first.selectedModelId.value,
-        thinkingLevel: first.thinkingLevel.value
+        thinkingLevel: first.thinkingLevel.value,
+        webSearchEnabled: first.webSearchEnabled.value
       },
       { source: first }
     );
@@ -440,7 +456,8 @@ describe("useConversationRuntimeRegistryCoordinator", () => {
       "book:two",
       {
         temperature: second.temperature.value,
-        approvalMode: second.approvalMode.value
+        approvalMode: second.approvalMode.value,
+        agentTeamMode: second.agentTeamMode.value
       },
       { source: second }
     );

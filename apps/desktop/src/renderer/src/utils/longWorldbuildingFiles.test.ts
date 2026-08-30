@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  EMPTY_LONG_MARKDOWN_REVISION,
   LongWorldbuildingListCategorySchema,
   LongWorldbuildingTextCategorySchema,
   longWorldbuildingContentPath,
@@ -25,7 +24,6 @@ const textCategory = LongWorldbuildingTextCategorySchema.parse({
   file: {
     id: longWorldbuildingFileId("world_rules"),
     path: longWorldbuildingContentPath("world_rules"),
-    revision: EMPTY_LONG_MARKDOWN_REVISION,
     updatedAt
   }
 });
@@ -38,7 +36,6 @@ const listCategory = LongWorldbuildingListCategorySchema.parse({
   overview: {
     id: longWorldbuildingOverviewFileId("world_factions"),
     path: longWorldbuildingOverviewContentPath("world_factions"),
-    revision: EMPTY_LONG_MARKDOWN_REVISION,
     updatedAt
   },
   items: [
@@ -52,7 +49,6 @@ const listCategory = LongWorldbuildingListCategorySchema.parse({
           "world_factions",
           "worlditem_faction_one"
         ),
-        revision: EMPTY_LONG_MARKDOWN_REVISION,
         updatedAt
       }
     }

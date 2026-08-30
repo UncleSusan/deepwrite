@@ -56,7 +56,6 @@ const emit = defineEmits<{
   rejectLongProposal: [eventId: string];
   retryLongProposalPreview: [eventId: string];
   locateLongProposal: [eventId: string];
-  discardLongProposal: [eventId: string];
   requestEdit: [messageId: string];
   cancelEdit: [messageId: string];
 }>();
@@ -131,7 +130,6 @@ onBeforeUnmount(() => {
         @reject-long-proposal="emit('rejectLongProposal', $event)"
         @retry-long-proposal-preview="emit('retryLongProposalPreview', $event)"
         @locate-long-proposal="emit('locateLongProposal', $event)"
-        @discard-long-proposal="emit('discardLongProposal', $event)"
       />
 
       <div class="message-content">
@@ -215,14 +213,10 @@ onBeforeUnmount(() => {
               conversation-card
               :items="[approval.item]"
               :workspace-index="longWorkspaceIndex"
-              :discardable-event-ids="
-                approval.canDiscard ? [approval.item.event.id] : []
-              "
               @approve="emit('approveLongProposal', $event)"
               @reject="emit('rejectLongProposal', $event)"
               @retry-preview="emit('retryLongProposalPreview', $event)"
               @locate="emit('locateLongProposal', $event)"
-              @discard="emit('discardLongProposal', $event)"
             />
           </template>
         </section>

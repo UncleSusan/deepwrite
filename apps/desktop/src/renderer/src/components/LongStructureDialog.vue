@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type {
+  LongWorkspaceImpactConfirmation,
   LongWorkspaceIndexSnapshot,
   LongWorkspaceOperationBatch
 } from "@deepwrite/contracts";
 import type { LongStructureMutationCompletion } from "../types/longWorkspace";
+import type {
+  LongWorldbuildingSyncCompletion,
+  LongWorldbuildingSyncRequest
+} from "../types/longWorkspace";
 import AppIcon from "./AppIcon.vue";
 import LongStructureManager from "./LongStructureManager.vue";
 
@@ -25,13 +30,17 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: [];
+  previewMutation: [
+    batch: LongWorkspaceOperationBatch,
+    completion: (impact?: LongWorkspaceImpactConfirmation) => void
+  ];
   mutation: [
     batch: LongWorkspaceOperationBatch,
     completion: LongStructureMutationCompletion
   ];
   syncWorldbuilding: [
-    payload: { sourceBookId: string; sourceTitle: string },
-    completion: LongStructureMutationCompletion
+    payload: LongWorldbuildingSyncRequest,
+    completion: LongWorldbuildingSyncCompletion
   ];
   saveAgentsMd: [content: string, completion: LongStructureMutationCompletion];
 }>();
@@ -59,9 +68,16 @@ function forwardMutation(
   emit("mutation", batch, completion);
 }
 
+function forwardPreviewMutation(
+  batch: LongWorkspaceOperationBatch,
+  completion: (impact?: LongWorkspaceImpactConfirmation) => void
+): void {
+  emit("previewMutation", batch, completion);
+}
+
 function forwardSyncWorldbuilding(
-  payload: { sourceBookId: string; sourceTitle: string },
-  completion: LongStructureMutationCompletion
+  payload: LongWorldbuildingSyncRequest,
+  completion: LongWorldbuildingSyncCompletion
 ): void {
   emit("syncWorldbuilding", payload, completion);
 }
@@ -182,6 +198,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
           :agents-md-pending="agentsMdPending"
           :sync-book-options="syncBookOptions"
           :disabled="pending"
+          @preview-mutation="forwardPreviewMutation"
           @mutation="forwardMutation"
           @modal-active-change="childModalActive = $event"
           @sync-worldbuilding="forwardSyncWorldbuilding"

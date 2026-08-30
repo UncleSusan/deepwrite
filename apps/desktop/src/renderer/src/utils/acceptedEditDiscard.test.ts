@@ -1,6 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { LongWorkspaceOperationBatch } from "@deepwrite/contracts";
-import type { LongWorkspaceProposalItem } from "../composables/useLongWorkspaceProposals";
 import type {
   AgentEditProposal,
   AgentToolTrace,
@@ -8,9 +6,7 @@ import type {
 } from "../types/conversation";
 import {
   agentApprovalCanDiscard,
-  buildLongEditUndoBatch,
   isModificationTool,
-  longApprovalCanDiscard,
   textEditDiscardSnapshot
 } from "./acceptedEditDiscard";
 
@@ -46,22 +42,6 @@ function messageWithTool(name: string): Pick<ChatMessage, "toolCalls"> {
   return {
     toolCalls: [{ id: "tool-1", name } as AgentToolTrace]
   };
-}
-
-function acceptedLongFileProposal(
-  operation: "create" | "write" | "edit"
-): LongWorkspaceProposalItem {
-  return {
-    status: "accepted",
-    event: {
-      id: "long-proposal-1",
-      type: "long.worldbuilding_file_proposal",
-      payload: {
-        toolCallId: "tool-1",
-        files: [{ operation }]
-      }
-    }
-  } as unknown as LongWorkspaceProposalItem;
 }
 
 describe("accepted edit discard eligibility", () => {
@@ -130,75 +110,21 @@ describe("accepted edit discard eligibility", () => {
     ).toBe(false);
   });
 
-  it("never enables discard for long-form file creation", () => {
+  it("never enables discard for any accepted long-form proposal", () => {
     expect(
-      longApprovalCanDiscard(
-        messageWithTool("edit"),
-        acceptedLongFileProposal("edit")
-      )
-    ).toBe(true);
-    expect(
-      longApprovalCanDiscard(
-        messageWithTool("edit"),
-        acceptedLongFileProposal("write")
-      )
-    ).toBe(true);
-    expect(
-      longApprovalCanDiscard(
-        messageWithTool("edit"),
-        acceptedLongFileProposal("create")
-      )
+      agentApprovalCanDiscard(messageWithTool("edit"), {
+        ...acceptedTextProposal(),
+        stageId: "long-plot-design",
+        workspaceId: "long:book-1",
+        longPlotDesignTarget: {
+          bookId: "book-1",
+          batch: {
+            updatedAt: "2026-08-25T00:00:00.000Z",
+            operations: [{ type: "worldbuilding.delete", id: "world_rules" }],
+            documentWrites: []
+          }
+        }
+      })
     ).toBe(false);
-    expect(
-      longApprovalCanDiscard(
-        messageWithTool("create"),
-        acceptedLongFileProposal("edit")
-      )
-    ).toBe(false);
-  });
-
-  it("builds structural undo only from update operations and preview snapshots", () => {
-    const batch = {
-      baseRevision: 7,
-      updatedAt: "2026-08-25T00:00:00.000Z",
-      operations: [
-        {
-          type: "worldbuilding.update",
-          id: "world-rules",
-          patch: { title: "新标题" }
-        }
-      ],
-      documentWrites: []
-    } as unknown as LongWorkspaceOperationBatch;
-    const preview = {
-      entityChanges: [
-        {
-          id: "world-rules",
-          before: { id: "world-rules", title: "旧标题", order: 1 }
-        }
-      ]
-    } as unknown as NonNullable<LongWorkspaceProposalItem["preview"]>;
-
-    expect(buildLongEditUndoBatch(batch, preview)).toMatchObject({
-      operations: [
-        {
-          type: "worldbuilding.update",
-          id: "world-rules",
-          patch: { title: "旧标题" }
-        }
-      ],
-      documentWrites: []
-    });
-    expect(
-      buildLongEditUndoBatch(
-        {
-          ...batch,
-          operations: [
-            { type: "worldbuilding.delete", id: "world-rules" }
-          ] as LongWorkspaceOperationBatch["operations"]
-        },
-        preview
-      )
-    ).toBeUndefined();
   });
 });

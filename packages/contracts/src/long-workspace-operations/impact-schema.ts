@@ -1,11 +1,12 @@
 import { z } from "zod";
 import {
+  LongCharacterTypeIdSchema,
   LongFileIdSchema,
-  LongFileRevisionSchema,
-  LongProjectRelativePathSchema,
   LongStableIdSchema,
+  LongWorkspaceFileReferenceSchema,
   LongWorkspaceIndexSnapshotSchema
 } from "../long-workspace";
+import { LongWorkspaceLedgerRecordEditSchema } from "./ledger-impact-schema";
 import {
   LongProvisionalIdSchema,
   LongWorkspaceOperationSchema
@@ -24,7 +25,6 @@ const DocumentWriteProposalBaseShape = {
     .regex(/^proposal_[A-Za-z0-9][A-Za-z0-9._:-]*$/),
   fileId: LongFileIdSchema,
   content: z.string().max(10_000_000),
-  nextRevision: LongFileRevisionSchema,
   updatedAt: OperationTimestampSchema,
   reason: z.string().trim().min(1).max(1_000)
 } as const;
@@ -33,15 +33,13 @@ export const LongDocumentWriteProposalSchema = z.discriminatedUnion("mode", [
   z
     .object({
       ...DocumentWriteProposalBaseShape,
-      mode: z.literal("create"),
-      expectedRevision: z.null()
+      mode: z.literal("create")
     })
     .strict(),
   z
     .object({
       ...DocumentWriteProposalBaseShape,
-      mode: z.enum(["replace", "append"]),
-      expectedRevision: LongFileRevisionSchema
+      mode: z.enum(["replace", "append"])
     })
     .strict()
 ]);
@@ -49,11 +47,17 @@ export type LongDocumentWriteProposal = z.infer<
   typeof LongDocumentWriteProposalSchema
 >;
 
+export const LongWorkspaceEntityIdSchema = z.union([
+  LongStableIdSchema,
+  LongCharacterTypeIdSchema
+]);
+export type LongWorkspaceEntityId = z.infer<typeof LongWorkspaceEntityIdSchema>;
+
 export const LongWorkspaceImpactSummarySchema = z
   .object({
-    createdEntityIds: sortedUniqueIdArray(LongStableIdSchema),
-    updatedEntityIds: sortedUniqueIdArray(LongStableIdSchema),
-    deletedEntityIds: sortedUniqueIdArray(LongStableIdSchema),
+    createdEntityIds: sortedUniqueIdArray(LongWorkspaceEntityIdSchema),
+    updatedEntityIds: sortedUniqueIdArray(LongWorkspaceEntityIdSchema),
+    deletedEntityIds: sortedUniqueIdArray(LongWorkspaceEntityIdSchema),
     createdFileIds: sortedUniqueIdArray(LongFileIdSchema),
     deletedFileIds: sortedUniqueIdArray(LongFileIdSchema),
     documentWriteProposalIds: sortedUniqueIdArray(
@@ -74,24 +78,14 @@ export const LongWorkspaceFileIntentSchema = z.discriminatedUnion("action", [
   z
     .object({
       action: z.literal("create"),
-      file: z.object({
-        id: LongFileIdSchema,
-        path: LongProjectRelativePathSchema,
-        revision: LongFileRevisionSchema,
-        updatedAt: OperationTimestampSchema
-      }),
+      file: LongWorkspaceFileReferenceSchema,
       reason: z.string().trim().min(1).max(1_000)
     })
     .strict(),
   z
     .object({
       action: z.literal("delete"),
-      file: z.object({
-        id: LongFileIdSchema,
-        path: LongProjectRelativePathSchema,
-        revision: LongFileRevisionSchema,
-        updatedAt: OperationTimestampSchema
-      }),
+      file: LongWorkspaceFileReferenceSchema,
       reason: z.string().trim().min(1).max(1_000)
     })
     .strict()
@@ -103,6 +97,7 @@ export type LongWorkspaceFileIntent = z.infer<
 export const LONG_WORKSPACE_ENTITY_KINDS = [
   "worldbuilding-category",
   "worldbuilding-item",
+  "character-type",
   "character",
   "volume",
   "arc",
@@ -121,13 +116,13 @@ export type LongWorkspaceEntityKind = z.infer<
   typeof LongWorkspaceEntityKindSchema
 >;
 
-const LongWorkspaceEntitySnapshotSchema = z.record(z.string(), z.json());
+export const LongWorkspaceEntitySnapshotSchema = z.record(z.string(), z.json());
 export type LongWorkspaceEntitySnapshot = z.infer<
   typeof LongWorkspaceEntitySnapshotSchema
 >;
 const LongWorkspaceEntityChangeBaseShape = {
   kind: LongWorkspaceEntityKindSchema,
-  id: LongStableIdSchema
+  id: LongWorkspaceEntityIdSchema
 } as const;
 
 export const LongWorkspaceEntityChangeSchema = z.discriminatedUnion("action", [
@@ -160,16 +155,126 @@ export type LongWorkspaceEntityChange = z.infer<
   typeof LongWorkspaceEntityChangeSchema
 >;
 
+export const LONG_WORKSPACE_RELATIONSHIP_KINDS = [
+  "worldbuilding-category-item",
+  "character-type-member",
+  "arc-volume",
+  "chapter-volume",
+  "chapter-primary-arc",
+  "story-plot-arc",
+  "story-event-arc",
+  "story-event-character",
+  "event-connection-source",
+  "event-connection-target",
+  "narrative-placement-event",
+  "narrative-placement-chapter",
+  "narrative-placement-commit",
+  "foreshadowing-truth-event",
+  "foreshadowing-thread-beat",
+  "foreshadowing-beat-volume",
+  "foreshadowing-beat-arc",
+  "foreshadowing-beat-event",
+  "foreshadowing-beat-placement",
+  "foreshadowing-beat-chapter",
+  "foreshadowing-beat-commit",
+  "character-files",
+  "chapter-files",
+  "ledger-commit",
+  "ledger-state",
+  "continuity-projection"
+] as const;
+export const LongWorkspaceRelationshipKindSchema = z.enum(
+  LONG_WORKSPACE_RELATIONSHIP_KINDS
+);
+export type LongWorkspaceRelationshipKind = z.infer<
+  typeof LongWorkspaceRelationshipKindSchema
+>;
+
+/**
+ * Domain edges use a length-prefixed source/target pair. They are impact-only
+ * identities rather than persisted entity ids, so the 160-character stable-id
+ * ceiling would force truncation and make exact confirmations ambiguous.
+ */
+export const LongWorkspaceRelationshipIdSchema = z.union([
+  LongStableIdSchema,
+  z
+    .string()
+    .trim()
+    .min(3)
+    .max(512)
+    .regex(
+      /^relation_[A-Za-z0-9._:-]+$/,
+      "Relationship impact ids must use a safe relation_ identity."
+    )
+]);
+export type LongWorkspaceRelationshipId = z.infer<
+  typeof LongWorkspaceRelationshipIdSchema
+>;
+
+const LongWorkspaceRelationshipChangeBaseShape = {
+  kind: LongWorkspaceRelationshipKindSchema,
+  id: LongWorkspaceRelationshipIdSchema
+} as const;
+
+export const LongWorkspaceRelationshipChangeSchema = z.discriminatedUnion(
+  "action",
+  [
+    z
+      .object({
+        ...LongWorkspaceRelationshipChangeBaseShape,
+        action: z.literal("create"),
+        before: z.null(),
+        after: LongWorkspaceEntitySnapshotSchema
+      })
+      .strict(),
+    z
+      .object({
+        ...LongWorkspaceRelationshipChangeBaseShape,
+        action: z.literal("update"),
+        before: LongWorkspaceEntitySnapshotSchema,
+        after: LongWorkspaceEntitySnapshotSchema
+      })
+      .strict(),
+    z
+      .object({
+        ...LongWorkspaceRelationshipChangeBaseShape,
+        action: z.literal("delete"),
+        before: LongWorkspaceEntitySnapshotSchema,
+        after: z.null()
+      })
+      .strict()
+  ]
+);
+export type LongWorkspaceRelationshipChange = z.infer<
+  typeof LongWorkspaceRelationshipChangeSchema
+>;
+
+export * from "./ledger-impact-schema";
+
+export const LongWorkspaceImpactConfirmationSchema = z
+  .object({
+    impact: LongWorkspaceImpactSummarySchema,
+    entityChanges: z.array(LongWorkspaceEntityChangeSchema).max(2_000_000),
+    relationshipChanges: z
+      .array(LongWorkspaceRelationshipChangeSchema)
+      .max(2_000_000),
+    fileIntents: z.array(LongWorkspaceFileIntentSchema),
+    ledgerRecordEdits: z.array(LongWorkspaceLedgerRecordEditSchema)
+  })
+  .strict();
+export type LongWorkspaceImpactConfirmation = z.infer<
+  typeof LongWorkspaceImpactConfirmationSchema
+>;
+
 export const LongWorkspaceOperationBatchSchema = z
   .object({
-    baseRevision: z.number().int().nonnegative(),
     updatedAt: OperationTimestampSchema,
     operations: z.array(LongWorkspaceOperationSchema).max(10_000),
     documentWrites: z
       .array(LongDocumentWriteProposalSchema)
       .max(10_000)
       .default([]),
-    expectedImpact: LongWorkspaceImpactSummarySchema.optional()
+    expectedImpact: LongWorkspaceImpactConfirmationSchema.optional()
   })
   .strict()
   .superRefine((batch, context) => {
@@ -191,11 +296,14 @@ export type LongWorkspaceOperationBatchInput = z.input<
 
 export const LongWorkspaceImpactPreviewSchema = z
   .object({
-    baseRevision: z.number().int().nonnegative(),
-    resultRevision: z.number().int().positive(),
     impact: LongWorkspaceImpactSummarySchema,
     entityChanges: z.array(LongWorkspaceEntityChangeSchema).max(2_000_000),
+    relationshipChanges: z
+      .array(LongWorkspaceRelationshipChangeSchema)
+      .max(2_000_000),
     fileIntents: z.array(LongWorkspaceFileIntentSchema),
+    ledgerRecordEdits: z.array(LongWorkspaceLedgerRecordEditSchema),
+    confirmation: LongWorkspaceImpactConfirmationSchema,
     documentWrites: z.array(LongDocumentWriteProposalSchema),
     provisionalIdMap: z.record(LongProvisionalIdSchema, LongStableIdSchema)
   })
@@ -213,13 +321,10 @@ export type LongWorkspaceOperationResult = z.infer<
 >;
 
 export const LONG_WORKSPACE_OPERATION_ERROR_CODES = [
-  "revision_conflict",
   "not_found",
   "already_exists",
   "invalid_reference",
-  "cascade_required",
-  "cascade_impact_mismatch",
-  "committed_prefix_protected",
+  "impact_mismatch",
   "invalid_order",
   "invalid_document_write",
   "invalid_result"

@@ -5,7 +5,6 @@ import {
   LongWriteChapterInputSchema,
   type LongWriteChapterResult
 } from "@deepwrite/contracts";
-import { ProjectTransactionConflictError } from "../project-transaction";
 import { loadIndexedFile } from "./cache";
 import {
   commitLongProjectTransaction,
@@ -14,10 +13,8 @@ import {
 } from "./io";
 import { loadProject } from "./load-project";
 import { firstEmptyChapter } from "./paths";
-import { createLongFileRevision, longRevisionsMatchContent } from "./revisions";
 import type { LongProjectStoreContext } from "./store-context";
 import {
-  LongProjectConflictError,
   MANIFEST_PATH,
   MAX_LEDGER_RECORD_BYTES,
   type StoreWriteLongChapterInput
@@ -35,20 +32,6 @@ export async function writeChapter(
       ...rawInput,
       bookId: loaded.manifest.id
     });
-    if (input.baseProjectRevision !== loaded.manifest.revision) {
-      throw new LongProjectConflictError(
-        "project",
-        input.baseProjectRevision,
-        loaded.manifest.revision
-      );
-    }
-    if (input.baseWorkspaceRevision !== loaded.index.revision) {
-      throw new LongProjectConflictError(
-        "workspace",
-        input.baseWorkspaceRevision,
-        loaded.index.revision
-      );
-    }
     const entry = loaded.index.chapters.find(
       (candidate) => candidate.chapterCardId === input.chapterCardId
     );
@@ -81,89 +64,39 @@ export async function writeChapter(
         input: input.handoff
       }
     ];
-    for (const write of writes) {
-      if (
-        !longRevisionsMatchContent(
-          write.input.baseRevision,
-          write.file.disk.revision,
-          write.file.disk.bytes
-        )
-      ) {
-        throw new LongProjectConflictError(
-          "file",
-          write.input.baseRevision,
-          write.file.disk.revision
-        );
-      }
-    }
     const timestamp = ctx.timestamp();
     for (const write of writes) {
-      write.file.reference.revision = createLongFileRevision(
-        write.input.content
-      );
       write.file.reference.updatedAt = timestamp;
     }
     entry.bodyStatus = input.body.content.trim() ? "written" : "empty";
     const nextIndex = LongWorkspaceIndexSnapshotSchema.parse({
       ...loaded.index,
-      revision: loaded.index.revision + 1,
       updatedAt: timestamp
     });
     const indexContent = serializeJson(nextIndex);
     const nextManifest = LongProjectManifestSchema.parse({
       ...loaded.manifest,
-      revision: loaded.manifest.revision + 1,
       updatedAt: timestamp,
       workspaceIndexFile: {
         ...loaded.manifest.workspaceIndexFile,
-        revision: createLongFileRevision(indexContent),
         updatedAt: timestamp
       }
     });
-    try {
-      await commitLongProjectTransaction({
-        projectRoot: loaded.projectDirectory,
-        operations: [
-          ...writes.map((write) => ({
-            path: write.file.reference.path,
-            content: write.input.content,
-            expectedSha256: write.file.disk.sha256
-          })),
-          {
-            path: LONG_WORKSPACE_INDEX_PATH,
-            content: indexContent,
-            expectedSha256: loaded.indexDisk.sha256
-          },
-          {
-            path: MANIFEST_PATH,
-            content: serializeJson(nextManifest),
-            expectedSha256: loaded.manifestDisk.sha256
-          }
-        ],
-        maxFileBytes: MAX_LEDGER_RECORD_BYTES
-      });
-    } catch (error: unknown) {
-      if (error instanceof ProjectTransactionConflictError) {
-        throw new LongProjectConflictError(
-          "transaction",
-          error.expectedSha256 ?? "missing",
-          error.actualSha256 ?? "missing"
-        );
-      }
-      throw error;
-    }
-    const next = await loadProject(ctx, loaded.projectDirectory);
-    const nextEntry = next.index.chapters.find(
-      (candidate) => candidate.chapterCardId === input.chapterCardId
-    )!;
+    await commitLongProjectTransaction({
+      projectRoot: loaded.projectDirectory,
+      operations: [
+        ...writes.map((write) => ({
+          path: write.file.reference.path,
+          content: write.input.content
+        })),
+        { path: LONG_WORKSPACE_INDEX_PATH, content: indexContent },
+        { path: MANIFEST_PATH, content: serializeJson(nextManifest) }
+      ],
+      maxFileBytes: MAX_LEDGER_RECORD_BYTES
+    });
     return {
-      bookId: next.manifest.id,
-      chapterCardId: input.chapterCardId,
-      bodyRevision: nextEntry.body.revision,
-      characterStateRevision: nextEntry.characterState.revision,
-      handoffRevision: nextEntry.handoff.revision,
-      workspaceRevision: next.index.revision,
-      projectRevision: next.manifest.revision
+      bookId: loaded.manifest.id,
+      chapterCardId: input.chapterCardId
     };
   });
 }

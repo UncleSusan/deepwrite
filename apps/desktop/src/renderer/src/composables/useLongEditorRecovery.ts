@@ -1,15 +1,7 @@
-import {
-  onBeforeUnmount,
-  onMounted,
-  ref,
-  type ComputedRef,
-  type Ref
-} from "vue";
-import {
-  LongFileRevisionSchema,
-  type LongFileId,
-  type LongFileRevision,
-  type LongWorkspaceFileReference
+import { onBeforeUnmount, onMounted, type ComputedRef, type Ref } from "vue";
+import type {
+  LongFileId,
+  LongWorkspaceFileReference
 } from "@deepwrite/contracts";
 import { uiMessage } from "../ui-feedback";
 import { isEditableLongFile } from "../types/longWorkspace";
@@ -21,15 +13,12 @@ export const RECOVERY_MAX_RECORD_CHARACTERS = 4 * 1024 * 1024;
 export const RECOVERY_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 export interface LongEditorRecoveryRecord {
-  schemaVersion: 1;
+  schemaVersion: 2;
   bookId: string;
   fileId: LongFileId;
   filePath: string;
   content: string;
   savedContent: string;
-  baseRevision: LongFileRevision;
-  workspaceRevision: number;
-  projectRevision: number;
   timestamp: number;
 }
 
@@ -38,8 +27,6 @@ export interface LongEditorRecoverableDocumentState {
   file: LongWorkspaceFileReference;
   content: string;
   savedContent: string;
-  workspaceRevision: number;
-  projectRevision: number;
   loaded: boolean;
 }
 
@@ -47,10 +34,8 @@ export function useLongEditorRecovery(options: {
   documentStates: Ref<Record<string, LongEditorRecoverableDocumentState>>;
   hasUnsavedChanges: ComputedRef<boolean>;
 }): {
-  staleRecoveryByKey: Ref<Record<string, LongEditorRecoveryRecord>>;
   recoveryStorageKey: (bookId: string, fileId: string) => string;
   resolveRecoveryStorage: () => Storage | null;
-  removeStaleRecoveryState: (key: string) => void;
   cancelRecoveryWrite: (key: string) => void;
   clearRecoveryRecordForKey: (
     key: string,
@@ -71,7 +56,6 @@ export function useLongEditorRecovery(options: {
   flushAllRecoveryRecords: () => void;
   handleBeforeUnload: (event: BeforeUnloadEvent) => void;
 } {
-  const staleRecoveryByKey = ref<Record<string, LongEditorRecoveryRecord>>({});
   const recoveryWriteTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const recoveryWriteWarningKeys = new Set<string>();
 
@@ -85,13 +69,6 @@ export function useLongEditorRecovery(options: {
     } catch {
       return null;
     }
-  }
-
-  function removeStaleRecoveryState(key: string): void {
-    if (!staleRecoveryByKey.value[key]) return;
-    const next = { ...staleRecoveryByKey.value };
-    delete next[key];
-    staleRecoveryByKey.value = next;
   }
 
   function cancelRecoveryWrite(key: string): void {
@@ -117,7 +94,6 @@ export function useLongEditorRecovery(options: {
   ): void {
     cancelRecoveryWrite(key);
     removeStoredRecovery(bookId, fileId);
-    removeStaleRecoveryState(key);
     recoveryWriteWarningKeys.delete(key);
   }
 
@@ -128,22 +104,18 @@ export function useLongEditorRecovery(options: {
   ): LongEditorRecoveryRecord | null {
     if (raw.length > RECOVERY_MAX_RECORD_CHARACTERS) return null;
     try {
-      const value = JSON.parse(raw) as Partial<LongEditorRecoveryRecord>;
-      const revision = LongFileRevisionSchema.safeParse(value.baseRevision);
+      const value = JSON.parse(raw) as Partial<
+        Omit<LongEditorRecoveryRecord, "schemaVersion">
+      > & { schemaVersion?: number };
       const now = Date.now();
       if (
-        value.schemaVersion !== 1 ||
+        (value.schemaVersion !== 1 && value.schemaVersion !== 2) ||
         value.bookId !== expectedBookId ||
         value.fileId !== expectedFileId ||
         typeof value.filePath !== "string" ||
         value.filePath.length > 4096 ||
         typeof value.content !== "string" ||
         typeof value.savedContent !== "string" ||
-        !revision.success ||
-        !Number.isInteger(value.workspaceRevision) ||
-        Number(value.workspaceRevision) < 0 ||
-        !Number.isInteger(value.projectRevision) ||
-        Number(value.projectRevision) < 0 ||
         typeof value.timestamp !== "number" ||
         !Number.isFinite(value.timestamp) ||
         value.timestamp <= 0 ||
@@ -153,15 +125,12 @@ export function useLongEditorRecovery(options: {
         return null;
       }
       return {
-        schemaVersion: 1,
+        schemaVersion: 2,
         bookId: value.bookId,
         fileId: value.fileId,
         filePath: value.filePath,
         content: value.content,
         savedContent: value.savedContent,
-        baseRevision: revision.data,
-        workspaceRevision: Number(value.workspaceRevision),
-        projectRevision: Number(value.projectRevision),
         timestamp: value.timestamp
       };
     } catch {
@@ -204,15 +173,12 @@ export function useLongEditorRecovery(options: {
     }
 
     const record: LongEditorRecoveryRecord = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       bookId: state.bookId,
       fileId: state.file.id,
       filePath: state.file.path,
       content: state.content,
       savedContent: state.savedContent,
-      baseRevision: state.file.revision,
-      workspaceRevision: state.workspaceRevision,
-      projectRevision: state.projectRevision,
       timestamp: Date.now()
     };
     if (
@@ -252,7 +218,7 @@ export function useLongEditorRecovery(options: {
       recoveryWriteWarningKeys.delete(key);
     } catch {
       // setItem is atomic, but an older value may still exist after quota failure.
-      // Removing it prevents a later restart from silently restoring stale text.
+      // Removing it prevents a later restart from restoring an outdated copy.
       removeStoredRecovery(state.bookId, state.file.id);
       warnRecoveryWriteFailure(
         key,
@@ -304,10 +270,8 @@ export function useLongEditorRecovery(options: {
   });
 
   return {
-    staleRecoveryByKey,
     recoveryStorageKey,
     resolveRecoveryStorage,
-    removeStaleRecoveryState,
     cancelRecoveryWrite,
     clearRecoveryRecordForKey,
     parseStoredRecovery,

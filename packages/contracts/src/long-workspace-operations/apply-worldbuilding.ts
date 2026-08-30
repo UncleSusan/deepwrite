@@ -9,6 +9,7 @@ import {
 } from "../long-workspace";
 import type { LongWorkspaceOperation } from "./operation-schema";
 import type { MutationState } from "./state";
+import { cleanupProjectionForDeletedEntity } from "./ledger-cleanup";
 
 import {
   addFileCreateIntent,
@@ -104,13 +105,14 @@ export function applyWorldbuildingOperation(
               `Convert worldbuilding category ${category.id} to text`
             );
           }
-          category.items.forEach((item) =>
+          category.items.forEach((item) => {
             addFileDeleteIntent(
               state,
               item.file,
               `Convert worldbuilding category ${category.id} to text`
-            )
-          );
+            );
+            cleanupProjectionForDeletedEntity(state, item.id);
+          });
           const file = createEmptyLongMarkdownFileReference(
             longWorldbuildingFileId(category.id),
             longWorldbuildingContentPath(category.id),
@@ -212,6 +214,12 @@ export function applyWorldbuildingOperation(
           `Delete worldbuilding category ${category.id}`
         )
       );
+      if (category.format === "list") {
+        category.items.forEach((item) =>
+          cleanupProjectionForDeletedEntity(state, item.id)
+        );
+      }
+      cleanupProjectionForDeletedEntity(state, category.id);
       workspace.worldbuilding.splice(index, 1);
       markDeleted(state, category.id);
       break;
@@ -299,6 +307,7 @@ export function applyWorldbuildingOperation(
         item.file,
         `Delete worldbuilding item ${item.id}`
       );
+      cleanupProjectionForDeletedEntity(state, item.id);
       category.items.splice(itemIndex, 1);
       markDeleted(state, item.id);
       markUpdated(state, category.id);

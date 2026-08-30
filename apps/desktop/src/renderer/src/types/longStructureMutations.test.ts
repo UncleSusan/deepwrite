@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  EMPTY_LONG_MARKDOWN_REVISION,
   LONG_BOOK_LINE_FILE_ID,
   LongWorkspaceIndexSnapshotSchema,
   previewLongWorkspaceOperations,
@@ -21,16 +20,14 @@ import {
 } from "@deepwrite/contracts";
 import {
   createLongStructureMutationBuilder,
-  moveLongOrderedId,
-  rebaseLongStructureBatchAfterDocumentSave
+  moveLongOrderedId
 } from "./longStructureMutations";
 
 const now = "2026-07-26T12:00:00.000Z";
 const later = "2026-07-26T13:00:00.000Z";
-const revision = "v1:0:00000000";
 
 function file(id: string, path: string) {
-  return { id, path, revision, updatedAt: now };
+  return { id, path, updatedAt: now };
 }
 
 function characterFiles(characterId: string) {
@@ -81,7 +78,6 @@ function chapterFiles(chapterCardId: string) {
 function snapshot(): LongWorkspaceIndexSnapshot {
   return LongWorkspaceIndexSnapshotSchema.parse({
     schemaVersion: 1,
-    revision: 11,
     bookId: "longbook_structure_manager",
     updatedAt: now,
     bookLine: file(LONG_BOOK_LINE_FILE_ID, "long/plot/book-line.md"),
@@ -378,7 +374,6 @@ describe("long structure mutation builder", () => {
               category.id,
               "worlditem_generated"
             ),
-            revision: EMPTY_LONG_MARKDOWN_REVISION,
             updatedAt: later
           }
         }
@@ -401,8 +396,7 @@ describe("long structure mutation builder", () => {
       {
         type: "worldbuildingItem.delete",
         categoryId: category.id,
-        id: "worlditem_plain",
-        cascade: true
+        id: "worlditem_plain"
       }
     ]);
     expect(() =>
@@ -410,57 +404,12 @@ describe("long structure mutation builder", () => {
     ).not.toThrow();
   });
 
-  it("rebases a pending structure batch only across document-only revisions", () => {
-    const before = snapshot();
-    const batch = builder(before).updateWorldbuilding("world_history", {
-      title: "新历史"
-    });
-    const afterDocumentSave = LongWorkspaceIndexSnapshotSchema.parse({
-      ...before,
-      revision: 12,
-      updatedAt: later,
-      bookLine: {
-        ...before.bookLine,
-        revision: "v1:0:11111111",
-        updatedAt: later
-      }
-    });
-
-    expect(
-      rebaseLongStructureBatchAfterDocumentSave({
-        batch,
-        before,
-        after: afterDocumentSave
-      }).baseRevision
-    ).toBe(12);
-
-    const afterStructureChange = LongWorkspaceIndexSnapshotSchema.parse({
-      ...afterDocumentSave,
-      worldbuilding: afterDocumentSave.worldbuilding.map((category) =>
-        category.id === "world_history"
-          ? { ...category, title: "并发修改" }
-          : category
-      )
-    });
-    expect(() =>
-      rebaseLongStructureBatchAfterDocumentSave({
-        batch,
-        before,
-        after: afterStructureChange
-      })
-    ).toThrow(/结构已更新/u);
-  });
-
   it("creates stable ids and complete empty Markdown file indexes", () => {
     const worldBatch = builder().createWorldbuilding({
       title: "  政治制度  ",
       format: "list"
     });
-    expect(worldBatch).toMatchObject({
-      baseRevision: 11,
-      updatedAt: later,
-      documentWrites: []
-    });
+    expect(worldBatch).toMatchObject({ updatedAt: later, documentWrites: [] });
     expect(worldBatch.operations).toEqual([
       {
         type: "worldbuilding.create",
@@ -473,8 +422,6 @@ describe("long structure mutation builder", () => {
           overview: {
             id: "file_world_generated:overview",
             path: "long/worldbuilding/world_generated/overview.md",
-            revision:
-              "v2:0:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             updatedAt: later
           },
           items: []
@@ -502,7 +449,6 @@ describe("long structure mutation builder", () => {
         coreProfile: {
           id: "file_character_generated:core-profile",
           path: "long/characters/character_generated/core-profile.md",
-          revision: EMPTY_LONG_MARKDOWN_REVISION,
           updatedAt: later
         },
         relationships: {
@@ -533,25 +479,21 @@ describe("long structure mutation builder", () => {
           body: {
             id: "file_chapter_generated:body",
             path: "long/chapters/chapter_generated/body.md",
-            revision: EMPTY_LONG_MARKDOWN_REVISION,
             updatedAt: later
           },
           card: {
             id: "file_chapter_generated:card",
             path: "long/chapters/chapter_generated/card.md",
-            revision: EMPTY_LONG_MARKDOWN_REVISION,
             updatedAt: later
           },
           characterState: {
             id: "file_chapter_generated:character-state",
             path: "long/chapters/chapter_generated/character-state.md",
-            revision: EMPTY_LONG_MARKDOWN_REVISION,
             updatedAt: later
           },
           handoff: {
             id: "file_chapter_generated:handoff",
             path: "long/chapters/chapter_generated/handoff.md",
-            revision: EMPTY_LONG_MARKDOWN_REVISION,
             updatedAt: later
           },
           foreshadowingChanges: {
@@ -560,7 +502,6 @@ describe("long structure mutation builder", () => {
               "chapter_generated",
               "foreshadowing-changes.md"
             ),
-            revision: EMPTY_LONG_MARKDOWN_REVISION,
             updatedAt: later
           },
           worldReveals: null,
@@ -734,39 +675,30 @@ describe("long structure mutation builder", () => {
     ]);
   });
 
-  it("always makes cascade intent explicit for every supported delete", () => {
+  it("builds relationship-aware deletes without renderer cascade flags", () => {
     const mutations = builder();
     expect(
-      mutations.deleteWorldbuilding("world_history", false).operations[0]
+      mutations.deleteWorldbuilding("world_history").operations[0]
     ).toEqual({
       type: "worldbuilding.delete",
-      id: "world_history",
-      cascade: false
+      id: "world_history"
     });
-    expect(
-      mutations.deleteCharacter("character_alice", false).operations[0]
-    ).toEqual({
+    expect(mutations.deleteCharacter("character_alice").operations[0]).toEqual({
       type: "character.delete",
-      id: "character_alice",
-      cascade: false
+      id: "character_alice"
     });
-    expect(mutations.deleteVolume("volume_one", true).operations[0]).toEqual({
+    expect(mutations.deleteVolume("volume_one").operations[0]).toEqual({
       type: "volume.delete",
-      id: "volume_one",
-      cascade: true
+      id: "volume_one"
     });
-    expect(mutations.deleteArc("arc_letter", true).operations[0]).toEqual({
+    expect(mutations.deleteArc("arc_letter").operations[0]).toEqual({
       type: "arc.delete",
-      id: "arc_letter",
-      cascade: true
+      id: "arc_letter"
     });
-    expect(mutations.deleteChapter("chapter_one", false).operations[0]).toEqual(
-      {
-        type: "chapter.delete",
-        id: "chapter_one",
-        cascade: false
-      }
-    );
+    expect(mutations.deleteChapter("chapter_one").operations[0]).toEqual({
+      type: "chapter.delete",
+      id: "chapter_one"
+    });
   });
 
   it("builds complete story-event and event-connection proposals", () => {
@@ -855,19 +787,15 @@ describe("long structure mutation builder", () => {
         patch: { type: "enables", note: "" }
       }
     ]);
-    expect(
-      mutations.deleteStoryEvent("event_clock", true).operations[0]
-    ).toEqual({
+    expect(mutations.deleteStoryEvent("event_clock").operations[0]).toEqual({
       type: "event.delete",
-      id: "event_clock",
-      cascade: true
+      id: "event_clock"
     });
     expect(
       mutations.deleteEventConnection("connection_letter_clock").operations[0]
     ).toEqual({
       type: "connection.delete",
-      id: "connection_letter_clock",
-      cascade: false
+      id: "connection_letter_clock"
     });
     expect(() =>
       mutations.createEventConnection({
@@ -932,11 +860,10 @@ describe("long structure mutation builder", () => {
       }
     ]);
     expect(
-      mutations.deleteNarrativePlacement("placement_clock", true).operations[0]
+      mutations.deleteNarrativePlacement("placement_clock").operations[0]
     ).toEqual({
       type: "placement.delete",
-      id: "placement_clock",
-      cascade: true
+      id: "placement_clock"
     });
   });
 
@@ -1070,18 +997,16 @@ describe("long structure mutation builder", () => {
       }
     ]);
     expect(
-      mutations.deleteForeshadowing("foreshadow_bell", true).operations[0]
+      mutations.deleteForeshadowing("foreshadow_bell").operations[0]
     ).toEqual({
       type: "foreshadowing.delete",
-      id: "foreshadow_bell",
-      cascade: true
+      id: "foreshadow_bell"
     });
     expect(
       mutations.deleteForeshadowingBeat("beat_bell_plant").operations[0]
     ).toEqual({
       type: "foreshadowingBeat.delete",
-      id: "beat_bell_plant",
-      cascade: false
+      id: "beat_bell_plant"
     });
     expect(() =>
       mutations.createForeshadowingBeat({

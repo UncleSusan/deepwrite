@@ -10,12 +10,16 @@ import {
 
 interface DiskGeneralSettings extends Omit<
   GeneralSettings,
-  "permissionMode" | "autoApproveCrossStageOperations" | "defaultTextViewMode"
+  | "permissionMode"
+  | "autoApproveCrossStageOperations"
+  | "defaultTextViewMode"
+  | "showContextUsage"
 > {
   version: 1;
   permissionMode: GeneralSettings["permissionMode"] | "full-access";
   autoApproveCrossStageOperations?: boolean;
   defaultTextViewMode?: GeneralSettings["defaultTextViewMode"];
+  showContextUsage?: boolean;
 }
 
 function isNodeError(error: unknown, code: string): boolean {
@@ -70,6 +74,7 @@ export class GeneralSettingsStore {
         autoSave: candidate.autoSave,
         language: candidate.language,
         showInMenuBar: candidate.showInMenuBar,
+        showContextUsage: candidate.showContextUsage,
         workspacePaneLayout: candidate.workspacePaneLayout,
         defaultTextViewMode: candidate.defaultTextViewMode
       });

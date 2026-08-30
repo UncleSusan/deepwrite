@@ -43,7 +43,7 @@ export function applyForeshadowingOperation(
         }
         if (beat.status !== "planned" || beat.commitId !== null) {
           operationError(
-            "committed_prefix_protected",
+            "invalid_reference",
             "New foreshadowing beats must start in planned state."
           );
         }
@@ -51,7 +51,7 @@ export function applyForeshadowingOperation(
       });
       if (operation.thread.status !== "planned") {
         operationError(
-          "committed_prefix_protected",
+          "invalid_reference",
           "New foreshadowing threads must start in planned state."
         );
       }
@@ -74,21 +74,6 @@ export function applyForeshadowingOperation(
             "Foreshadowing thread"
           )
         ]!;
-      const hasCommittedBeat = thread.beats.some(
-        (beat) => beat.commitId !== null
-      );
-      const changesLockedCoreField = Object.keys(operation.patch).some(
-        (field) =>
-          field !== "status" &&
-          !(field === "hiddenTruth" && thread.hiddenTruth === undefined) &&
-          !(field === "plannedSpan" && thread.plannedSpan === undefined)
-      );
-      if (hasCommittedBeat && changesLockedCoreField) {
-        operationError(
-          "committed_prefix_protected",
-          `Cannot update core fields of thread ${thread.id} after a beat is committed.`
-        );
-      }
       Object.assign(thread, operation.patch);
       if (operation.patch.status === "planned") {
         thread.status = deriveLongForeshadowingStatusFromCommittedBeats(
@@ -99,7 +84,7 @@ export function applyForeshadowingOperation(
       break;
     }
     case "foreshadowing.delete": {
-      deleteForeshadowingThread(state, operation.id, operation.cascade);
+      deleteForeshadowingThread(state, operation.id);
       break;
     }
     case "foreshadowing.reorder": {
@@ -150,7 +135,7 @@ export function applyForeshadowingOperation(
         operation.beat.commitId !== null
       ) {
         operationError(
-          "committed_prefix_protected",
+          "invalid_reference",
           "New foreshadowing beats must start in planned state."
         );
       }

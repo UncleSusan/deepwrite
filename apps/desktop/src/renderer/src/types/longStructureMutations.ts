@@ -1,6 +1,5 @@
 import {
   LongWorkspaceOperationBatchSchema,
-  LongWorkspaceIndexSnapshotSchema,
   createEmptyLongMarkdownFileReference,
   longChapterBodyFileId,
   longChapterCardFileId,
@@ -57,41 +56,6 @@ export interface CreateLongWorldbuildingInput {
 export interface UpdateLongWorldbuildingInput {
   title?: string;
   format?: LongWorldbuildingFormat;
-}
-
-function longStructureFingerprint(
-  snapshot: LongWorkspaceIndexSnapshot
-): string {
-  const normalized = LongWorkspaceIndexSnapshotSchema.parse(snapshot);
-  return JSON.stringify(normalized, (key, value) =>
-    key === "revision" || key === "updatedAt" ? undefined : value
-  );
-}
-
-/**
- * Direct document saves advance the workspace revision even though the
- * structural graph is unchanged. Rebase a structure batch only for that exact
- * case; a real concurrent structure change must still surface as a conflict.
- */
-export function rebaseLongStructureBatchAfterDocumentSave(input: {
-  batch: LongWorkspaceOperationBatch;
-  before: LongWorkspaceIndexSnapshot;
-  after: LongWorkspaceIndexSnapshot;
-}): LongWorkspaceOperationBatch {
-  if (input.batch.baseRevision === input.after.revision) {
-    return input.batch;
-  }
-  if (
-    input.batch.baseRevision !== input.before.revision ||
-    longStructureFingerprint(input.before) !==
-      longStructureFingerprint(input.after)
-  ) {
-    throw new Error("长篇结构已更新，请基于最新结构重新修改。");
-  }
-  return LongWorkspaceOperationBatchSchema.parse({
-    ...input.batch,
-    baseRevision: input.after.revision
-  });
 }
 
 export interface CreateLongCharacterInput {
@@ -259,10 +223,7 @@ export interface LongStructureMutationBuilder {
     id: string,
     direction: LongOrderDirection
   ): LongWorkspaceOperationBatch;
-  deleteWorldbuilding(
-    id: string,
-    cascade: boolean
-  ): LongWorkspaceOperationBatch;
+  deleteWorldbuilding(id: string): LongWorkspaceOperationBatch;
   createWorldbuildingItem(
     categoryId: string,
     title?: string
@@ -307,7 +268,7 @@ export interface LongStructureMutationBuilder {
     id: string,
     direction: LongOrderDirection
   ): LongWorkspaceOperationBatch;
-  deleteCharacter(id: string, cascade: boolean): LongWorkspaceOperationBatch;
+  deleteCharacter(id: string): LongWorkspaceOperationBatch;
 
   createVolume(input: CreateLongVolumeInput): LongWorkspaceOperationBatch;
   updateVolume(
@@ -318,7 +279,7 @@ export interface LongStructureMutationBuilder {
     id: string,
     direction: LongOrderDirection
   ): LongWorkspaceOperationBatch;
-  deleteVolume(id: string, cascade: boolean): LongWorkspaceOperationBatch;
+  deleteVolume(id: string): LongWorkspaceOperationBatch;
 
   createArc(input: CreateLongArcInput): LongWorkspaceOperationBatch;
   updateArc(id: string, input: UpdateLongArcInput): LongWorkspaceOperationBatch;
@@ -331,7 +292,7 @@ export interface LongStructureMutationBuilder {
     id: string,
     direction: LongOrderDirection
   ): LongWorkspaceOperationBatch;
-  deleteArc(id: string, cascade: boolean): LongWorkspaceOperationBatch;
+  deleteArc(id: string): LongWorkspaceOperationBatch;
 
   createChapter(input: CreateLongChapterInput): LongWorkspaceOperationBatch;
   updateChapter(
@@ -348,7 +309,7 @@ export interface LongStructureMutationBuilder {
     id: string,
     direction: LongOrderDirection
   ): LongWorkspaceOperationBatch;
-  deleteChapter(id: string, cascade: boolean): LongWorkspaceOperationBatch;
+  deleteChapter(id: string): LongWorkspaceOperationBatch;
 
   createStoryEvent(
     input: CreateLongStoryEventInput
@@ -361,7 +322,7 @@ export interface LongStructureMutationBuilder {
     id: string,
     direction: LongOrderDirection
   ): LongWorkspaceOperationBatch;
-  deleteStoryEvent(id: string, cascade: boolean): LongWorkspaceOperationBatch;
+  deleteStoryEvent(id: string): LongWorkspaceOperationBatch;
 
   createStoryPlot(input: CreateLongStoryPlotInput): LongWorkspaceOperationBatch;
   updateStoryPlot(
@@ -372,7 +333,7 @@ export interface LongStructureMutationBuilder {
     id: string,
     direction: LongOrderDirection
   ): LongWorkspaceOperationBatch;
-  deleteStoryPlot(id: string, cascade?: boolean): LongWorkspaceOperationBatch;
+  deleteStoryPlot(id: string): LongWorkspaceOperationBatch;
 
   createEventConnection(
     input: CreateLongEventConnectionInput
@@ -399,10 +360,7 @@ export interface LongStructureMutationBuilder {
     id: string,
     direction: LongOrderDirection
   ): LongWorkspaceOperationBatch;
-  deleteNarrativePlacement(
-    id: string,
-    cascade: boolean
-  ): LongWorkspaceOperationBatch;
+  deleteNarrativePlacement(id: string): LongWorkspaceOperationBatch;
 
   createForeshadowing(
     input: CreateLongForeshadowingInput
@@ -415,10 +373,7 @@ export interface LongStructureMutationBuilder {
     id: string,
     direction: LongOrderDirection
   ): LongWorkspaceOperationBatch;
-  deleteForeshadowing(
-    id: string,
-    cascade: boolean
-  ): LongWorkspaceOperationBatch;
+  deleteForeshadowing(id: string): LongWorkspaceOperationBatch;
 
   createForeshadowingBeat(
     input: CreateLongForeshadowingBeatInput
@@ -501,7 +456,6 @@ export function createLongStructureMutationBuilder(
     updatedAt = now()
   ): LongWorkspaceOperationBatch =>
     LongWorkspaceOperationBatchSchema.parse({
-      baseRevision: snapshot.revision,
       updatedAt,
       operations: nonEmptyOperations(operations),
       documentWrites: []
@@ -909,8 +863,8 @@ export function createLongStructureMutationBuilder(
       ]);
     },
 
-    deleteWorldbuilding(id, cascade) {
-      return batch([{ type: "worldbuilding.delete", id, cascade }]);
+    deleteWorldbuilding(id) {
+      return batch([{ type: "worldbuilding.delete", id }]);
     },
 
     createWorldbuildingItem(categoryId, requestedTitle) {
@@ -971,8 +925,7 @@ export function createLongStructureMutationBuilder(
         {
           type: "worldbuildingItem.delete",
           categoryId,
-          id,
-          cascade: true
+          id
         }
       ]);
     },
@@ -1108,8 +1061,8 @@ export function createLongStructureMutationBuilder(
       ]);
     },
 
-    deleteCharacter(id, cascade) {
-      return batch([{ type: "character.delete", id, cascade }]);
+    deleteCharacter(id) {
+      return batch([{ type: "character.delete", id }]);
     },
 
     createVolume(input) {
@@ -1144,8 +1097,8 @@ export function createLongStructureMutationBuilder(
       ]);
     },
 
-    deleteVolume(id, cascade) {
-      return batch([{ type: "volume.delete", id, cascade }]);
+    deleteVolume(id) {
+      return batch([{ type: "volume.delete", id }]);
     },
 
     createArc(input) {
@@ -1215,8 +1168,8 @@ export function createLongStructureMutationBuilder(
       ]);
     },
 
-    deleteArc(id, cascade) {
-      return batch([{ type: "arc.delete", id, cascade }]);
+    deleteArc(id) {
+      return batch([{ type: "arc.delete", id }]);
     },
 
     createChapter(input) {
@@ -1339,8 +1292,8 @@ export function createLongStructureMutationBuilder(
       ]);
     },
 
-    deleteChapter(id, cascade) {
-      return batch([{ type: "chapter.delete", id, cascade }]);
+    deleteChapter(id) {
+      return batch([{ type: "chapter.delete", id }]);
     },
 
     createStoryEvent(input) {
@@ -1398,8 +1351,8 @@ export function createLongStructureMutationBuilder(
       ]);
     },
 
-    deleteStoryEvent(id, cascade) {
-      return batch([{ type: "event.delete", id, cascade }]);
+    deleteStoryEvent(id) {
+      return batch([{ type: "event.delete", id }]);
     },
 
     createStoryPlot(input) {
@@ -1451,9 +1404,9 @@ export function createLongStructureMutationBuilder(
       ]);
     },
 
-    deleteStoryPlot(id, cascade = true) {
+    deleteStoryPlot(id) {
       assertPresent(storyPlot(id), "Story plot");
-      return batch([{ type: "storyPlot.delete", id, cascade }]);
+      return batch([{ type: "storyPlot.delete", id }]);
     },
 
     createEventConnection(input) {
@@ -1496,7 +1449,7 @@ export function createLongStructureMutationBuilder(
     },
 
     deleteEventConnection(id) {
-      return batch([{ type: "connection.delete", id, cascade: false }]);
+      return batch([{ type: "connection.delete", id }]);
     },
 
     createNarrativePlacement(input) {
@@ -1577,8 +1530,8 @@ export function createLongStructureMutationBuilder(
       ]);
     },
 
-    deleteNarrativePlacement(id, cascade) {
-      return batch([{ type: "placement.delete", id, cascade }]);
+    deleteNarrativePlacement(id) {
+      return batch([{ type: "placement.delete", id }]);
     },
 
     createForeshadowing(input) {
@@ -1649,8 +1602,8 @@ export function createLongStructureMutationBuilder(
       ]);
     },
 
-    deleteForeshadowing(id, cascade) {
-      return batch([{ type: "foreshadowing.delete", id, cascade }]);
+    deleteForeshadowing(id) {
+      return batch([{ type: "foreshadowing.delete", id }]);
     },
 
     createForeshadowingBeat(input) {
@@ -1767,7 +1720,7 @@ export function createLongStructureMutationBuilder(
     },
 
     deleteForeshadowingBeat(id) {
-      return batch([{ type: "foreshadowingBeat.delete", id, cascade: false }]);
+      return batch([{ type: "foreshadowingBeat.delete", id }]);
     }
   };
 }

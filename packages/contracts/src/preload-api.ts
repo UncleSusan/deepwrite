@@ -67,6 +67,12 @@ import type {
   LearningImitationStageId
 } from "./learning-imitation";
 import type {
+  LongBookAnalysisSettings,
+  LongBookAnalysisSettingsInput,
+  LongBookAnalysisSource,
+  LongBookAnalysisSourceKind
+} from "./long-book-analysis";
+import type {
   LibraryAgentDomain,
   LibraryAgentSettings,
   LibraryAgentSettingsInput
@@ -146,6 +152,8 @@ import type {
   LongRenameBookInput,
   LongRemoveBookInput,
   LongRemoveBookResult,
+  LongSearchInput,
+  LongSearchResult,
   LongUpdateBindingsInput,
   LongWorkspaceIndexResult,
   LongWriteDocumentInput,
@@ -156,8 +164,6 @@ import type {
 import type {
   LongCommitChapterInput,
   LongCommitChapterResult,
-  LongRollbackLastCommitInput,
-  LongRollbackLastCommitResult,
   LongWriteChapterInput,
   LongWriteChapterResult
 } from "./long-ledger";
@@ -336,6 +342,7 @@ export interface DeepWriteApi {
       input: LongOpenBookInput
     ): Promise<LongWorkspaceIndexResult>;
     readDocument(input: LongReadDocumentInput): Promise<LongReadDocumentResult>;
+    search(input: LongSearchInput): Promise<LongSearchResult>;
     writeDocument(
       input: LongWriteDocumentInput
     ): Promise<LongWriteDocumentResult>;
@@ -353,9 +360,6 @@ export interface DeepWriteApi {
     commitChapter(
       input: LongCommitChapterInput
     ): Promise<LongCommitChapterResult>;
-    rollbackLastCommit(
-      input: LongRollbackLastCommitInput
-    ): Promise<LongRollbackLastCommitResult>;
     unregister(input: LongRemoveBookInput): Promise<LongRemoveBookResult>;
     delete(input: LongRemoveBookInput): Promise<LongRemoveBookResult>;
   };
@@ -452,6 +456,18 @@ export interface DeepWriteApi {
     reset(
       stageId?: LearningImitationStageId
     ): Promise<LearningImitationSettings>;
+  };
+  longBookAnalysis: {
+    chooseSource(
+      kind: LongBookAnalysisSourceKind
+    ): Promise<LongBookAnalysisSource | null>;
+    presets: {
+      list(): Promise<LongBookAnalysisSettings>;
+      save(
+        settings: LongBookAnalysisSettingsInput
+      ): Promise<LongBookAnalysisSettings>;
+      reset(presetId?: string): Promise<LongBookAnalysisSettings>;
+    };
   };
   workspaceDirectory: {
     list(): Promise<WorkspaceDirectorySettings>;

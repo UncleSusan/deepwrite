@@ -276,7 +276,6 @@ describe("unified long-form tools: mutations", () => {
 
     const item = await remove.execute("delete-item", {
       id: "worlditem_memory",
-      cascade: true,
       summary: "删除记忆代价"
     });
     expect(item.details).toMatchObject({
@@ -312,9 +311,18 @@ describe("unified long-form tools: mutations", () => {
         chapter_id: "chapter_one"
       }
     );
-    expect(continuity.details).toEqual({ kind: "none" });
-    expect(resultText(continuity)).toContain("committed_prefix_protected");
-    expect(resultText(continuity)).toContain("不会生成审批卡");
+    expect(continuity.details).toMatchObject({
+      kind: "long-mutation-proposal",
+      batch: {
+        operations: [
+          expect.objectContaining({
+            type: "chapterContinuity.character.delete",
+            chapterCardId: "chapter_one",
+            characterId: "character_alice"
+          })
+        ]
+      }
+    });
   });
 
   it("asks before every cross-stage create, edit, and delete mutation", async () => {
