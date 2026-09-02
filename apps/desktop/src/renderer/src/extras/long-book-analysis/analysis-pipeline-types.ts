@@ -1,18 +1,20 @@
 import type { Ref } from "vue";
 import type {
   LongBookAnalysisNote,
+  LongBookAnalysisPipelineCheckpoint,
   LongBookAnalysisPreset,
   LongBookAnalysisResult,
   LongBookAnalysisSegment,
   ThinkingLevel
 } from "@deepwrite/contracts/renderer";
-import type { LongBookAnalysisRunStatus } from "./useLongBookAnalysis";
 import type {
   LongBookAnalysisProcessEntry,
   LongBookAnalysisProcessState
 } from "./analysis-process";
 
 export type LongBookAnalysisPhase = "batch" | "reduce" | "final";
+export type LongBookAnalysisRunStatus =
+  "idle" | "running" | "stopping" | "stopped" | "error" | "completed";
 
 export interface LongBookAnalysisPipelineState extends LongBookAnalysisProcessState {
   status: Ref<LongBookAnalysisRunStatus>;
@@ -38,6 +40,7 @@ export interface LongBookAnalysisPendingUnit {
 
 export interface LongBookAnalysisJob {
   id: string;
+  sourceId: string;
   sourceTitle: string;
   preset: LongBookAnalysisPreset;
   modelId: string;
@@ -45,6 +48,7 @@ export interface LongBookAnalysisJob {
   libraryId: string;
   selectionStart: number;
   selectionEnd: number;
+  selectedChapterOrders: number[];
   inputBudget: number;
   batches: LongBookAnalysisSegment[][];
   batchIndex: number;
@@ -55,4 +59,10 @@ export interface LongBookAnalysisJob {
     groupIndex: number;
     output: LongBookAnalysisNote[];
   };
+}
+
+export interface LongBookAnalysisPipelineOptions {
+  onCheckpoint?(
+    checkpoint: LongBookAnalysisPipelineCheckpoint
+  ): Promise<void> | void;
 }

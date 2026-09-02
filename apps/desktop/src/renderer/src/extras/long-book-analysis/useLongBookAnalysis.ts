@@ -24,13 +24,15 @@ import {
   LongBookAnalysisPipeline,
   type LongBookAnalysisPhase
 } from "./analysis-pipeline";
+import type { LongBookAnalysisRunStatus } from "./analysis-pipeline-types";
 import {
   formatAnalysisProgress,
   type LongBookAnalysisProcessEntry
 } from "./analysis-process";
-
-export type LongBookAnalysisRunStatus =
-  "idle" | "running" | "stopping" | "stopped" | "error" | "completed";
+import {
+  useCompleteBookAnalysis,
+  type CompleteBookAnalysisController
+} from "./useCompleteBookAnalysis";
 
 export interface LongBookAnalysisStartInput {
   presetId: string;
@@ -39,6 +41,7 @@ export interface LongBookAnalysisStartInput {
   modelId?: string;
   thinkingLevel?: ThinkingLevel;
   libraryId?: string;
+  chapterOrders?: readonly number[];
 }
 
 export interface LongBookAnalysisPersistInput {
@@ -66,6 +69,7 @@ export interface LongBookAnalysisController {
   liveOutput: Readonly<Ref<string>>;
   isBusy: ComputedRef<boolean>;
   canRetry: ComputedRef<boolean>;
+  complete: CompleteBookAnalysisController;
   setConfiguredModels(
     models: readonly ModelConfig[],
     defaultModelId?: string
@@ -105,7 +109,7 @@ export function useLongBookAnalysis(options: {
   const processEntries = ref<LongBookAnalysisProcessEntry[]>([]);
   const currentActivity = ref("");
   const liveOutput = ref("");
-  const isBusy = computed(
+  const singleIsBusy = computed(
     () => status.value === "running" || status.value === "stopping"
   );
   const canRetry = computed(
@@ -141,6 +145,14 @@ export function useLongBookAnalysis(options: {
     currentActivity,
     liveOutput
   });
+  const complete = useCompleteBookAnalysis({
+    api,
+    source,
+    presets,
+    models: configuredModels,
+    beforeSourceReplace: () => pipeline.reset()
+  });
+  const isBusy = computed(() => singleIsBusy.value || complete.isBusy.value);
   const activePresetId = computed(() =>
     status.value ? (pipeline.preset?.id ?? "") : ""
   );
@@ -330,6 +342,7 @@ export function useLongBookAnalysis(options: {
     liveOutput,
     isBusy,
     canRetry,
+    complete,
     setConfiguredModels,
     loadPresets,
     savePresets,
@@ -342,10 +355,14 @@ export function useLongBookAnalysis(options: {
     retry: async () => pipeline.retry(),
     stop: () => pipeline.stop(),
     persistResult,
-    handleEvent: (event) => pipeline.handleEvent(event),
+    handleEvent: (event) => {
+      pipeline.handleEvent(event);
+      complete.handleEvent(event);
+    },
     dispose() {
       disposed = true;
       pipeline.dispose();
+      complete.dispose();
     }
   };
 }

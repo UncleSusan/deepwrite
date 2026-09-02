@@ -73,4 +73,19 @@ describe("long-book analysis batching", () => {
       splitAnalysisNotesForBudget(notes.slice(0, 1), 1_000).length
     ).toBeGreaterThan(1);
   });
+
+  it("limits one processing window to 50 chapters without limiting the task", () => {
+    const chapters = Array.from({ length: 121 }, (_, index) =>
+      chapter(index + 1, `章节 ${index + 1}`)
+    );
+    const groups = groupAnalysisSegments(
+      buildAnalysisSegments(chapters, 100_000),
+      100_000
+    );
+    expect(
+      groups.map(
+        (group) => new Set(group.map(({ chapterId }) => chapterId)).size
+      )
+    ).toEqual([50, 50, 21]);
+  });
 });

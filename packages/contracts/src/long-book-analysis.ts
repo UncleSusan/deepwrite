@@ -8,10 +8,11 @@ import {
 import { EnvelopeBaseSchema } from "./envelope";
 
 export const LONG_BOOK_ANALYSIS_MAX_PRESETS = 50;
-// Allows the three required built-ins to be restored for legacy configurations
+// Allows required built-ins to be restored for legacy configurations
 // that already reached the user-facing preset limit without them.
 const LONG_BOOK_ANALYSIS_MAX_PERSISTED_PRESETS =
   LONG_BOOK_ANALYSIS_MAX_PRESETS + 3;
+/** Maximum raw chapters sent to one model processing window. */
 export const LONG_BOOK_ANALYSIS_MAX_SELECTED_CHAPTERS = 50;
 export const LONG_BOOK_ANALYSIS_MAX_SOURCE_CHAPTERS = 10_000;
 export const LONG_BOOK_ANALYSIS_MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -323,13 +324,15 @@ export const LongBookAnalysisRuntimeContextSchema = z
       });
     }
     if (
-      value.selectionEnd - value.selectionStart + 1 >
-      LONG_BOOK_ANALYSIS_MAX_SELECTED_CHAPTERS
+      value.phase === "batch" &&
+      new Set(value.segments.map(({ chapterId }) => chapterId)).size >
+        LONG_BOOK_ANALYSIS_MAX_SELECTED_CHAPTERS
     ) {
       context.addIssue({
         code: "custom",
-        path: ["selectionEnd"],
-        message: "Long-book analysis may include at most 50 chapters."
+        path: ["segments"],
+        message:
+          "One long-book analysis processing window may include at most 50 chapters."
       });
     }
   });

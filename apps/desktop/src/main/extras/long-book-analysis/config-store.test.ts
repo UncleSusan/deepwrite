@@ -28,18 +28,40 @@ afterEach(async () => {
 });
 
 describe("long-book analysis config store", () => {
-  it("provides three independent default presets", async () => {
+  it("provides five independent default presets", async () => {
     const { store } = await createStore();
     const settings = await store.list();
     expect(settings.presets.map((preset) => preset.name)).toEqual([
       "剧情结构",
       "人物",
+      "作品设定集",
+      "方法蒸馏",
       "文风"
     ]);
     expect(settings.presets.every((preset) => preset.builtin)).toBe(true);
     expect(DEFAULT_LONG_BOOK_ANALYSIS_PRESETS[0].systemPrompt).toContain(
       "大剧情"
     );
+    expect(
+      settings.presets.find(({ id }) => id === "character")?.systemPrompt
+    ).toContain("9+1");
+    expect(
+      settings.presets.find(({ id }) => id === "story-bible")
+    ).toMatchObject({
+      output: { domain: "material", kind: "other", stageId: "other" }
+    });
+    expect(
+      settings.presets.find(({ id }) => id === "story-bible")?.systemPrompt
+    ).toContain("【事实】");
+    expect(
+      settings.presets.find(({ id }) => id === "method-distillation")
+    ).toMatchObject({
+      output: { domain: "skill", kind: "general", stageId: "draft" }
+    });
+    expect(
+      settings.presets.find(({ id }) => id === "method-distillation")
+        ?.systemPrompt
+    ).toContain("来源 -> 证据 -> 方法 -> 索引");
   });
 
   it("serializes concurrent saves and can restore one modified default", async () => {
@@ -103,6 +125,8 @@ describe("long-book analysis config store", () => {
 
     expect(saved.presets.map((preset) => preset.id)).toEqual([
       "character",
+      "story-bible",
+      "method-distillation",
       "style",
       "plot-structure"
     ]);
@@ -118,7 +142,7 @@ describe("long-book analysis config store", () => {
     const configPath = join(path, "config", "long-book-analysis-presets.json");
     await mkdir(dirname(configPath), { recursive: true });
     await writeFile(configPath, "{damaged", "utf8");
-    expect((await store.list()).presets).toHaveLength(3);
+    expect((await store.list()).presets).toHaveLength(5);
     expect(await readFile(configPath, "utf8")).toBe("{damaged");
   });
 });

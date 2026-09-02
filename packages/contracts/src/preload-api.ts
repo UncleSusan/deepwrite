@@ -74,6 +74,10 @@ import type {
   LongBookAnalysisSourceKind
 } from "./long-book-analysis";
 import type {
+  LongBookAnalysisTaskCatalog,
+  LongBookAnalysisTaskSnapshot
+} from "./long-book-analysis-task";
+import type {
   LibraryAgentDomain,
   LibraryAgentSettings,
   LibraryAgentSettingsInput
@@ -472,6 +476,13 @@ export interface DeepWriteApi {
         settings: LongBookAnalysisSettingsInput
       ): Promise<LongBookAnalysisSettings>;
       reset(presetId?: string): Promise<LongBookAnalysisSettings>;
+    };
+    tasks: {
+      list(): Promise<LongBookAnalysisTaskCatalog>;
+      save(
+        task: LongBookAnalysisTaskSnapshot
+      ): Promise<LongBookAnalysisTaskSnapshot>;
+      delete(taskId: string): Promise<void>;
     };
   };
   workspaceDirectory: {

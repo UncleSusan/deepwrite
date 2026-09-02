@@ -94,6 +94,11 @@ import {
   LongBookAnalysisSettingsSaveCommandEnvelopeSchema
 } from "./long-book-analysis";
 import {
+  LongBookAnalysisTasksDeleteCommandEnvelopeSchema,
+  LongBookAnalysisTasksListCommandEnvelopeSchema,
+  LongBookAnalysisTasksSaveCommandEnvelopeSchema
+} from "./long-book-analysis-task";
+import {
   AgentModelCapacityCommandEnvelopeSchema,
   AgentModelTestCommandEnvelopeSchema,
   ModelsClearOfficialTokenCommandEnvelopeSchema,
@@ -361,6 +366,9 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   LongBookAnalysisSettingsListCommandEnvelopeSchema,
   LongBookAnalysisSettingsSaveCommandEnvelopeSchema,
   LongBookAnalysisSettingsResetCommandEnvelopeSchema,
+  LongBookAnalysisTasksListCommandEnvelopeSchema,
+  LongBookAnalysisTasksSaveCommandEnvelopeSchema,
+  LongBookAnalysisTasksDeleteCommandEnvelopeSchema,
   AgentTeamsListCommandEnvelopeSchema,
   AgentTeamsCreateCommandEnvelopeSchema,
   AgentTeamsRenameCommandEnvelopeSchema,

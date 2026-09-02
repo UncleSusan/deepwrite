@@ -1,6 +1,7 @@
 import { ref, shallowRef } from "vue";
 import type {
   DeepWriteApi,
+  LongBookAnalysisPipelineCheckpoint,
   LongBookAnalysisPreset,
   LongBookAnalysisSource,
   ModelConfig,
@@ -11,7 +12,9 @@ import { describe, expect, it, vi } from "vitest";
 import { LongBookAnalysisPipeline } from "./analysis-pipeline";
 import type { LongBookAnalysisPipelineState } from "./analysis-pipeline-types";
 
-function fixture() {
+function fixture(
+  onCheckpoint?: (value: LongBookAnalysisPipelineCheckpoint) => void
+) {
   const prompts: SessionPromptCommandPayload[] = [];
   const abort = vi.fn(async () => ({
     sessionId: "session",
@@ -61,7 +64,8 @@ function fixture() {
     pipeline: new LongBookAnalysisPipeline(
       () => api,
       shallowRef([model]),
-      state
+      state,
+      onCheckpoint ? { onCheckpoint } : {}
     )
   };
 }
@@ -205,5 +209,41 @@ describe("long-book analysis pipeline checkpoints", () => {
     expect(active.workspaceContext?.longBookAnalysis?.presetId).toBe(preset.id);
     expect(pipeline.targetLibraryId).toBe("");
     expect(state.processEntries.value[0]?.detail).toContain("仅运行当前预设");
+  });
+
+  it("restores the next unit from a persisted batch checkpoint", async () => {
+    let checkpoint: LongBookAnalysisPipelineCheckpoint | undefined;
+    const first = fixture((value) => {
+      checkpoint = value;
+    });
+    first.pipeline.start(source, preset, {
+      presetId: preset.id,
+      startOrder: 1,
+      endOrder: 1,
+      modelId: "model-1"
+    });
+    const batch = await waitForPrompt(first.prompts, 1);
+    const context = batch.workspaceContext!.longBookAnalysis!;
+    first.pipeline.handleEvent(
+      event("long_book_analysis.note_updated", batch, {
+        unitId: context.unitId,
+        jobId: context.jobId,
+        toolCallId: "tool-note",
+        note: { text: "已持久化的批次笔记。" }
+      })
+    );
+    first.pipeline.handleEvent(
+      event("agent.message_completed", batch, {
+        role: "assistant",
+        content: "批次完成。"
+      })
+    );
+    await vi.waitFor(() => expect(checkpoint?.batchIndex).toBe(1));
+    first.pipeline.dispose();
+
+    const resumed = fixture();
+    resumed.pipeline.restore(source, preset, checkpoint!);
+    const final = await waitForPrompt(resumed.prompts, 1);
+    expect(final.workspaceContext?.longBookAnalysis?.phase).toBe("final");
   });
 });

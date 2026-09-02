@@ -14,7 +14,21 @@ interface AnalysisReducerDependencies {
   run(notes: LongBookAnalysisNote[]): Promise<string | LongBookAnalysisResult>;
   begin(detail: string): void;
   addEstimatedUnits(count: number): void;
-  completeUnit(): void;
+  completeUnit(): Promise<void> | void;
+}
+
+export function createAnalysisReductionState(
+  notes: readonly LongBookAnalysisNote[],
+  inputBudget: number
+): NonNullable<LongBookAnalysisJob["reduction"]> {
+  const inputs = splitAnalysisNotesForBudget(notes, inputBudget);
+  const groups = groupAnalysisNotes(inputs, inputBudget);
+  if (groups.every((group) => group.length === 1)) {
+    throw new Error(
+      "当前模型输入预算不足以归并单条中间笔记，请更换更大上下文模型。"
+    );
+  }
+  return { groups, groupIndex: 0, output: [] };
 }
 
 export async function reduceAnalysisJob(
@@ -28,22 +42,15 @@ export async function reduceAnalysisJob(
     )
   ) {
     if (!job.reduction) {
-      const inputs = splitAnalysisNotesForBudget(job.notes, job.inputBudget);
-      const groups = groupAnalysisNotes(inputs, job.inputBudget);
-      if (groups.every((group) => group.length === 1)) {
-        throw new Error(
-          "当前模型输入预算不足以归并单条中间笔记，请更换更大上下文模型。"
-        );
-      }
       job.reductionRounds += 1;
       if (job.reductionRounds > 8) {
         throw new Error(
           "中间笔记连续归并后仍超过预算，请更换更大上下文模型后重试。"
         );
       }
-      job.reduction = { groups, groupIndex: 0, output: [] };
+      job.reduction = createAnalysisReductionState(job.notes, job.inputBudget);
       dependencies.addEstimatedUnits(
-        groups.filter((group) => group.length > 1).length
+        job.reduction.groups.filter((group) => group.length > 1).length
       );
     }
     const reduction = job.reduction;
@@ -68,7 +75,7 @@ export async function reduceAnalysisJob(
             end
           )
         );
-        dependencies.completeUnit();
+        await dependencies.completeUnit();
       }
       reduction.groupIndex += 1;
     }

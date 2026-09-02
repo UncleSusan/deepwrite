@@ -748,6 +748,23 @@ function createDeferredApi(): {
             "Long book analysis is not used by conversation tests."
           );
         }
+      },
+      tasks: {
+        async list() {
+          throw new Error(
+            "Long book analysis is not used by conversation tests."
+          );
+        },
+        async save() {
+          throw new Error(
+            "Long book analysis is not used by conversation tests."
+          );
+        },
+        async delete() {
+          throw new Error(
+            "Long book analysis is not used by conversation tests."
+          );
+        }
       }
     },
     workspaceDirectory: {

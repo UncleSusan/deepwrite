@@ -10,7 +10,9 @@ import {
   type LongBookAnalysisSettingsInput
 } from "@deepwrite/contracts";
 import characterPrompt from "./prompts/character.txt?raw";
+import methodDistillationPrompt from "./prompts/method-distillation.txt?raw";
 import plotStructurePrompt from "./prompts/plot-structure.txt?raw";
+import storyBiblePrompt from "./prompts/story-bible.txt?raw";
 import stylePrompt from "./prompts/style.txt?raw";
 
 interface DiskSettings {
@@ -30,9 +32,26 @@ export const DEFAULT_LONG_BOOK_ANALYSIS_PRESETS = Object.freeze([
   {
     id: "character",
     name: "人物",
-    description: "拆解人物目标、关系、功能、选择和阶段性弧光。",
+    description:
+      "按 9+1 画像拆解人物人格、思想、记忆、情绪、行为、能力、关系、约束、成长与当前状态。",
     systemPrompt: characterPrompt,
     output: { domain: "material", kind: "character", stageId: "character" }
+  },
+  {
+    id: "story-bible",
+    name: "作品设定集",
+    description:
+      "用稳定锚点整理角色、世界规则、时间线、因果链、伏笔和事实层级。",
+    systemPrompt: storyBiblePrompt,
+    output: { domain: "material", kind: "other", stageId: "other" }
+  },
+  {
+    id: "method-distillation",
+    name: "方法蒸馏",
+    description:
+      "沿来源、证据、方法、索引链路提炼可执行且带适用边界的写作方法卡。",
+    systemPrompt: methodDistillationPrompt,
+    output: { domain: "skill", kind: "general", stageId: "draft" }
   },
   {
     id: "style",

@@ -1,7 +1,7 @@
 import type { ShallowRef } from "vue";
 import {
-  LONG_BOOK_ANALYSIS_MAX_SELECTED_CHAPTERS,
   type DeepWriteApi,
+  type LongBookAnalysisPipelineCheckpoint,
   type LongBookAnalysisPreset,
   type LongBookAnalysisResult,
   type LongBookAnalysisRuntimeContext,
@@ -10,16 +10,14 @@ import {
   type SystemEventEnvelope
 } from "@deepwrite/contracts/renderer";
 import { createId } from "@deepwrite/shared";
-import {
-  buildAnalysisSegments,
-  groupAnalysisSegments,
-  resolveAnalysisInputBudget
-} from "./batching";
+import { resolveAnalysisInputBudget } from "./batching";
 import type { LongBookAnalysisStartInput } from "./useLongBookAnalysis";
 import type {
   LongBookAnalysisJob as AnalysisJob,
   LongBookAnalysisPendingUnit as PendingUnit,
-  LongBookAnalysisPipelineState
+  LongBookAnalysisPipelineState,
+  LongBookAnalysisPipelineOptions,
+  LongBookAnalysisRunStatus
 } from "./analysis-pipeline-types";
 import {
   analysisErrorMessage,
@@ -28,6 +26,11 @@ import {
 } from "./analysis-pipeline-helpers";
 import { LongBookAnalysisProcessTracker } from "./analysis-process";
 import { reduceAnalysisJob } from "./analysis-reducer";
+import {
+  createAnalysisPipelineCheckpoint,
+  createNewAnalysisJob,
+  restoreAnalysisPipeline
+} from "./analysis-pipeline-checkpoint";
 export type { LongBookAnalysisPhase } from "./analysis-pipeline-types";
 
 export class LongBookAnalysisPipeline {
@@ -40,7 +43,8 @@ export class LongBookAnalysisPipeline {
   constructor(
     private readonly getApi: () => DeepWriteApi,
     private readonly models: ShallowRef<readonly ModelConfig[]>,
-    private readonly state: LongBookAnalysisPipelineState
+    private readonly state: LongBookAnalysisPipelineState,
+    private readonly options: LongBookAnalysisPipelineOptions = {}
   ) {
     this.process = new LongBookAnalysisProcessTracker(state);
   }
@@ -75,7 +79,7 @@ export class LongBookAnalysisPipeline {
     source: LongBookAnalysisSource,
     preset: LongBookAnalysisPreset,
     input: LongBookAnalysisStartInput
-  ): void {
+  ): Promise<LongBookAnalysisRunStatus> {
     const modelId = input.modelId ?? "";
     const model = this.models.value.find((item) => item.id === modelId);
     if (!modelId || !model) throw new Error("请选择可用模型。");
@@ -86,53 +90,54 @@ export class LongBookAnalysisPipeline {
     ) {
       throw new Error("所选思考等级不在当前模型配置中，请重新选择。");
     }
-    if (input.endOrder < input.startOrder) {
-      throw new Error("结束章节不能早于起始章节。");
-    }
-    if (
-      input.endOrder - input.startOrder + 1 >
-      LONG_BOOK_ANALYSIS_MAX_SELECTED_CHAPTERS
-    ) {
-      throw new Error("单次最多分析连续 50 章。");
-    }
-    const chapters = source.chapters.filter(
-      (chapter) =>
-        chapter.order >= input.startOrder && chapter.order <= input.endOrder
-    );
-    if (chapters.length !== input.endOrder - input.startOrder + 1) {
-      throw new Error("选择范围与当前章节列表不一致，请重新选择。");
-    }
     const inputBudget = resolveAnalysisInputBudget(model, preset.systemPrompt);
-    const batches = groupAnalysisSegments(
-      buildAnalysisSegments(chapters, inputBudget),
-      inputBudget
-    );
-    this.job = {
-      id: createId("long_book_analysis_job"),
-      sourceTitle: source.name,
+    this.job = createNewAnalysisJob({
+      source,
       preset,
       modelId,
       thinkingLevel,
       libraryId: input.libraryId?.trim() ?? "",
-      selectionStart: input.startOrder,
-      selectionEnd: input.endOrder,
-      inputBudget,
-      batches,
-      batchIndex: 0,
-      notes: [],
-      reductionRounds: 0
-    };
+      startOrder: input.startOrder,
+      endOrder: input.endOrder,
+      ...(input.chapterOrders ? { chapterOrders: input.chapterOrders } : {}),
+      inputBudget
+    });
     this.state.result.value = null;
     this.state.phase.value = "batch";
     this.state.completedUnits.value = 0;
-    this.state.estimatedUnits.value = batches.length + 1;
+    this.state.estimatedUnits.value = this.job.batches.length + 1;
     this.process.start(
       preset.name,
       input.startOrder,
       input.endOrder,
-      batches.length
+      this.job.batches.length
     );
-    void this.run();
+    return this.run();
+  }
+
+  restore(
+    source: LongBookAnalysisSource,
+    preset: LongBookAnalysisPreset,
+    checkpoint: LongBookAnalysisPipelineCheckpoint
+  ): Promise<LongBookAnalysisRunStatus> {
+    const model = this.models.value.find(({ id }) => id === checkpoint.modelId);
+    if (!model) throw new Error("保存任务使用的模型已不可用，请重新选择模型。");
+    const restored = restoreAnalysisPipeline({ source, preset, checkpoint });
+    this.job = restored.job;
+    this.state.result.value = restored.result;
+    this.state.phase.value = restored.phase;
+    this.state.completedUnits.value = restored.completedUnits;
+    this.state.estimatedUnits.value = restored.estimatedUnits;
+    this.state.status.value = "stopped";
+    this.state.error.value = null;
+    this.process.start(
+      preset.name,
+      restored.job.selectionStart,
+      restored.job.selectionEnd,
+      restored.job.batches.length
+    );
+    this.process.retry();
+    return this.run();
   }
 
   retry(): boolean {
@@ -159,6 +164,7 @@ export class LongBookAnalysisPipeline {
     } else if (!this.pending) {
       this.state.status.value = "stopped";
       this.process.stopped();
+      await this.saveCheckpoint();
     }
     return true;
   }
@@ -240,6 +246,16 @@ export class LongBookAnalysisPipeline {
     };
   }
 
+  private checkpoint(): LongBookAnalysisPipelineCheckpoint {
+    const job = this.job;
+    if (!job) throw new Error("拆书任务尚未准备。");
+    return createAnalysisPipelineCheckpoint(job, this.state);
+  }
+
+  private async saveCheckpoint(): Promise<void> {
+    await this.options.onCheckpoint?.(this.checkpoint());
+  }
+
   private runUnit(
     context: LongBookAnalysisRuntimeContext
   ): Promise<string | LongBookAnalysisResult> {
@@ -287,13 +303,14 @@ export class LongBookAnalysisPipeline {
     });
   }
 
-  private async run(): Promise<void> {
+  private async run(): Promise<LongBookAnalysisRunStatus> {
     const job = this.job;
-    if (!job || this.disposed) return;
+    if (!job || this.disposed) return this.state.status.value;
     this.state.status.value = "running";
     this.state.error.value = null;
     this.stopRequested = false;
     try {
+      await this.saveCheckpoint();
       this.state.phase.value = "batch";
       while (job.batchIndex < job.batches.length) {
         const batch = job.batches[job.batchIndex]!;
@@ -316,6 +333,7 @@ export class LongBookAnalysisPipeline {
         );
         job.batchIndex += 1;
         this.state.completedUnits.value += 1;
+        await this.saveCheckpoint();
       }
       this.state.phase.value = "reduce";
       await reduceAnalysisJob(job, {
@@ -329,8 +347,9 @@ export class LongBookAnalysisPipeline {
         addEstimatedUnits: (count) => {
           this.state.estimatedUnits.value += count;
         },
-        completeUnit: () => {
+        completeUnit: async () => {
           this.state.completedUnits.value += 1;
+          await this.saveCheckpoint();
         }
       });
       this.state.phase.value = "final";
@@ -351,6 +370,7 @@ export class LongBookAnalysisPipeline {
       this.state.completedUnits.value += 1;
       this.state.status.value = "completed";
       this.process.complete();
+      await this.saveCheckpoint();
     } catch (cause: unknown) {
       if (this.stopRequested) {
         this.state.status.value = "stopped";
@@ -363,8 +383,10 @@ export class LongBookAnalysisPipeline {
         );
         this.process.fail(this.state.error.value);
       }
+      await this.saveCheckpoint();
     } finally {
       this.pending = null;
     }
+    return this.state.status.value;
   }
 }

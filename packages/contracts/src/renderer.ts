@@ -20,6 +20,7 @@ export type * from "./library-agent";
 export type * from "./long-agent-settings";
 export type * from "./long-agent-team";
 export type * from "./long-book-analysis";
+export type * from "./long-book-analysis-task";
 export type * from "./long-ledger";
 export type * from "./long-manuscript-export";
 export type * from "./long-workspace";
@@ -170,6 +171,13 @@ export {
   LongBookAnalysisSettingsInputSchema,
   LongBookAnalysisSourceSchema
 } from "./long-book-analysis";
+export {
+  LONG_BOOK_ANALYSIS_COMPLETE_PRESET_IDS,
+  LongBookAnalysisPipelineCheckpointSchema,
+  LongBookAnalysisScopeModeSchema,
+  LongBookAnalysisTaskCatalogSchema,
+  LongBookAnalysisTaskSnapshotSchema
+} from "./long-book-analysis-task";
 export {
   LongCommitChapterInputSchema,
   longCommitInputChapterIds,

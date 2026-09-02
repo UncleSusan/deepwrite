@@ -2,6 +2,8 @@ import {
   LongBookAnalysisSavedSourceCatalogSchema,
   LongBookAnalysisSettingsSchema,
   LongBookAnalysisSourceSchema,
+  LongBookAnalysisTaskCatalogSchema,
+  LongBookAnalysisTaskSnapshotSchema,
   type CommandEnvelope,
   type CommandResult
 } from "@deepwrite/contracts";
@@ -9,6 +11,7 @@ import type { BrowserWindow, Dialog } from "electron";
 import type { LongBookAnalysisConfigStore } from "./config-store";
 import { readLongBookAnalysisSource } from "./source-reader";
 import { LongBookAnalysisSourceStore } from "./source-store";
+import { LongBookAnalysisTaskStore } from "./task-store";
 
 export interface LongBookAnalysisCommandContext {
   dialog: Pick<Dialog, "showOpenDialog">;
@@ -25,6 +28,25 @@ async function sourceStore(
     throw new Error("请先在设置中选择 DeepWrite 工作目录。");
   }
   return new LongBookAnalysisSourceStore(workspaceDirectory);
+}
+
+let cachedTaskStore:
+  { workspaceDirectory: string; store: LongBookAnalysisTaskStore } | undefined;
+
+async function taskStore(
+  context: LongBookAnalysisCommandContext
+): Promise<LongBookAnalysisTaskStore> {
+  const workspaceDirectory = await context.getWorkspaceDirectory();
+  if (!workspaceDirectory) {
+    throw new Error("请先在设置中选择 DeepWrite 工作目录。");
+  }
+  if (cachedTaskStore?.workspaceDirectory !== workspaceDirectory) {
+    cachedTaskStore = {
+      workspaceDirectory,
+      store: new LongBookAnalysisTaskStore(workspaceDirectory)
+    };
+  }
+  return cachedTaskStore.store;
 }
 
 function failure(
@@ -118,6 +140,58 @@ export async function handleLongBookAnalysisCommands(
         command,
         "long_book_analysis.source_load_failed",
         "读取已导入长篇失败。",
+        error
+      );
+    }
+  }
+
+  if (command.type === "longBookAnalysis.tasks.list") {
+    try {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongBookAnalysisTaskCatalogSchema.parse(
+          await (await taskStore(context)).list()
+        )
+      };
+    } catch (error: unknown) {
+      return failure(
+        command,
+        "long_book_analysis.tasks_list_failed",
+        "加载完整拆书任务失败。",
+        error
+      );
+    }
+  }
+
+  if (command.type === "longBookAnalysis.tasks.save") {
+    try {
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongBookAnalysisTaskSnapshotSchema.parse(
+          await (await taskStore(context)).save(command.payload)
+        )
+      };
+    } catch (error: unknown) {
+      return failure(
+        command,
+        "long_book_analysis.task_save_failed",
+        "保存完整拆书任务进度失败。",
+        error
+      );
+    }
+  }
+
+  if (command.type === "longBookAnalysis.tasks.delete") {
+    try {
+      await (await taskStore(context)).delete(command.payload.taskId);
+      return { status: "accepted", requestId: command.id };
+    } catch (error: unknown) {
+      return failure(
+        command,
+        "long_book_analysis.task_delete_failed",
+        "删除完整拆书任务失败。",
         error
       );
     }

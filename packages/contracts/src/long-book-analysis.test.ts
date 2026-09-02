@@ -75,6 +75,15 @@ describe("long-book analysis contracts", () => {
     expect(
       CommandEnvelopeSchema.safeParse(
         createEnvelope(
+          "longBookAnalysis.tasks.list",
+          {},
+          { id: "cmd-list-tasks" }
+        )
+      ).success
+    ).toBe(true);
+    expect(
+      CommandEnvelopeSchema.safeParse(
+        createEnvelope(
           "longBookAnalysis.loadSource",
           { sourceId: "../../unsafe" },
           { id: "cmd-load-source" }
@@ -105,12 +114,21 @@ describe("long-book analysis contracts", () => {
     ).toThrow(/unique/iu);
   });
 
-  it("allows exactly 50 continuous chapters and rejects 51", () => {
+  it("allows tasks beyond 50 chapters but caps one raw processing window", () => {
     expect(
-      LongBookAnalysisRuntimeContextSchema.parse(runtime(50)).selectionEnd
-    ).toBe(50);
+      LongBookAnalysisRuntimeContextSchema.parse(runtime(500)).selectionEnd
+    ).toBe(500);
+    const segments = Array.from({ length: 51 }, (_, index) => ({
+      ...segment,
+      id: `segment-${index + 1}`,
+      chapterId: `chapter-${index + 1}`,
+      chapterOrder: index + 1
+    }));
     expect(() =>
-      LongBookAnalysisRuntimeContextSchema.parse(runtime(51))
+      LongBookAnalysisRuntimeContextSchema.parse({
+        ...runtime(51),
+        segments
+      })
     ).toThrow(/50/iu);
   });
 

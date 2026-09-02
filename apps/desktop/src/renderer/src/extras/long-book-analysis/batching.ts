@@ -1,5 +1,6 @@
 import {
   LONG_BOOK_ANALYSIS_DEFAULT_CONTEXT_WINDOW,
+  LONG_BOOK_ANALYSIS_MAX_SELECTED_CHAPTERS,
   type LongBookAnalysisChapter,
   type LongBookAnalysisNote,
   type LongBookAnalysisSegment,
@@ -97,18 +98,25 @@ export function groupAnalysisSegments(
 ): LongBookAnalysisSegment[][] {
   const groups: LongBookAnalysisSegment[][] = [];
   let current: LongBookAnalysisSegment[] = [];
+  let chapterIds = new Set<string>();
   let tokens = 0;
   for (const segment of segments) {
     const nextTokens = estimateAnalysisTokens(segment.text);
+    const addsChapter = !chapterIds.has(segment.chapterId);
     if (
       current.length &&
-      (tokens + nextTokens > inputBudget || current.length >= 100)
+      (tokens + nextTokens > inputBudget ||
+        current.length >= 100 ||
+        (addsChapter &&
+          chapterIds.size >= LONG_BOOK_ANALYSIS_MAX_SELECTED_CHAPTERS))
     ) {
       groups.push(current);
       current = [];
+      chapterIds = new Set<string>();
       tokens = 0;
     }
     current.push(segment);
+    chapterIds.add(segment.chapterId);
     tokens += nextTokens;
   }
   if (current.length) groups.push(current);

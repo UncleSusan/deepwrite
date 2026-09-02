@@ -70,6 +70,9 @@ import {
   LongBookAnalysisSavedSourceIdSchema,
   LongBookAnalysisSourceKindSchema,
   LongBookAnalysisSourceSchema,
+  LongBookAnalysisTaskCatalogSchema,
+  LongBookAnalysisTaskIdSchema,
+  LongBookAnalysisTaskSnapshotSchema,
   CLOUD_BACKUP_IPC_CHANNEL,
   CloudBackupApplyResultSchema,
   CloudBackupIpcRequestSchema,
@@ -223,6 +226,8 @@ import {
   type LongBookAnalysisSavedSourceCatalog,
   type LongBookAnalysisSource,
   type LongBookAnalysisSourceKind,
+  type LongBookAnalysisTaskCatalog,
+  type LongBookAnalysisTaskSnapshot,
   type MarketplaceContentRef,
   type MarketplaceInstallInput,
   type MarketplaceLikeInput,
@@ -1632,6 +1637,46 @@ async function resetLongBookAnalysisPresets(
   );
 }
 
+async function listLongBookAnalysisTasks(): Promise<LongBookAnalysisTaskCatalog> {
+  const id = browserId("cmd_long_book_analysis_tasks_list");
+  return LongBookAnalysisTaskCatalogSchema.parse(
+    await invokeCommand<LongBookAnalysisTaskCatalog>(
+      createEnvelope(
+        "longBookAnalysis.tasks.list",
+        {},
+        { id, correlationId: id }
+      )
+    )
+  );
+}
+
+async function saveLongBookAnalysisTask(
+  rawTask: LongBookAnalysisTaskSnapshot
+): Promise<LongBookAnalysisTaskSnapshot> {
+  const task = LongBookAnalysisTaskSnapshotSchema.parse(rawTask);
+  const id = browserId("cmd_long_book_analysis_task_save");
+  return LongBookAnalysisTaskSnapshotSchema.parse(
+    await invokeCommand<LongBookAnalysisTaskSnapshot>(
+      createEnvelope("longBookAnalysis.tasks.save", task, {
+        id,
+        correlationId: id
+      })
+    )
+  );
+}
+
+async function deleteLongBookAnalysisTask(rawTaskId: string): Promise<void> {
+  const taskId = LongBookAnalysisTaskIdSchema.parse(rawTaskId);
+  const id = browserId("cmd_long_book_analysis_task_delete");
+  await invokeCommand<void>(
+    createEnvelope(
+      "longBookAnalysis.tasks.delete",
+      { taskId },
+      { id, correlationId: id }
+    )
+  );
+}
+
 async function listWorkspaceDirectory(): Promise<WorkspaceDirectorySettings> {
   const id = browserId("cmd_workspace_directory_list");
   return WorkspaceDirectorySettingsSchema.parse(
@@ -2033,6 +2078,11 @@ const api: DeepWriteApi = {
       list: listLongBookAnalysisPresets,
       save: saveLongBookAnalysisPresets,
       reset: resetLongBookAnalysisPresets
+    },
+    tasks: {
+      list: listLongBookAnalysisTasks,
+      save: saveLongBookAnalysisTask,
+      delete: deleteLongBookAnalysisTask
     }
   },
   workspaceDirectory: {
