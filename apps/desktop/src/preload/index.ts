@@ -68,6 +68,8 @@ import {
   LongBookAnalysisSettingsSchema,
   LongBookAnalysisSavedSourceCatalogSchema,
   LongBookAnalysisSavedSourceIdSchema,
+  LongBookAnalysisResultBundleSchema,
+  type LongBookAnalysisResultBundle,
   LongBookAnalysisSourceKindSchema,
   LongBookAnalysisSourceSchema,
   LongBookAnalysisTaskCatalogSchema,
@@ -1565,6 +1567,22 @@ async function chooseLongBookAnalysisSource(
   );
 }
 
+async function chooseLongBookAnalysisResultBundle(): Promise<LongBookAnalysisResultBundle | null> {
+  const id = browserId("cmd_long_book_analysis_choose_result_bundle");
+  return LongBookAnalysisResultBundleSchema.nullable().parse(
+    await invokeCommand<LongBookAnalysisResultBundle | null>(
+      createEnvelope(
+        "longBookAnalysis.chooseResultBundle",
+        {},
+        {
+          id,
+          correlationId: id
+        }
+      )
+    )
+  );
+}
+
 async function listLongBookAnalysisSources(): Promise<LongBookAnalysisSavedSourceCatalog> {
   const id = browserId("cmd_long_book_analysis_sources_list");
   return LongBookAnalysisSavedSourceCatalogSchema.parse(
@@ -2070,6 +2088,7 @@ const api: DeepWriteApi = {
   },
   longBookAnalysis: {
     chooseSource: chooseLongBookAnalysisSource,
+    chooseResultBundle: chooseLongBookAnalysisResultBundle,
     sources: {
       list: listLongBookAnalysisSources,
       load: loadLongBookAnalysisSource

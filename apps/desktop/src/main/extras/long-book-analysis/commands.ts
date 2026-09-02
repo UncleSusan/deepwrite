@@ -1,4 +1,5 @@
 import {
+  LongBookAnalysisResultBundleSchema,
   LongBookAnalysisSavedSourceCatalogSchema,
   LongBookAnalysisSettingsSchema,
   LongBookAnalysisSourceSchema,
@@ -7,6 +8,7 @@ import {
   type CommandEnvelope,
   type CommandResult
 } from "@deepwrite/contracts";
+import { readFile } from "node:fs/promises";
 import type { BrowserWindow, Dialog } from "electron";
 import type { LongBookAnalysisConfigStore } from "./config-store";
 import { readLongBookAnalysisSource } from "./source-reader";
@@ -102,6 +104,36 @@ export async function handleLongBookAnalysisCommands(
         command,
         "long_book_analysis.source_failed",
         "读取长篇拆书来源失败。",
+        error
+      );
+    }
+  }
+
+  if (command.type === "longBookAnalysis.chooseResultBundle") {
+    try {
+      const selection = await context.dialog.showOpenDialog(
+        context.getMainWindow(),
+        {
+          title: "选择 Linux 完整拆书结果包",
+          properties: ["openFile"],
+          filters: [{ name: "DeepWrite 完整拆书结果包", extensions: ["json"] }]
+        }
+      );
+      if (selection.canceled || !selection.filePaths[0]) {
+        return { status: "accepted", requestId: command.id, payload: null };
+      }
+      return {
+        status: "accepted",
+        requestId: command.id,
+        payload: LongBookAnalysisResultBundleSchema.parse(
+          JSON.parse(await readFile(selection.filePaths[0], "utf8")) as unknown
+        )
+      };
+    } catch (error: unknown) {
+      return failure(
+        command,
+        "long_book_analysis.result_bundle_failed",
+        "读取 Linux 完整拆书结果包失败。",
         error
       );
     }

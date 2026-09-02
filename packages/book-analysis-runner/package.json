@@ -1,0 +1,25 @@
+{
+  "name": "@deepwrite/book-analysis-runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "deepwrite-book-analysis": "./dist/cli.mjs"
+  },
+  "scripts": {
+    "build": "vite build",
+    "test": "vitest run",
+    "start": "node dist/cli.mjs",
+    "start:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/run-windows.ps1"
+  },
+  "dependencies": {
+    "@deepwrite/contracts": "workspace:*",
+    "@deepwrite/pi-runtime-adapter": "workspace:*",
+    "@deepwrite/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

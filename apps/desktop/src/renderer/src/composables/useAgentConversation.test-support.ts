@@ -720,6 +720,11 @@ function createDeferredApi(): {
           "Long book analysis is not used by conversation tests."
         );
       },
+      async chooseResultBundle() {
+        throw new Error(
+          "Long book analysis is not used by conversation tests."
+        );
+      },
       sources: {
         async list() {
           throw new Error(

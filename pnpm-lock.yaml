@@ -189,6 +189,28 @@ importers:
         specifier: 'catalog:'
         version: 3.3.5(typescript@6.0.3)
 
+  packages/book-analysis-runner:
+    dependencies:
+      '@deepwrite/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@deepwrite/pi-runtime-adapter':
+        specifier: workspace:*
+        version: link:../pi-runtime-adapter
+      '@deepwrite/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.0.1
+      vite:
+        specifier: 'catalog:'
+        version: 8.1.0(@types/node@26.0.1)(jiti@2.7.0)(yaml@2.9.0)
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.9(@opentelemetry/api@1.9.0)(@types/node@26.0.1)(vite@8.1.0(@types/node@26.0.1)(jiti@2.7.0)(yaml@2.9.0))
+
   packages/contracts:
     dependencies:
       zod:

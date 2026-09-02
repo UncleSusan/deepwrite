@@ -21,6 +21,7 @@ export type * from "./long-agent-settings";
 export type * from "./long-agent-team";
 export type * from "./long-book-analysis";
 export type * from "./long-book-analysis-task";
+export type * from "./long-book-analysis-bundle";
 export type * from "./long-ledger";
 export type * from "./long-manuscript-export";
 export type * from "./long-workspace";

@@ -11,8 +11,9 @@
   "scripts": {
     "dev": "pnpm --filter @deepwrite/desktop dev",
     "electron:ensure": "node tools/ensure-electron-runtime.mjs",
-    "build": "pnpm --filter @deepwrite/desktop build",
-    "typecheck": "vue-tsc --noEmit -p apps/desktop/tsconfig.web.json && tsc --noEmit -p apps/desktop/tsconfig.node.json && tsc --noEmit -p packages/contracts/tsconfig.json && tsc --noEmit -p packages/shared/tsconfig.json && tsc --noEmit -p packages/pi-runtime-adapter/tsconfig.json",
+    "build": "pnpm --filter @deepwrite/book-analysis-runner build && pnpm --filter @deepwrite/desktop build",
+    "book-analysis:build": "pnpm --filter @deepwrite/book-analysis-runner build",
+    "typecheck": "vue-tsc --noEmit -p apps/desktop/tsconfig.web.json && tsc --noEmit -p apps/desktop/tsconfig.node.json && tsc --noEmit -p packages/contracts/tsconfig.json && tsc --noEmit -p packages/shared/tsconfig.json && tsc --noEmit -p packages/pi-runtime-adapter/tsconfig.json && tsc --noEmit -p packages/book-analysis-runner/tsconfig.json",
     "lint": "pnpm lint:eslint && pnpm lint:boundary",
     "lint:eslint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",

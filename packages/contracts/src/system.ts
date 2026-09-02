@@ -85,6 +85,7 @@ import {
   LearningImitationSettingsResetCommandEnvelopeSchema,
   LearningImitationSettingsSaveCommandEnvelopeSchema
 } from "./learning-imitation";
+import { LongBookAnalysisChooseResultBundleCommandEnvelopeSchema } from "./long-book-analysis-bundle";
 import {
   LongBookAnalysisChooseSourceCommandEnvelopeSchema,
   LongBookAnalysisListSourcesCommandEnvelopeSchema,
@@ -361,6 +362,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   LearningImitationSettingsSaveCommandEnvelopeSchema,
   LearningImitationSettingsResetCommandEnvelopeSchema,
   LongBookAnalysisChooseSourceCommandEnvelopeSchema,
+  LongBookAnalysisChooseResultBundleCommandEnvelopeSchema,
   LongBookAnalysisListSourcesCommandEnvelopeSchema,
   LongBookAnalysisLoadSourceCommandEnvelopeSchema,
   LongBookAnalysisSettingsListCommandEnvelopeSchema,

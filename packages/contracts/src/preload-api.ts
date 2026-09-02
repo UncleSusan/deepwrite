@@ -77,6 +77,7 @@ import type {
   LongBookAnalysisTaskCatalog,
   LongBookAnalysisTaskSnapshot
 } from "./long-book-analysis-task";
+import type { LongBookAnalysisResultBundle } from "./long-book-analysis-bundle";
 import type {
   LibraryAgentDomain,
   LibraryAgentSettings,
@@ -466,6 +467,7 @@ export interface DeepWriteApi {
     chooseSource(
       kind: LongBookAnalysisSourceKind
     ): Promise<LongBookAnalysisSource | null>;
+    chooseResultBundle(): Promise<LongBookAnalysisResultBundle | null>;
     sources: {
       list(): Promise<LongBookAnalysisSavedSourceCatalog>;
       load(sourceId: string): Promise<LongBookAnalysisSource>;

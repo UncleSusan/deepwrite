@@ -5,6 +5,7 @@ import {
   type DeepWriteApi,
   type LongBookAnalysisPipelineCheckpoint,
   type LongBookAnalysisPreset,
+  type LongBookAnalysisResultBundle,
   type LongBookAnalysisResult,
   type LongBookAnalysisScopeMode,
   type LongBookAnalysisSource,
@@ -47,8 +48,27 @@ export interface CompleteBookAnalysisController {
   stop(): Promise<boolean>;
   updateResult(presetId: string, result: LongBookAnalysisResult): Promise<void>;
   persistAll(): Promise<CompleteAnalysisPersistResult>;
+  importResultBundle(): Promise<CompleteAnalysisPersistResult | null>;
   handleEvent(event: SystemEventEnvelope): void;
   dispose(): void;
+}
+
+function ensureImportedPresetCompatibility(
+  bundle: LongBookAnalysisResultBundle,
+  presets: readonly LongBookAnalysisPreset[]
+): void {
+  for (const imported of bundle.presets) {
+    const local = presets.find(({ id }) => id === imported.id);
+    if (
+      !local ||
+      local.name !== imported.name ||
+      local.output.domain !== imported.output.domain ||
+      local.output.kind !== imported.output.kind ||
+      local.output.stageId !== imported.output.stageId
+    ) {
+      throw new Error(`结果包中的“${imported.name}”与当前完整拆书预设不兼容。`);
+    }
+  }
 }
 
 export function useCompleteBookAnalysis(options: {
@@ -342,6 +362,16 @@ export function useCompleteBookAnalysis(options: {
       return persistCompleteAnalysisResults({
         api: options.api(),
         task: task.value,
+        presets: options.presets.value
+      });
+    },
+    importResultBundle: async () => {
+      const bundle = await options.api().longBookAnalysis.chooseResultBundle();
+      if (!bundle) return null;
+      ensureImportedPresetCompatibility(bundle, options.presets.value);
+      return persistCompleteAnalysisResults({
+        api: options.api(),
+        task: bundle.task,
         presets: options.presets.value
       });
     },

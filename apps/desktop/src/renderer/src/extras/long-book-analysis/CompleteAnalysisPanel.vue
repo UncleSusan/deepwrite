@@ -137,6 +137,20 @@ async function retryItem(presetId: string): Promise<void> {
     );
   }
 }
+
+async function importResultBundle(): Promise<void> {
+  try {
+    const imported = await complete.importResultBundle();
+    if (!imported) return;
+    uiMessage.success(
+      `已导入 ${imported.written} 项到“${imported.groupTitle}”。`
+    );
+  } catch (error: unknown) {
+    uiMessage.error(
+      error instanceof Error ? error.message : "导入 Linux 完整拆书结果包失败。"
+    );
+  }
+}
 </script>
 
 <template>
@@ -262,6 +276,13 @@ async function retryItem(presetId: string): Promise<void> {
         ><span>单个窗口最多 50 章，自动多级归并</span>
       </div>
       <div class="analysis-run-actions">
+        <button
+          type="button"
+          :disabled="controller.isBusy.value"
+          @click="importResultBundle"
+        >
+          导入 Linux 结果包
+        </button>
         <button
           v-if="task"
           type="button"
