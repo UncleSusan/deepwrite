@@ -17,6 +17,7 @@ import { uiMessage } from "../ui-feedback";
 import AgentTeamSettingsPanel from "./AgentTeamSettingsPanel.vue";
 import AppIcon from "./AppIcon.vue";
 import PopupSelect, { type PopupSelectOption } from "./PopupSelect.vue";
+import SingleModelLongTeamPreset from "./SingleModelLongTeamPreset.vue";
 
 const props = defineProps<{
   catalog: AgentTeamCatalogSnapshot | null;
@@ -200,6 +201,15 @@ function leaveEditor(): void {
       }}</span>
       <span v-if="isEnabled(selectedTeam)" class="active-badge">已启用</span>
     </header>
+    <SingleModelLongTeamPreset
+      v-if="selectedTeam.workspaceType === 'long' && editorLongSettings"
+      :settings="editorLongSettings"
+      :models="models"
+      :preferred-model-id="preferredModelId ?? null"
+      :saving="saving"
+      :runtime-available="runtimeAvailable"
+      @apply="emit('save', { teamId: selectedTeam.id, settings: $event })"
+    />
     <AgentTeamSettingsPanel
       :workspace-type="selectedTeam.workspaceType"
       :settings="editorSettings"

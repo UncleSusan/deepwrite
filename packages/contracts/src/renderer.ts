@@ -36,6 +36,7 @@ export type * from "./session";
 export type * from "./skill-markdown";
 export type * from "./script-workspace";
 export type * from "./script-agent-settings";
+export type * from "./single-model-long-team";
 export type * from "./short-manuscript-export";
 export type * from "./subagent-authoring";
 export type * from "./system";
@@ -116,6 +117,12 @@ export {
   parseCatalogDraftDocumentId
 } from "./catalog";
 export { createEnvelope } from "./envelope";
+export {
+  SINGLE_MODEL_LONG_ROLE_IDS,
+  SINGLE_MODEL_LONG_ROLE_PRESETS,
+  createSingleModelLongTeamSettings,
+  isSingleModelLongTeam
+} from "./single-model-long-team";
 export {
   DraftSectionTitleSchema,
   parseExpertDraftMarkdown,

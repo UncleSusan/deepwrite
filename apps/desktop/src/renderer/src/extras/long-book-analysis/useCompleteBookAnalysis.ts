@@ -28,6 +28,7 @@ export interface CompleteAnalysisStartInput {
   styleFullText: boolean;
   modelId: string;
   thinkingLevel: ThinkingLevel;
+  temperature?: number;
 }
 
 export interface CompleteBookAnalysisController {
@@ -185,6 +186,9 @@ export function useCompleteBookAnalysis(options: {
           chapterOrders: item.chapterOrders,
           modelId: current.modelId,
           thinkingLevel: current.thinkingLevel,
+          ...(current.temperature !== undefined
+            ? { temperature: current.temperature }
+            : {}),
           libraryId: item.targetLibraryId
         });
     await updateTask((draft) => {
@@ -277,6 +281,9 @@ export function useCompleteBookAnalysis(options: {
       styleFullText: input.styleFullText,
       modelId: input.modelId,
       thinkingLevel: input.thinkingLevel,
+      ...(input.temperature !== undefined
+        ? { temperature: input.temperature }
+        : {}),
       status: "pending",
       items: presets,
       createdAt: now,

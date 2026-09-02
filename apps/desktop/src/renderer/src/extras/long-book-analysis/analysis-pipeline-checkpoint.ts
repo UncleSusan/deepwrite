@@ -27,6 +27,7 @@ export function createNewAnalysisJob(input: {
   preset: LongBookAnalysisPreset;
   modelId: string;
   thinkingLevel: LongBookAnalysisJob["thinkingLevel"];
+  temperature?: number;
   libraryId: string;
   startOrder: number;
   endOrder: number;
@@ -61,6 +62,9 @@ export function createNewAnalysisJob(input: {
     preset: input.preset,
     modelId: input.modelId,
     thinkingLevel: input.thinkingLevel,
+    ...(input.temperature !== undefined
+      ? { temperature: input.temperature }
+      : {}),
     libraryId: input.libraryId,
     selectionStart: selectedOrders[0]!,
     selectionEnd: selectedOrders.at(-1)!,
@@ -113,6 +117,9 @@ export function restoreAnalysisPipeline(input: {
       preset: input.preset,
       modelId: saved.modelId,
       thinkingLevel: saved.thinkingLevel,
+      ...(saved.temperature !== undefined
+        ? { temperature: saved.temperature }
+        : {}),
       libraryId: saved.libraryId,
       selectionStart: saved.selectedChapterOrders[0]!,
       selectionEnd: saved.selectedChapterOrders.at(-1)!,
@@ -142,6 +149,7 @@ export function createAnalysisPipelineCheckpoint(
     presetId: job.preset.id,
     modelId: job.modelId,
     thinkingLevel: job.thinkingLevel,
+    ...(job.temperature !== undefined ? { temperature: job.temperature } : {}),
     libraryId: job.libraryId,
     selectedChapterOrders: job.selectedChapterOrders,
     inputBudget: job.inputBudget,

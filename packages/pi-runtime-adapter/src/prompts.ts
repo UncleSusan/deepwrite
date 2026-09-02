@@ -1,4 +1,5 @@
 import {
+  isSingleModelLongTeam,
   renderLearningImitationSystemPrompt,
   resolveScriptWorkspaceStageReadAccess,
   resolveShortWorkspaceStageReadAccess,
@@ -128,7 +129,18 @@ function buildWorkspaceAgentSystemPrompt(
   const longWorkspace = input.workspaceContext?.longWorkspace;
   const longProfile = input.longAgentProfile;
   if (longProfile && longWorkspace) {
-    return longProfile.systemPrompt.trim();
+    const prompt = longProfile.systemPrompt.trim();
+    if (!isSingleModelLongTeam(input.subagentDefinitions)) return prompt;
+    return [
+      prompt,
+      "",
+      "【单模型多角色长篇编排约束】",
+      "五个角色虽然复用同一模型，但每次调用都使用独立系统提示和全新子会话。不得把一个角色的隐含分析过程当成另一个角色已经确认的事实。",
+      "复杂任务先调用主编形成分阶段任务单；拆书任务只向拆书分析提供当前章节窗口，继续沿用分卷归并和全书摘要归并，不得一次塞入整本小说。",
+      "正文写作只接收已经确认的设定、大纲、章纲、近期摘要和相关文风技能，不得转交主编的完整思考过程。",
+      "候选规划或正文交付前，必须把候选结果、结构化依据和必要证据交给审计终审做反方复核；收到反方意见后再由主编裁决冲突。",
+      "同源角色的多数意见不构成证据。无法由来源章节或阶段报告支持的内容必须标为未知或待确认。"
+    ].join("\n");
   }
   return buildWritingSystemPrompt(basePrompt, input);
 }

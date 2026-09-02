@@ -74,7 +74,7 @@ describe("ModelSettingsFeature DeepWrite free models", () => {
     expect(source).toContain(
       '?.scrollIntoView({ block: "nearest", behavior: "auto" })'
     );
-    expect(draftSource.match(/actions\.editorOpened\(\);/g)).toHaveLength(2);
+    expect(draftSource.match(/actions\.editorOpened\(\);/g)).toHaveLength(3);
   });
 });
 
@@ -110,6 +110,16 @@ describe("ModelSettingsFeature provider presets", () => {
     expect(providerLabel("ollama")).toBe("Ollama");
     expect(target.api).toBe("openai-completions");
     expect(new URL(target.baseUrl).hostname).toBe("127.0.0.1");
+  });
+
+  it("provides an AutoDL Ollama entry without assuming a remote model id", () => {
+    expect(featureSource).toContain("AutoDL Ollama");
+    expect(draftSource).toContain("createAutoDlOllamaModel");
+    expect(draftSource).toContain('deploymentTarget: "autodl-ollama"');
+    expect(draftSource).toContain('modelId: ""');
+    expect(draftSource).toContain("concurrencyLimit: 1");
+    expect(editorSource).toContain("ollama list");
+    expect(editorSource).toContain("API Key 留空");
   });
 
   it("defaults Xiaomi MiMo TokenPlan CN to the Responses API", () => {
@@ -175,6 +185,19 @@ describe("ModelSettingsFeature official models", () => {
 });
 
 describe("ModelSettingsFeature remote model ids", () => {
+  it("keeps the composite model id control outside a label activation scope", () => {
+    const modelIdStart = editorSource.indexOf(
+      '<div class="model-field">\n        <span>模型 ID</span>'
+    );
+    const apiTypeStart = editorSource.indexOf("<span>API 类型</span>");
+    const modelIdSection = editorSource.slice(modelIdStart, apiTypeStart);
+
+    expect(modelIdSection).toContain('<div class="model-field">');
+    expect(modelIdSection).not.toMatch(
+      /<label>[\s\S]*class="model-id-field"[\s\S]*<\/label>/u
+    );
+  });
+
   it("offers a fetch button beside the model id field and turns it into a selector", () => {
     expect(source).toContain('class="model-id-field"');
     expectSourceToContain(
@@ -265,6 +288,8 @@ describe("ModelSettingsFeature advanced capacity", () => {
     expect(advancedConfigSource).toContain("contextWindow: undefined");
     expect(advancedConfigSource).toContain("maxTokens: undefined");
     expect(advancedConfigSource).toContain("最高输出长度不能超过上下文长度。");
+    expect(advancedConfigSource).toContain("并发上限");
+    expect(advancedConfigSource).toContain("concurrencyLimit");
   });
 
   it("applies successful test defaults then persists edited capacity immediately", () => {

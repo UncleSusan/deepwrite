@@ -202,11 +202,14 @@ describe("long-book analysis pipeline checkpoints", () => {
       presetId: preset.id,
       startOrder: 1,
       endOrder: 1,
-      modelId: "model-1"
+      modelId: "model-1",
+      thinkingLevel: "off",
+      temperature: 0.3
     });
 
     const active = await waitForPrompt(prompts, 1);
     expect(active.workspaceContext?.longBookAnalysis?.presetId).toBe(preset.id);
+    expect(active.temperature).toBe(0.3);
     expect(pipeline.targetLibraryId).toBe("");
     expect(state.processEntries.value[0]?.detail).toContain("仅运行当前预设");
   });

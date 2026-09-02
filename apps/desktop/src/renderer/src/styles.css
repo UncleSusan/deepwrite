@@ -5308,14 +5308,16 @@ html[data-theme="dark"] .document-editor:focus-visible {
   margin-top: 13px;
 }
 
-.model-form-grid label {
+.model-form-grid label,
+.model-form-grid .model-field {
   display: grid;
   gap: 5px;
   color: var(--text-secondary);
   font-size: 0.678571rem;
 }
 
-.model-form-grid label.is-wide {
+.model-form-grid label.is-wide,
+.model-form-grid .model-field.is-wide {
   grid-column: 1 / -1;
 }
 

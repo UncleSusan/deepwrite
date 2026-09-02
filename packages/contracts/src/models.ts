@@ -96,6 +96,15 @@ export const ModelManagedBySchema = z.enum([
 ]);
 export type ModelManagedBy = z.infer<typeof ModelManagedBySchema>;
 
+export const ModelDeploymentTargetSchema = z.enum(["autodl-ollama"]);
+export type ModelDeploymentTarget = z.infer<typeof ModelDeploymentTargetSchema>;
+
+export const ModelConcurrencyLimitSchema = z.union([
+  z.literal(1),
+  z.literal(2)
+]);
+export type ModelConcurrencyLimit = z.infer<typeof ModelConcurrencyLimitSchema>;
+
 /** Fallback context window for custom models that are not in the runtime catalog. */
 export const DEFAULT_CUSTOM_MODEL_CONTEXT_WINDOW = 272_000;
 /** Fallback max output tokens for custom models that are not in the runtime catalog. */
@@ -142,6 +151,10 @@ const ModelIdentitySchema = z
     contextWindow: ModelContextWindowSchema.optional(),
     /** Optional custom max output tokens. Must be set together with contextWindow. */
     maxTokens: ModelMaxTokensSchema.optional(),
+    /** Optional deployment-specific UX hint; provider routing remains unchanged. */
+    deploymentTarget: ModelDeploymentTargetSchema.optional(),
+    /** Maximum simultaneous top-level runs for a local Ollama model. */
+    concurrencyLimit: ModelConcurrencyLimitSchema.optional(),
     managedBy: ModelManagedBySchema.optional(),
     /** Remote official-catalog availability: 0 = available, 1 = unavailable. */
     status: z.union([z.literal(0), z.literal(1)]).optional(),
@@ -196,6 +209,26 @@ const ModelIdentitySchema = z
         code: "custom",
         path: ["maxTokens"],
         message: "Max output tokens cannot exceed the context window."
+      });
+    }
+    if (
+      value.deploymentTarget === "autodl-ollama" &&
+      value.provider.trim().toLowerCase() !== "ollama"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["deploymentTarget"],
+        message: "The AutoDL deployment target requires the Ollama provider."
+      });
+    }
+    if (
+      value.concurrencyLimit !== undefined &&
+      value.provider.trim().toLowerCase() !== "ollama"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["concurrencyLimit"],
+        message: "A local concurrency limit is supported only for Ollama."
       });
     }
   });

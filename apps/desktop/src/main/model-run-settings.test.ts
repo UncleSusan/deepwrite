@@ -20,6 +20,14 @@ const temperatureModeConfig: AgentProviderRuntimeConfig = {
 };
 
 describe("model run settings", () => {
+  it("accepts a role-specific temperature outside the model shortcut options", () => {
+    expect(
+      resolveModelRunSettings(temperatureModeConfig, {
+        thinkingLevel: "off",
+        temperature: 0.3
+      })
+    ).toEqual({ thinkingLevel: "off", temperature: 0.3 });
+  });
   it("honors a requested thinking level when the model editor was left on non-thinking mode", () => {
     expect(
       resolveModelRunSettings(temperatureModeConfig, {
@@ -49,18 +57,12 @@ describe("model run settings", () => {
     ).toEqual({ thinkingLevel: "off", temperature: 1.2 });
   });
 
-  it("rejects stale run settings that are no longer configured for the model", () => {
+  it("rejects stale thinking settings that are no longer configured for the model", () => {
     expect(() =>
       resolveModelRunSettings(temperatureModeConfig, {
         thinkingLevel: "medium"
       })
     ).toThrow("所选思考等级不在当前模型配置中");
-    expect(() =>
-      resolveModelRunSettings(temperatureModeConfig, {
-        thinkingLevel: "off",
-        temperature: 0.7
-      })
-    ).toThrow("所选温度不在当前模型配置中");
     expect(() =>
       assertModelRunSettings(temperatureModeConfig, { thinkingLevel: "medium" })
     ).toThrow("所选思考等级不在当前模型配置中");

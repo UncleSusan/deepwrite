@@ -56,9 +56,6 @@ export function validateAgentTeamDraft(
           if (subagent.temperature === undefined) {
             return "思考等级关闭时必须选择温度";
           }
-          if (!model.temperatureOptions.includes(subagent.temperature)) {
-            return `子智能体「${subagent.name.trim() || "未命名"}」的温度不在所选模型配置中`;
-          }
         }
       }
       const id = subagent.id.toLocaleLowerCase();

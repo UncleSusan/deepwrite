@@ -6,10 +6,12 @@ import {
   MODEL_CONTEXT_WINDOW_MAX,
   MODEL_CONTEXT_WINDOW_MIN,
   MODEL_MAX_TOKENS_MAX,
-  MODEL_MAX_TOKENS_MIN
+  MODEL_MAX_TOKENS_MIN,
+  type ModelConcurrencyLimit
 } from "@deepwrite/contracts/renderer";
 import { uiMessage } from "../ui-feedback";
 import { toModelInput, type DraftModel } from "./modelSettingsDraft";
+import PopupSelect from "./PopupSelect.vue";
 
 const props = defineProps<{
   model: DraftModel | null;
@@ -18,12 +20,19 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: [];
-  save: [capacity: { contextWindow: number; maxTokens: number }];
+  save: [
+    capacity: {
+      contextWindow: number;
+      maxTokens: number;
+      concurrencyLimit?: ModelConcurrencyLimit;
+    }
+  ];
 }>();
 
 const firstInput = ref<HTMLInputElement | null>(null);
 const contextWindowText = ref("");
 const maxTokensText = ref("");
+const concurrencyLimit = ref<ModelConcurrencyLimit>(1);
 const resolving = ref(false);
 let resolveSequence = 0;
 
@@ -93,6 +102,7 @@ watch(
       maxTokensText.value = "";
       return;
     }
+    concurrencyLimit.value = model.concurrencyLimit ?? 1;
     if (hasCustomCapacity(model)) {
       hydrate(model.contextWindow, model.maxTokens);
       void nextTick(() => firstInput.value?.focus());
@@ -142,7 +152,13 @@ function save(): void {
     uiMessage.warning("最高输出长度不能超过上下文长度。");
     return;
   }
-  emit("save", { contextWindow, maxTokens });
+  emit("save", {
+    contextWindow,
+    maxTokens,
+    ...(props.model.provider === "ollama"
+      ? { concurrencyLimit: concurrencyLimit.value }
+      : {})
+  });
 }
 </script>
 
@@ -198,6 +214,25 @@ function save(): void {
               aria-label="最高输出长度"
             />
             <small>单次回复允许生成的最大 token 数。</small>
+          </label>
+          <label v-if="model.provider === 'ollama'">
+            <span>并发上限</span>
+            <PopupSelect
+              v-model="concurrencyLimit"
+              :options="[
+                {
+                  value: 1,
+                  label: '1（推荐）',
+                  description: '串行运行，显存最稳定'
+                },
+                { value: 2, label: '2', description: '仅在显存余量充足时使用' }
+              ]"
+              accessible-label="Ollama 并发上限"
+              :disabled="resolving"
+              :menu-min-width="240"
+              :menu-z-index="3200"
+            />
+            <small>限制该 Ollama 模型同时运行的顶层任务数。</small>
           </label>
         </div>
         <footer class="dialog-actions">

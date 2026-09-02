@@ -40,6 +40,7 @@ export interface LongBookAnalysisStartInput {
   endOrder: number;
   modelId?: string;
   thinkingLevel?: ThinkingLevel;
+  temperature?: number;
   libraryId?: string;
   chapterOrders?: readonly number[];
 }

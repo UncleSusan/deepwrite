@@ -96,6 +96,9 @@ export class LongBookAnalysisPipeline {
       preset,
       modelId,
       thinkingLevel,
+      ...(input.temperature !== undefined
+        ? { temperature: input.temperature }
+        : {}),
       libraryId: input.libraryId?.trim() ?? "",
       startOrder: input.startOrder,
       endOrder: input.endOrder,
@@ -281,6 +284,9 @@ export class LongBookAnalysisPipeline {
                 : "根据全部归并笔记生成正式 Markdown 拆书结果。",
           modelId: this.job?.modelId,
           thinkingLevel: this.job?.thinkingLevel,
+          ...(this.job?.temperature !== undefined
+            ? { temperature: this.job.temperature }
+            : {}),
           writeApprovalMode: "request-approval",
           workspaceContext: { longBookAnalysis: context }
         })

@@ -142,6 +142,29 @@ export function useModelSettingsDraft(
     actions.editorOpened();
   }
 
+  function createAutoDlOllamaModel(): void {
+    modelEditor.value = {
+      id: createId("model"),
+      label: "AutoDL Qwen3 30B（Ollama）",
+      provider: "ollama",
+      modelId: "",
+      api: "openai-completions",
+      baseUrl: "http://127.0.0.1:11434/v1",
+      reasoning: false,
+      defaultThinkingLevel: "off",
+      thinkingLevelOptions: [...BUILT_IN_REASONING_LEVELS],
+      temperatureOptions: [0.25, 0.4, 0.8],
+      contextWindow: 32_768,
+      maxTokens: 8_192,
+      deploymentTarget: "autodl-ollama",
+      concurrencyLimit: 1,
+      hasApiKey: false,
+      apiKey: "",
+      customThinkingLevel: ""
+    };
+    actions.editorOpened();
+  }
+
   function editModel(model: DraftModel): void {
     if (model.managedBy) return;
     modelEditor.value = {
@@ -238,6 +261,7 @@ export function useModelSettingsDraft(
   function saveAdvancedConfig(capacity: {
     contextWindow: number;
     maxTokens: number;
+    concurrencyLimit?: 1 | 2;
   }): void {
     const target = advancedConfigModel.value;
     if (!target || target.managedBy) return;
@@ -248,7 +272,10 @@ export function useModelSettingsDraft(
     draftModels.value[index] = {
       ...draftModels.value[index]!,
       contextWindow: capacity.contextWindow,
-      maxTokens: capacity.maxTokens
+      maxTokens: capacity.maxTokens,
+      ...(capacity.concurrencyLimit !== undefined
+        ? { concurrencyLimit: capacity.concurrencyLimit }
+        : {})
     };
     advancedConfigModel.value = null;
     submitModelSettings();
@@ -297,6 +324,7 @@ export function useModelSettingsDraft(
     advancedConfigModel,
     modelConfigRows,
     createModel,
+    createAutoDlOllamaModel,
     editModel,
     saveModelEditor,
     testDraftModel,

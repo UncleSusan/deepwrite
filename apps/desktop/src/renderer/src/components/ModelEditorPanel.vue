@@ -60,6 +60,18 @@ watch(fetchHintDialog, (message) => {
       <strong>{{ editing ? "编辑模型" : "添加模型" }}</strong>
       <button type="button" @click="emit('cancel')">取消</button>
     </div>
+
+    <div
+      v-if="editor.deploymentTarget === 'autodl-ollama'"
+      class="autodl-ollama-hint"
+    >
+      <strong>AutoDL Ollama · SSH 隧道接入</strong>
+      <span
+        >保持 Provider 为 Ollama、API 类型为 OpenAI Completions、地址为
+        http://127.0.0.1:11434/v1，API Key 留空。模型 ID 请先在 AutoDL 运行
+        ollama list 后按实际结果填写。</span
+      >
+    </div>
     <div class="model-form-grid">
       <label>
         <span>名称</span>
@@ -78,7 +90,7 @@ watch(fetchHintDialog, (message) => {
           @update:model-value="applyProviderPreset(String($event))"
         />
       </label>
-      <label>
+      <div class="model-field">
         <span>模型 ID</span>
         <div class="model-id-field">
           <PopupSelect
@@ -95,6 +107,7 @@ watch(fetchHintDialog, (message) => {
             v-else
             v-model="editor.modelId"
             type="text"
+            aria-label="模型 ID"
             placeholder="服务商提供的模型 ID"
           />
           <button
@@ -112,7 +125,7 @@ watch(fetchHintDialog, (message) => {
             {{ listingRemoteModels ? "拉取中" : "拉取" }}
           </button>
         </div>
-      </label>
+      </div>
       <label>
         <span>API 类型</span>
         <PopupSelect

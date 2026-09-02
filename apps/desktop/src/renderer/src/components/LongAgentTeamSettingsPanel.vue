@@ -136,18 +136,6 @@ function thinkingOptionsFor(
   ];
 }
 
-function temperatureOptionsFor(
-  definition: ShortAgentSubagentDefinition
-): PopupSelectOption[] {
-  const model = definition.modelId
-    ? modelById.value.get(definition.modelId)
-    : undefined;
-  return (model?.temperatureOptions ?? [0.1, 0.7, 1]).map((temperature) => ({
-    value: temperature,
-    label: `温度 ${temperature}`
-  }));
-}
-
 function applyModelDefaults(
   definition: ShortAgentSubagentDefinition,
   modelId: string | undefined
@@ -192,17 +180,19 @@ function setThinkingLevel(
 ): void {
   if (formDisabled.value) return;
   definition.thinkingLevel = level;
-  if (level === "off") {
-    const options = temperatureOptionsFor(definition);
-    if (
-      definition.temperature === undefined ||
-      !options.some((option) => Object.is(option.value, definition.temperature))
-    ) {
-      definition.temperature = Number(
-        options[1]?.value ?? options[0]?.value ?? 0.7
-      );
-    }
+  if (level === "off" && definition.temperature === undefined) {
+    const model = definition.modelId
+      ? modelById.value.get(definition.modelId)
+      : undefined;
+    definition.temperature = model?.temperatureOptions[1] ?? 0.7;
   }
+}
+
+function setThinkingLevelValue(
+  definition: ShortAgentSubagentDefinition,
+  value: string | number
+): void {
+  setThinkingLevel(definition, String(value) as ThinkingLevel);
 }
 
 function setTemperature(
@@ -211,6 +201,15 @@ function setTemperature(
 ): void {
   if (formDisabled.value) return;
   definition.temperature = temperature;
+}
+
+function setTemperatureFromEvent(
+  definition: ShortAgentSubagentDefinition,
+  event: Event
+): void {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return;
+  setTemperature(definition, Number(target.value));
 }
 
 function nextSubagentId(): string {
@@ -349,9 +348,6 @@ function validationMessage(): string | null {
           if (definition.temperature === undefined) {
             return "思考等级关闭时必须选择温度";
           }
-          if (!model.temperatureOptions.includes(definition.temperature)) {
-            return `子智能体「${definition.name.trim() || "未命名"}」的温度不在所选模型配置中`;
-          }
         }
       }
       const normalizedId = definition.id.toLocaleLowerCase();
@@ -415,693 +411,44 @@ function saveSettings(): void {
   }
   emit("save", parsed.data);
 }
+
+// The template and styles are split out to keep this editor within the project
+// size limits. Exposing bindings also gives static analysis the file boundary.
+defineExpose({
+  SHORT_AGENT_SUBAGENT_DESCRIPTION_MAX_LENGTH,
+  SHORT_AGENT_SUBAGENT_MAX_COUNT,
+  SHORT_AGENT_SUBAGENT_NAME_MAX_LENGTH,
+  SHORT_AGENT_SUBAGENT_SYSTEM_PROMPT_MAX_LENGTH,
+  AppIcon,
+  LoadSubagentFromSkillDialog,
+  PopupSelect,
+  PARENT_AGENT_DESCRIPTION,
+  activeTeam,
+  closeLoadFromSkill,
+  confirmLoadFromSkill,
+  editSubagent,
+  editingSubagentId,
+  finishEditing,
+  formDisabled,
+  loadFromSkillOpen,
+  modelOptions,
+  openLoadFromSkill,
+  parentAgentId,
+  parentAgentLabel,
+  removeSubagent,
+  saveSettings,
+  setModelId,
+  setModelMode,
+  setTemperature,
+  setTemperatureFromEvent,
+  setThinkingLevel,
+  setThinkingLevelValue,
+  subagentModelSummary,
+  thinkingOptionsFor,
+  toggleSubagent
+});
 </script>
 
-<template>
-  <div v-if="loading" class="panel-state" aria-live="polite">
-    正在加载长篇智能体团队设置…
-  </div>
-  <div
-    v-else-if="loadError && !settings"
-    class="panel-state panel-load-error"
-    role="alert"
-  >
-    <strong>长篇智能体团队设置未加载</strong>
-    <p>{{ loadError }}</p>
-    <button
-      type="button"
-      class="secondary-button"
-      :disabled="loading"
-      @click="emit('retry')"
-    >
-      重新加载
-    </button>
-  </div>
-  <div v-else-if="!settings || !activeTeam" class="panel-state">
-    暂无可用的长篇智能体团队设置。
-  </div>
+<template src="./LongAgentTeamSettingsPanel.template.html"></template>
 
-  <div v-else class="team-layout">
-    <div class="team-editor">
-      <header class="team-heading">
-        <div>
-          <span>长篇主智能体</span>
-          <h3>{{ parentAgentLabel }}</h3>
-          <p>{{ PARENT_AGENT_DESCRIPTION }}</p>
-        </div>
-        <div class="team-heading-actions">
-          <button
-            type="button"
-            class="secondary-button"
-            :disabled="
-              formDisabled ||
-              activeTeam.subagents.length >= SHORT_AGENT_SUBAGENT_MAX_COUNT
-            "
-            @click="openLoadFromSkill"
-          >
-            <AppIcon name="wand" :size="15" />
-            从技能库加载
-          </button>
-          <button
-            type="button"
-            class="secondary-button"
-            :disabled="
-              formDisabled ||
-              activeTeam.subagents.length >= SHORT_AGENT_SUBAGENT_MAX_COUNT
-            "
-            @click="addSubagent()"
-          >
-            <AppIcon name="plus" :size="15" />
-            新增子智能体
-          </button>
-        </div>
-      </header>
-
-      <div v-if="!activeTeam.subagents.length" class="empty-team">
-        <strong>还没有子智能体</strong>
-        <p>新增后，主智能体会根据能力说明决定何时委派任务。</p>
-      </div>
-
-      <div v-else class="subagent-list">
-        <article
-          v-for="(definition, index) in activeTeam.subagents"
-          :key="definition.id"
-          class="subagent-card"
-          :class="{ 'is-editing': editingSubagentId === definition.id }"
-        >
-          <header class="subagent-summary">
-            <div class="subagent-copy">
-              <div class="subagent-title-row">
-                <strong>{{ definition.name || "未命名子智能体" }}</strong>
-                <span :class="{ 'is-disabled': !definition.enabled }">
-                  {{ definition.enabled ? "已启用" : "已停用" }}
-                </span>
-                <span class="model-badge">{{
-                  subagentModelSummary(definition)
-                }}</span>
-              </div>
-              <p>
-                {{
-                  definition.description ||
-                  "补充能力说明，让主智能体知道何时调用它。"
-                }}
-              </p>
-            </div>
-            <label
-              class="enable-toggle"
-              :title="definition.enabled ? '停用' : '启用'"
-            >
-              <input
-                type="checkbox"
-                :checked="definition.enabled"
-                :disabled="formDisabled"
-                :aria-label="`${definition.name || '子智能体'}启用状态`"
-                @change="toggleSubagent(definition, $event)"
-              />
-            </label>
-            <button
-              type="button"
-              class="icon-button"
-              :disabled="formDisabled"
-              :aria-label="`编辑${definition.name}`"
-              @click="editSubagent(definition.id)"
-            >
-              <AppIcon name="edit" :size="15" />
-            </button>
-            <button
-              type="button"
-              class="icon-button is-danger"
-              :disabled="formDisabled"
-              :aria-label="`删除${definition.name}`"
-              @click="removeSubagent(index)"
-            >
-              <AppIcon name="trash" :size="15" />
-            </button>
-          </header>
-
-          <div v-if="editingSubagentId === definition.id" class="subagent-form">
-            <div class="form-field">
-              <span>模型配置</span>
-              <div
-                class="model-mode-options"
-                role="radiogroup"
-                aria-label="长篇子智能体模型配置"
-              >
-                <label
-                  :class="{ 'is-selected': definition.modelMode !== 'custom' }"
-                >
-                  <input
-                    type="radio"
-                    :name="`long-subagent-model-mode-${definition.id}`"
-                    value="inherit"
-                    :checked="definition.modelMode !== 'custom'"
-                    :disabled="formDisabled"
-                    @change="setModelMode(definition, 'inherit')"
-                  />
-                  跟随主智能体
-                </label>
-                <label
-                  :class="{ 'is-selected': definition.modelMode === 'custom' }"
-                >
-                  <input
-                    type="radio"
-                    :name="`long-subagent-model-mode-${definition.id}`"
-                    value="custom"
-                    :checked="definition.modelMode === 'custom'"
-                    :disabled="formDisabled"
-                    @change="setModelMode(definition, 'custom')"
-                  />
-                  单独配置模型
-                </label>
-              </div>
-              <div
-                v-if="definition.modelMode === 'custom'"
-                class="model-run-settings"
-              >
-                <PopupSelect
-                  class="model-select"
-                  :model-value="definition.modelId ?? ''"
-                  :options="modelOptions"
-                  accessible-label="选择长篇子智能体模型"
-                  placeholder="请选择模型"
-                  size="large"
-                  :disabled="formDisabled || modelOptions.length === 0"
-                  :menu-min-width="260"
-                  :menu-z-index="1200"
-                  @update:model-value="setModelId(definition, String($event))"
-                >
-                  <template #prefix
-                    ><AppIcon name="model" :size="14"
-                  /></template>
-                </PopupSelect>
-                <PopupSelect
-                  class="model-select"
-                  :model-value="definition.thinkingLevel ?? ''"
-                  :options="thinkingOptionsFor(definition)"
-                  accessible-label="选择长篇子智能体思考等级"
-                  placeholder="请选择思考等级"
-                  size="large"
-                  :disabled="formDisabled || !definition.modelId"
-                  :menu-min-width="200"
-                  :menu-z-index="1200"
-                  @update:model-value="
-                    setThinkingLevel(
-                      definition,
-                      String($event) as ThinkingLevel
-                    )
-                  "
-                >
-                  <template #prefix
-                    ><AppIcon name="brain" :size="14"
-                  /></template>
-                </PopupSelect>
-                <PopupSelect
-                  v-if="definition.thinkingLevel === 'off'"
-                  class="model-select"
-                  :model-value="definition.temperature ?? ''"
-                  :options="temperatureOptionsFor(definition)"
-                  accessible-label="选择长篇子智能体温度"
-                  placeholder="请选择温度"
-                  size="large"
-                  :disabled="formDisabled || !definition.modelId"
-                  :menu-min-width="180"
-                  :menu-z-index="1200"
-                  @update:model-value="
-                    setTemperature(definition, Number($event))
-                  "
-                >
-                  <template #prefix
-                    ><AppIcon name="temperature" :size="14"
-                  /></template>
-                </PopupSelect>
-                <p v-if="modelOptions.length === 0" class="model-empty-hint">
-                  暂无可用模型，请先在「模型配置」中添加。
-                </p>
-              </div>
-            </div>
-            <label class="form-field">
-              <span>名称</span>
-              <input
-                v-model="definition.name"
-                type="text"
-                :maxlength="SHORT_AGENT_SUBAGENT_NAME_MAX_LENGTH"
-                :disabled="formDisabled"
-                placeholder="例如：连续性审阅"
-              />
-            </label>
-            <label class="form-field">
-              <span>能力说明</span>
-              <textarea
-                v-model="definition.description"
-                class="description-input"
-                :maxlength="SHORT_AGENT_SUBAGENT_DESCRIPTION_MAX_LENGTH"
-                :disabled="formDisabled"
-                placeholder="说明擅长处理什么任务，供主智能体选择调用。"
-              />
-            </label>
-            <label class="form-field">
-              <span>系统提示词</span>
-              <textarea
-                v-model="definition.systemPrompt"
-                class="prompt-input"
-                :maxlength="SHORT_AGENT_SUBAGENT_SYSTEM_PROMPT_MAX_LENGTH"
-                :disabled="formDisabled"
-                spellcheck="false"
-                placeholder="定义子智能体的职责、工作方法和交接要求。"
-              />
-            </label>
-            <div class="form-meta">
-              <span
-                >ID：<code>{{ definition.id }}</code></span
-              >
-              <button
-                type="button"
-                :disabled="formDisabled"
-                @click="finishEditing"
-              >
-                完成编辑
-              </button>
-            </div>
-          </div>
-        </article>
-      </div>
-
-      <footer class="panel-actions">
-        <span
-          >当前主智能体 {{ activeTeam.subagents.length }}/{{
-            SHORT_AGENT_SUBAGENT_MAX_COUNT
-          }}</span
-        >
-        <button
-          type="button"
-          class="primary-button"
-          :disabled="formDisabled"
-          @click="saveSettings"
-        >
-          <AppIcon name="save" :size="15" />
-          {{ saving ? "保存中…" : "保存智能体团队" }}
-        </button>
-      </footer>
-    </div>
-  </div>
-
-  <LoadSubagentFromSkillDialog
-    :open="loadFromSkillOpen"
-    :parent-agent-id="parentAgentId"
-    :parent-agent-label="parentAgentLabel"
-    :existing-subagent-names="
-      (activeTeam?.subagents ?? []).map((item) => item.name)
-    "
-    :skills="skills"
-    :models="models"
-    :preferred-model-id="preferredModelId"
-    :generating="authoringGenerating"
-    :draft="authoringDraft"
-    :status-text="authoringStatusText"
-    :error="authoringError"
-    @close="closeLoadFromSkill"
-    @generate="emit('authoringGenerate', $event)"
-    @stop="emit('authoringStop')"
-    @confirm="confirmLoadFromSkill"
-  />
-</template>
-
-<style scoped>
-.panel-state,
-.empty-team {
-  padding: 42px 20px;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 12px;
-  background: var(--surface-raised);
-  color: var(--text-secondary);
-  text-align: center;
-}
-.panel-load-error strong {
-  display: block;
-  margin-bottom: 6px;
-  color: var(--text-primary);
-}
-.panel-load-error p {
-  margin: 0 0 14px;
-  color: var(--text-secondary);
-}
-.panel-load-error .secondary-button {
-  margin: 0 auto;
-}
-.empty-team strong {
-  display: block;
-  margin-bottom: 5px;
-  color: var(--text-primary);
-}
-.empty-team p,
-.team-heading p,
-.subagent-copy p {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 0.892857rem;
-  line-height: 1.55;
-}
-
-.team-layout {
-  display: grid;
-  gap: 20px;
-  align-items: start;
-}
-
-.team-editor {
-  min-width: 0;
-}
-.team-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 14px;
-}
-.team-heading > div > span {
-  color: var(--text-tertiary);
-  font-size: 0.785714rem;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.team-heading h3 {
-  margin: 3px 0 4px;
-  font-size: 1.28571rem;
-  font-weight: 640;
-}
-.team-heading-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.secondary-button,
-.primary-button,
-.icon-button,
-.form-meta button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  border: 1px solid var(--theme-line);
-  border-radius: 9px;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-.secondary-button {
-  flex: none;
-  padding: 8px 11px;
-  background: var(--surface-raised);
-  color: var(--text-primary);
-}
-.secondary-button:hover:not(:disabled),
-.form-meta button:hover:not(:disabled) {
-  background: var(--surface-hover);
-}
-.primary-button {
-  padding: 9px 14px;
-  border-color: color-mix(in srgb, var(--theme-foreground) 18%, #15171a);
-  background: color-mix(in srgb, var(--theme-foreground) 18%, #15171a);
-  color: #fff;
-}
-.primary-button:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--theme-foreground) 12%, #0f1113);
-  background: color-mix(in srgb, var(--theme-foreground) 12%, #0f1113);
-}
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.subagent-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.subagent-card {
-  overflow: hidden;
-  border: 1px solid var(--theme-line-soft);
-  border-radius: 12px;
-  background: var(--surface-raised);
-}
-.subagent-card.is-editing {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
-}
-.subagent-summary {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 13px 14px;
-}
-.subagent-copy {
-  flex: 1;
-  min-width: 0;
-}
-.subagent-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 3px;
-}
-.subagent-title-row strong {
-  overflow: hidden;
-  font-size: 1rem;
-  font-weight: 630;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.subagent-title-row span {
-  flex: none;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 0.714286rem;
-  font-weight: 620;
-}
-.subagent-title-row span.is-disabled {
-  background: var(--surface-selected);
-  color: var(--text-tertiary);
-}
-.subagent-title-row .model-badge {
-  max-width: 240px;
-  overflow: hidden;
-  background: var(--surface-selected);
-  color: var(--text-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.subagent-copy p {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.icon-button {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  background: transparent;
-  color: var(--text-secondary);
-}
-.icon-button:hover:not(:disabled) {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-.icon-button.is-danger:hover:not(:disabled) {
-  border-color: var(--danger, #d65353);
-  background: color-mix(in srgb, var(--danger, #d65353) 12%, transparent);
-  color: var(--danger, #d65353);
-}
-
-.enable-toggle input {
-  position: relative;
-  width: 38px;
-  height: 22px;
-  margin: 0;
-  appearance: none;
-  border-radius: 12px;
-  background: var(--surface-selected);
-  cursor: pointer;
-  transition: background-color 150ms ease;
-}
-.enable-toggle input::after {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--surface-main);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.22);
-  content: "";
-  transition: transform 150ms ease;
-}
-.enable-toggle input:checked {
-  background: var(--accent);
-}
-.enable-toggle input:checked::after {
-  transform: translateX(16px);
-}
-
-.subagent-form {
-  display: grid;
-  gap: 12px;
-  padding: 15px;
-  border-top: 1px solid var(--theme-line-soft);
-  background: var(--surface-muted);
-}
-.form-field {
-  display: grid;
-  gap: 6px;
-}
-.form-field > span {
-  color: var(--text-secondary);
-  font-size: 0.821429rem;
-  font-weight: 620;
-}
-.form-field input,
-.form-field textarea {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid var(--theme-line);
-  border-radius: 9px;
-  outline: 0;
-  background: var(--surface-main);
-  color: var(--text-primary);
-  font: inherit;
-  line-height: 1.55;
-  resize: vertical;
-}
-.form-field input {
-  min-height: 38px;
-  padding: 8px 10px;
-}
-.form-field textarea {
-  padding: 9px 10px;
-}
-.description-input {
-  min-height: 76px;
-}
-.prompt-input {
-  min-height: 180px;
-  font-family: var(--code-font);
-  font-size: 0.892857rem;
-}
-.form-field input:focus,
-.form-field textarea:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-.form-field input::placeholder,
-.form-field textarea::placeholder {
-  color: var(--text-tertiary);
-}
-.model-mode-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.model-mode-options label {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 36px;
-  padding: 7px 12px;
-  border: 1px solid var(--theme-line);
-  border-radius: 9px;
-  background: var(--surface-main);
-  color: var(--text-secondary);
-  font-size: 0.857143rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-.model-mode-options label.is-selected {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--text-primary);
-}
-.model-mode-options input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  border: 0;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-.model-select {
-  width: 100%;
-}
-.model-run-settings {
-  display: grid;
-  gap: 8px;
-}
-.model-empty-hint {
-  margin: 0;
-  color: var(--text-tertiary);
-  font-size: 0.785714rem;
-  line-height: 1.45;
-}
-.form-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  color: var(--text-tertiary);
-  font-size: 0.75rem;
-}
-.form-meta code {
-  overflow-wrap: anywhere;
-  color: var(--text-secondary);
-}
-.form-meta button {
-  flex: none;
-  padding: 7px 10px;
-  background: var(--surface-raised);
-  color: var(--text-primary);
-  font-size: 0.821429rem;
-}
-
-.panel-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--theme-line-soft);
-}
-.panel-actions > span {
-  color: var(--text-tertiary);
-  font-size: 0.821429rem;
-}
-
-@media (max-width: 680px) {
-  .team-heading,
-  .panel-actions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-  .secondary-button,
-  .primary-button {
-    width: 100%;
-  }
-  .subagent-summary {
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-  .subagent-copy {
-    flex-basis: calc(100% - 50px);
-  }
-  .form-meta {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-}
-</style>
+<style scoped src="./LongAgentTeamSettingsPanel.css"></style>

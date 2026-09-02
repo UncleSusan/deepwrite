@@ -2,6 +2,7 @@ import { computed, ref, watch, type Ref } from "vue";
 import type { RemoteModelListItem } from "@deepwrite/contracts";
 import { uiMessage } from "../ui-feedback";
 import type { DraftModel } from "../components/modelSettingsDraft";
+import { modelConnectionErrorMessage } from "../utils/ollamaConnectionError";
 
 const MANUAL_MODEL_ID_VALUE = "__deepwrite-manual-model-id__";
 
@@ -96,7 +97,11 @@ export function useRemoteModelListing(editor: Ref<DraftModel>) {
       });
       fetchedRemoteModels.value = result.models;
       if (result.models.length === 0) {
-        uiMessage.warning("当前接口没有返回可用模型。");
+        uiMessage.warning(
+          editor.value.provider === "ollama"
+            ? "Ollama 已连接，但模型尚未导入。请在服务端完成导入并用 ollama list 确认模型 ID。"
+            : "当前接口没有返回可用模型。"
+        );
         return;
       }
       if (!editor.value.modelId.trim()) {
@@ -106,7 +111,13 @@ export function useRemoteModelListing(editor: Ref<DraftModel>) {
         `已拉取 ${result.models.length} 个可用模型，请选择模型 ID。`
       );
     } catch (error: unknown) {
-      uiMessage.error(commandErrorMessage(error, "拉取模型列表失败。"));
+      uiMessage.error(
+        modelConnectionErrorMessage(
+          editor.value,
+          error,
+          commandErrorMessage(error, "拉取模型列表失败。")
+        )
+      );
     } finally {
       listingRemoteModels.value = false;
     }

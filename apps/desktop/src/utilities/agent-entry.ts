@@ -15,16 +15,20 @@ import {
 } from "@deepwrite/pi-runtime-adapter";
 import { createId, nowIso } from "@deepwrite/shared";
 import { createAgentRunInput } from "./agent-run-input";
+import {
+  agentRunConcurrencyKey,
+  resolveAgentRunAdmission,
+  resolveConcurrencyModel
+} from "./agent-concurrency";
 import { bootUtility } from "./runtime";
 
 const runtime = new PiAgentRuntimeAdapter({
   evaluationMode: process.env.DEEPWRITE_APP_MODE === "evaluation"
 });
-const activeStreams = new Set<Promise<void>>();
+const activeStreams = new Map<Promise<void>, string>();
 const terminalRuns = new Set<string>();
 const activeSessionRuns = new Map<string, string>();
 const abortControllers = new Map<string, AbortController>();
-const MAX_ACTIVE_RUNS = 4;
 
 function toEventEnvelope(
   event: AgentRuntimeEvent,
@@ -534,7 +538,12 @@ function streamPrompt(
     }
   })();
 
-  activeStreams.add(stream);
+  activeStreams.set(
+    stream,
+    agentRunConcurrencyKey(
+      resolveConcurrencyModel(input.runtimeConfig, input.subagentRuntimeConfigs)
+    )
+  );
   void stream.then(
     () => activeStreams.delete(stream),
     () => activeStreams.delete(stream)
@@ -649,13 +658,21 @@ bootUtility("agent", {
         }
       };
     }
-    if (activeStreams.size >= MAX_ACTIVE_RUNS) {
+    const admission = resolveAgentRunAdmission(
+      [...activeStreams.values()],
+      resolveConcurrencyModel(
+        command.payload.runtimeConfig,
+        command.payload.subagentRuntimeConfigs
+      )
+    );
+    if (!admission.allowed) {
       return {
         status: "rejected",
         requestId: command.id,
         error: {
           code: "agent.capacity_reached",
-          message: "本地智能体并发运行数量已达到上限。"
+          message: admission.message ?? "本地智能体并发运行数量已达到上限。",
+          details: { limit: admission.limit }
         }
       };
     }

@@ -512,14 +512,16 @@
   margin-top: 13px;
 }
 
-.model-form-grid label {
+.model-form-grid label,
+.model-form-grid .model-field {
   display: grid;
   gap: 5px;
   color: var(--text-secondary);
   font-size: 0.678571rem;
 }
 
-.model-form-grid label.is-wide {
+.model-form-grid label.is-wide,
+.model-form-grid .model-field.is-wide {
   grid-column: 1 / -1;
 }
 
@@ -646,6 +648,29 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 7px;
+}
+
+.model-add-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.autodl-ollama-hint {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 11px 12px;
+  border: 1px solid var(--theme-line-soft);
+  border-radius: 7px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: 0.714286rem;
+  line-height: 1.55;
+}
+
+.autodl-ollama-hint strong {
+  color: var(--text-primary);
 }
 
 .model-thinking-options {

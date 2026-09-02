@@ -95,6 +95,10 @@ export function useModelEditor(
 
   function applyProviderPreset(provider: string): void {
     applyProviderPresetDefaults(editor.value, provider);
+    if (editor.value.provider !== "ollama") {
+      delete editor.value.deploymentTarget;
+      delete editor.value.concurrencyLimit;
+    }
   }
 
   function setModelApi(value: string | number): void {

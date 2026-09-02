@@ -6,6 +6,7 @@ import type {
   ModelUsageQueryInput
 } from "@deepwrite/contracts";
 import { useSettingsStore } from "../stores/settingsStore";
+import { modelConnectionErrorMessage } from "../utils/ollamaConnectionError";
 
 export interface ModelSettingsNotifications {
   error(message: string): void;
@@ -311,7 +312,11 @@ export function useModelSettingsCoordinator(
       }
       uiMessage.success(result.message);
     } catch (error: unknown) {
-      settingsStore.modelError = errorMessage(error, "模型连接测试失败。");
+      settingsStore.modelError = modelConnectionErrorMessage(
+        model,
+        error,
+        "模型连接测试失败。"
+      );
       uiMessage.error(settingsStore.modelError);
     } finally {
       settingsStore.testingModelId = null;

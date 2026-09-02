@@ -53,6 +53,7 @@ const {
   advancedConfigModel,
   modelConfigRows,
   createModel,
+  createAutoDlOllamaModel,
   editModel,
   saveModelEditor,
   testDraftModel,
@@ -162,6 +163,14 @@ const {
                         : "未配置密钥"
                   }}
                 </small>
+                <small v-if="row.model.provider === 'ollama'">
+                  {{
+                    row.model.deploymentTarget === "autodl-ollama"
+                      ? "AutoDL · SSH 隧道"
+                      : "本机 Ollama"
+                  }}
+                  · 并发上限 {{ row.model.concurrencyLimit ?? 1 }}
+                </small>
               </div>
               <div class="model-card-actions">
                 <button
@@ -214,14 +223,22 @@ const {
             </article>
           </template>
 
-          <button
-            v-if="!modelEditor"
-            class="dialog-secondary-button model-add-button"
-            type="button"
-            @click="createModel"
-          >
-            <AppIcon name="plus" :size="15" />添加模型
-          </button>
+          <div v-if="!modelEditor" class="model-add-actions">
+            <button
+              class="dialog-secondary-button model-add-button"
+              type="button"
+              @click="createAutoDlOllamaModel"
+            >
+              <AppIcon name="model" :size="15" />AutoDL Ollama
+            </button>
+            <button
+              class="dialog-secondary-button model-add-button"
+              type="button"
+              @click="createModel"
+            >
+              <AppIcon name="plus" :size="15" />添加模型
+            </button>
+          </div>
         </template>
       </div>
 

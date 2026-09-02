@@ -45,6 +45,7 @@ export interface LongBookAnalysisJob {
   preset: LongBookAnalysisPreset;
   modelId: string;
   thinkingLevel: ThinkingLevel;
+  temperature?: number;
   libraryId: string;
   selectionStart: number;
   selectionEnd: number;

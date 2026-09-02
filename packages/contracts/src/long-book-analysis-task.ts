@@ -6,7 +6,7 @@ import {
   LongBookAnalysisResultSchema,
   LongBookAnalysisSavedSourceIdSchema
 } from "./long-book-analysis";
-import { ThinkingLevelSchema } from "./models";
+import { TemperatureSchema, ThinkingLevelSchema } from "./models";
 
 export const LONG_BOOK_ANALYSIS_COMPLETE_PRESET_IDS = [
   "plot-structure",
@@ -76,6 +76,7 @@ export const LongBookAnalysisPipelineCheckpointSchema = z.object({
   presetId: z.string().trim().min(1).max(120),
   modelId: z.string().trim().min(1).max(512),
   thinkingLevel: ThinkingLevelSchema,
+  temperature: TemperatureSchema.optional(),
   libraryId: z.string().trim().max(512),
   selectedChapterOrders: ChapterOrdersSchema,
   inputBudget: z.number().int().positive(),
@@ -128,6 +129,7 @@ export const LongBookAnalysisTaskSnapshotSchema = z.object({
   styleFullText: z.boolean(),
   modelId: z.string().trim().min(1).max(512),
   thinkingLevel: ThinkingLevelSchema,
+  temperature: TemperatureSchema.optional(),
   status: LongBookAnalysisTaskStatusSchema,
   activePresetId: z.string().trim().min(1).max(120).optional(),
   items: z.array(LongBookAnalysisTaskItemSchema).length(5),

@@ -29,6 +29,7 @@ export * from "./session";
 export * from "./skill-markdown";
 export * from "./script-workspace";
 export * from "./script-agent-settings";
+export * from "./single-model-long-team";
 export * from "./short-manuscript-export";
 export * from "./subagent-authoring";
 export * from "./system";

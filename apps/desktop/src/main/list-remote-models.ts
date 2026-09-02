@@ -1,4 +1,5 @@
 import type { ModelApi, RemoteModelListItem } from "@deepwrite/contracts";
+import { ollamaNetworkErrorMessage } from "./ollama-network-error";
 
 export const REMOTE_MODEL_LIST_TIMEOUT_MS = 15_000;
 export const REMOTE_MODEL_LIST_MAX_RESPONSE_BYTES = 2 * 1_024 * 1_024;
@@ -246,7 +247,9 @@ export async function listRemoteModels(
       timedOut ? "models.list_remote_timeout" : "models.list_remote_network",
       timedOut
         ? "拉取模型超时，请稍后重试。"
-        : "无法连接模型服务，请检查 API 地址后重试。"
+        : isOllamaProvider(input.provider)
+          ? ollamaNetworkErrorMessage(error)
+          : "无法连接模型服务，请检查 API 地址后重试。"
     );
   }
 

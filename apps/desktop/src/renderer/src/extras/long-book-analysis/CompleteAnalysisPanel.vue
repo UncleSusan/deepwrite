@@ -20,6 +20,7 @@ const props = defineProps<{
 
 const scopeMode = ref<LongBookAnalysisScopeMode>("full");
 const styleFullText = ref(false);
+const analysisTemperature = ref(0.3);
 const processOpen = ref(false);
 const complete = props.controller.complete;
 const task = computed(() => complete.task.value);
@@ -88,12 +89,24 @@ function strategyLabel(presetId: string): string {
 }
 
 async function start(): Promise<void> {
+  if (
+    props.controller.selectedThinkingLevel.value === "off" &&
+    (!Number.isFinite(analysisTemperature.value) ||
+      analysisTemperature.value < 0 ||
+      analysisTemperature.value > 2)
+  ) {
+    uiMessage.warning("拆书温度必须在 0 到 2 之间。");
+    return;
+  }
   try {
     const started = await complete.start({
       scopeMode: scopeMode.value,
       styleFullText: styleFullText.value,
       modelId: props.controller.selectedModelId.value,
-      thinkingLevel: props.controller.selectedThinkingLevel.value
+      thinkingLevel: props.controller.selectedThinkingLevel.value,
+      ...(props.controller.selectedThinkingLevel.value === "off"
+        ? { temperature: analysisTemperature.value }
+        : {})
     });
     if (started) processOpen.value = true;
   } catch (error: unknown) {
@@ -160,6 +173,21 @@ async function retryItem(presetId: string): Promise<void> {
           accessible-label="完整拆书分析模型"
           :disabled="controller.isBusy.value"
           :menu-min-width="280"
+        />
+      </label>
+      <label
+        v-if="controller.selectedThinkingLevel.value === 'off'"
+        class="setup-field"
+      >
+        <span class="setup-field-label">拆书温度</span>
+        <input
+          v-model.number="analysisTemperature"
+          type="number"
+          min="0"
+          max="2"
+          step="0.05"
+          :disabled="controller.isBusy.value || !selectedModel"
+          aria-label="完整拆书温度"
         />
       </label>
       <label class="setup-field"

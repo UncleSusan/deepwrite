@@ -186,7 +186,7 @@ export async function handleLongBookAnalysisCommands(
   if (command.type === "longBookAnalysis.tasks.delete") {
     try {
       await (await taskStore(context)).delete(command.payload.taskId);
-      return { status: "accepted", requestId: command.id };
+      return { status: "accepted", requestId: command.id, payload: {} };
     } catch (error: unknown) {
       return failure(
         command,

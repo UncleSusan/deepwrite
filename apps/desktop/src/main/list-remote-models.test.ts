@@ -100,6 +100,32 @@ describe("listRemoteModels", () => {
     expect(models).toEqual([{ id: "llama3" }]);
   });
 
+  it("preserves the Ollama network signal needed to distinguish tunnel and service failures", async () => {
+    const input = {
+      api: "openai-completions" as const,
+      baseUrl: "http://127.0.0.1:11434/v1",
+      apiKey: "",
+      provider: "ollama"
+    };
+    const refused = Object.assign(new Error("connect ECONNREFUSED"), {
+      code: "ECONNREFUSED"
+    });
+    await expect(
+      listRemoteModels(input, async () => {
+        throw new TypeError("fetch failed", { cause: refused });
+      })
+    ).rejects.toThrow("ECONNREFUSED");
+
+    const closed = Object.assign(new Error("other side closed"), {
+      code: "UND_ERR_SOCKET"
+    });
+    await expect(
+      listRemoteModels(input, async () => {
+        throw new TypeError("fetch failed", { cause: closed });
+      })
+    ).rejects.toThrow("Ollama 未正常响应");
+  });
+
   it("rejects missing credentials before making a request", async () => {
     await expect(
       listRemoteModels({

@@ -95,6 +95,12 @@ export function toModelInput(model: DraftModel): ModelConfigInput {
       ? { contextWindow: model.contextWindow }
       : {}),
     ...(model.maxTokens !== undefined ? { maxTokens: model.maxTokens } : {}),
+    ...(model.deploymentTarget
+      ? { deploymentTarget: model.deploymentTarget }
+      : {}),
+    ...(model.concurrencyLimit !== undefined
+      ? { concurrencyLimit: model.concurrencyLimit }
+      : {}),
     ...(model.apiKey?.trim() ? { apiKey: model.apiKey.trim() } : {}),
     ...(model.clearApiKey ? { clearApiKey: true } : {})
   };
