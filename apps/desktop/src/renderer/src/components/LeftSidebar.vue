@@ -398,7 +398,9 @@ function toggleResourcePin(node: ResourceTreeNode): void {
   );
 }
 
-function resourceDomainFor(node: ResourceTreeNode): ResourceDomain {
+function resourceDomainFor(
+  node: ResourceTreeNode
+): ResourceDomain | "resource-group" {
   return resourceDomainsByNodeId.value.get(node.id) ?? "creation";
 }
 

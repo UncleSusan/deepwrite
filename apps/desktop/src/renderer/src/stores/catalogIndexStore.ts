@@ -6,6 +6,7 @@ import {
   type CatalogWorkspaceProjection,
   type DraftDirectoryProjection
 } from "../data/catalogWorkspace";
+import { mergeCreativeResourceGroups } from "../data/creativeResourceGroups";
 import type {
   ResourceTreeNode,
   ResourceTreeSection,
@@ -147,7 +148,11 @@ export const useCatalogIndexStore = defineStore("catalogIndex", () => {
     if (snapshot.value === nextSnapshot && projection.value) {
       return projection.value;
     }
-    const nextProjection = projectCatalogWorkspace(nextSnapshot);
+    const baseProjection = projectCatalogWorkspace(nextSnapshot);
+    const nextProjection = mergeCreativeResourceGroups(
+      nextSnapshot,
+      baseProjection
+    );
     snapshot.value = nextSnapshot;
     projection.value = nextProjection;
     return nextProjection;

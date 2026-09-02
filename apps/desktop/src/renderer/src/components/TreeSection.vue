@@ -114,6 +114,7 @@ const actionItems = computed<
 });
 
 function activateResourceAction(action: ResourceSectionAction): void {
+  if (props.section.id === "resource-group") return;
   actionMenuOpen.value = false;
   emit("resourceAction", { domain: props.section.id, action });
 }
@@ -158,7 +159,11 @@ onBeforeUnmount(() => {
         <span>{{ section.label }}</span>
         <AppIcon class="section-toggle-chevron" name="chevron" :size="13" />
       </button>
-      <div ref="actionArea" class="section-action-area">
+      <div
+        v-if="section.id !== 'resource-group'"
+        ref="actionArea"
+        class="section-action-area"
+      >
         <button
           class="section-action"
           :class="{ 'is-active': actionMenuOpen }"

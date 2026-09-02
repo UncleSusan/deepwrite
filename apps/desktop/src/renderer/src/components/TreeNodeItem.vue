@@ -29,7 +29,7 @@ const props = defineProps<{
   pinnable?: boolean;
   pinned?: boolean;
   pinnedIds?: string[] | undefined;
-  resourceDomain?: ResourceDomain | undefined;
+  resourceDomain?: ResourceDomain | "resource-group" | undefined;
   libraryEntryClipboardDomain?: "skill" | "material" | undefined;
   expertSectionMoveUpDisabled?: boolean;
   expertSectionMoveDownDisabled?: boolean;
@@ -77,10 +77,12 @@ const actionMenuOpen = ref(false);
 const actionArea = ref<HTMLElement | null>(null);
 const actionMenu = ref<HTMLElement | null>(null);
 const actionMenuOpensUpward = ref(false);
-const libraryDomain = computed<"skill" | "material" | undefined>(() =>
-  props.resourceDomain === "skill" || props.resourceDomain === "material"
-    ? props.resourceDomain
-    : undefined
+const libraryDomain = computed<"skill" | "material" | undefined>(
+  () =>
+    props.node.libraryDomain ??
+    (props.resourceDomain === "skill" || props.resourceDomain === "material"
+      ? props.resourceDomain
+      : undefined)
 );
 const canPasteLibraryEntry = computed(
   () =>
@@ -1078,7 +1080,7 @@ onBeforeUnmount(() => {
         :node="child"
         :depth="depth + 1"
         :selected-id="selectedId"
-        :resource-domain="resourceDomain"
+        :resource-domain="libraryDomain ?? resourceDomain"
         :library-entry-clipboard-domain="libraryEntryClipboardDomain"
         :pinnable="
           !child.unavailable &&

@@ -210,6 +210,12 @@ describe("TreeNodeItem actions", () => {
     expect(source).toContain('v-if="!node.unavailable"');
   });
 
+  it("passes a creative group's concrete library domain to entry children", () => {
+    expect(source).toContain(
+      ':resource-domain="libraryDomain ?? resourceDomain"'
+    );
+  });
+
   it("keeps reversible catalog actions neutral and marks disk deletion dangerous", () => {
     const longMenu = source.slice(
       source.indexOf('<template v-else-if="hasLongBookAction">'),

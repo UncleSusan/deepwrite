@@ -204,6 +204,11 @@ export interface ResourceTreeNode {
     "book" | "long-book" | "library" | "group" | "category" | "document";
   libraryId?: string;
   groupId?: string;
+  /** Library nodes inside a cross-domain creative resource group. */
+  libraryDomain?: "material" | "skill";
+  /** Backing groups combined into one visible creative resource group. */
+  materialGroupId?: string;
+  skillGroupId?: string;
   materialKind?: MaterialLibraryKind;
   skillKind?: SkillKind;
   stageCategoryId?: string;
@@ -213,7 +218,7 @@ export interface ResourceTreeNode {
 }
 
 export interface ResourceTreeSection {
-  id: ResourceDomain;
+  id: ResourceDomain | "resource-group";
   label: string;
   icon: IconName;
   nodes: ResourceTreeNode[];
