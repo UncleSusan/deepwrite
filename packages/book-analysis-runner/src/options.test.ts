@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentProviderRuntimeConfig } from "@deepwrite/contracts";
 import {
+  FORCED_COMPACTION_RESPONSE_MAX_TOKENS,
   REDUCTION_RESPONSE_MAX_TOKENS,
   runtimeForAnalysisPhase
 } from "./execute-item";
@@ -28,7 +29,7 @@ describe("headless book analysis options", () => {
     ).toThrow("--model");
   });
 
-  it("reserves response room for a compact reduction tool call", () => {
+  it("caps regular and forced reduction responses", () => {
     const runtime = {
       maxTokens: 4_096
     } as AgentProviderRuntimeConfig;
@@ -38,5 +39,13 @@ describe("headless book analysis options", () => {
     expect(runtimeForAnalysisPhase(runtime, "reduce").maxTokens).toBe(
       REDUCTION_RESPONSE_MAX_TOKENS
     );
+    expect(FORCED_COMPACTION_RESPONSE_MAX_TOKENS).toBe(900);
+    expect(
+      runtimeForAnalysisPhase(
+        runtime,
+        "reduce",
+        FORCED_COMPACTION_RESPONSE_MAX_TOKENS
+      ).maxTokens
+    ).toBe(FORCED_COMPACTION_RESPONSE_MAX_TOKENS);
   });
 });

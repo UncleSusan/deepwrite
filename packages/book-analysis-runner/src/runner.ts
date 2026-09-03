@@ -171,6 +171,7 @@ type RunUnitInput = {
   adapter: PiAgentRuntimeAdapter;
   runtime: AgentProviderRuntimeConfig;
   job: LongBookAnalysisJob;
+  responseMaxTokens?: number;
 } & (
   | { phase: "batch"; segments: LongBookAnalysisSegment[] }
   | { phase: "reduce" | "final"; notes: LongBookAnalysisNote[] }
@@ -216,7 +217,9 @@ export async function runUnit(
     input.phase === "batch"
       ? "Analyze the current chapter batch and write a structured intermediate note."
       : input.phase === "reduce"
-        ? "Merge the supplied notes into one evidence-dense note. It must be materially shorter than the inputs and fit within the reduction output limit."
+        ? input.responseMaxTokens
+          ? "Compress the supplied intermediate note into a much shorter evidence-dense note. Retain only conclusions, chapter-range evidence, conflicts, and unknowns."
+          : "Merge the supplied notes into one evidence-dense note. It must be materially shorter than the inputs and fit within the reduction output limit."
         : "Generate the final editable Markdown analysis result from the merged notes.";
   const message = `${instruction}\n\n${inlineAnalysisInputs(input)}`;
   let output: string | LongBookAnalysisResult | undefined;
@@ -224,7 +227,11 @@ export async function runUnit(
     runId: createId("headless_analysis_run"),
     sessionId: createId("headless_analysis_session"),
     prompt: message,
-    runtimeConfig: runtimeForAnalysisPhase(input.runtime, input.phase),
+    runtimeConfig: runtimeForAnalysisPhase(
+      input.runtime,
+      input.phase,
+      input.responseMaxTokens
+    ),
     thinkingLevel: "off",
     longBookAnalysisOutputMode: "text",
     longBookAnalysisInputMode: "inline",

@@ -23,18 +23,20 @@ import type { RunnerOptions } from "./options";
 // The note itself targets roughly 1,200 tokens. The response needs additional
 // room for the required function-call envelope and JSON escaping.
 export const REDUCTION_RESPONSE_MAX_TOKENS = 2_400;
+export const FORCED_COMPACTION_RESPONSE_MAX_TOKENS = 900;
 export const HEADLESS_ANALYSIS_IDLE_TIMEOUT_MS = 120_000;
 
 export function runtimeForAnalysisPhase(
   runtime: AgentProviderRuntimeConfig,
-  phase: "batch" | "reduce" | "final"
+  phase: "batch" | "reduce" | "final",
+  responseMaxTokens?: number
 ): AgentProviderRuntimeConfig {
   if (phase !== "reduce") return runtime;
   return {
     ...runtime,
     maxTokens: Math.min(
       runtime.maxTokens ?? REDUCTION_RESPONSE_MAX_TOKENS,
-      REDUCTION_RESPONSE_MAX_TOKENS
+      responseMaxTokens ?? REDUCTION_RESPONSE_MAX_TOKENS
     )
   };
 }
@@ -44,6 +46,7 @@ type RunUnit = (
     adapter: PiAgentRuntimeAdapter;
     runtime: AgentProviderRuntimeConfig;
     job: LongBookAnalysisJob;
+    responseMaxTokens?: number;
   } & (
     | { phase: "batch"; segments: LongBookAnalysisSegment[] }
     | { phase: "reduce" | "final"; notes: LongBookAnalysisNote[] }
@@ -84,6 +87,40 @@ export async function runAnalysisItem(input: {
     input.item.estimatedUnits,
     restored?.estimatedUnits ?? job.batches.length + 1
   );
+
+  const forceCompactNotes = async (): Promise<void> => {
+    const notes = [...job.notes];
+    input.log(
+      `[${input.preset.name}] reduction did not converge; force-compacting ${notes.length} notes.`
+    );
+    job.notes = [];
+    job.reductionRounds = 0;
+    input.item.estimatedUnits += notes.length;
+    for (const note of notes) {
+      const text = await input.runUnit({
+        adapter,
+        runtime: input.runtime,
+        job,
+        phase: "reduce",
+        notes: [note],
+        responseMaxTokens: FORCED_COMPACTION_RESPONSE_MAX_TOKENS
+      });
+      if (typeof text !== "string") {
+        throw new Error("Forced compaction must return an intermediate note.");
+      }
+      job.notes.push(
+        createAnalysisNote(
+          text,
+          `${note.label} compacted note`,
+          note.chapterStart,
+          note.chapterEnd
+        )
+      );
+      input.item.completedUnits += 1;
+      input.item.checkpoint = input.checkpoint(job, input.item, "reduce");
+      await input.save();
+    }
+  };
   while (job.batchIndex < job.batches.length) {
     const batch = job.batches[job.batchIndex]!;
     const start = Math.min(...batch.map(({ chapterOrder }) => chapterOrder));
@@ -117,9 +154,8 @@ export async function runAnalysisItem(input: {
   while (needsAnalysisReduction(job.notes, job.inputBudget)) {
     if (!job.reduction) {
       if (job.reductionRounds >= MAX_ANALYSIS_REDUCTION_ROUNDS) {
-        throw new Error(
-          "Intermediate notes did not converge within 20 reduction rounds."
-        );
+        await forceCompactNotes();
+        continue;
       }
       job.reductionRounds += 1;
       job.reduction = createAnalysisReductionState(job.notes, job.inputBudget);

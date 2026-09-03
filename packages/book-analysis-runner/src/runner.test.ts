@@ -6,7 +6,11 @@ import type {
 } from "@deepwrite/contracts";
 import type { LongBookAnalysisJob } from "../../../apps/desktop/src/renderer/src/extras/long-book-analysis/analysis-pipeline-types";
 import { parseOptions } from "./options";
-import { initializeTaskItemEstimates, runUnit } from "./runner";
+import { checkpoint, initializeTaskItemEstimates, runUnit } from "./runner";
+import {
+  FORCED_COMPACTION_RESPONSE_MAX_TOKENS,
+  runAnalysisItem
+} from "./execute-item";
 
 const source: LongBookAnalysisSource = {
   id: "source-1",
@@ -118,5 +122,91 @@ describe("headless book-analysis task estimates", () => {
     expect(calls[0]?.longBookAnalysisOutputMode).toBe("text");
     expect(calls[0]?.longBookAnalysisInputMode).toBe("inline");
     expect(String(calls[0]?.prompt)).toContain("原始笔记");
+  });
+
+  it("force-compacts notes instead of failing at the reduction round limit", async () => {
+    const preset = {
+      id: "plot-structure",
+      name: "剧情结构",
+      description: "测试",
+      systemPrompt: "测试",
+      output: { domain: "material", kind: "plot", stageId: "pacing" }
+    } as const;
+    const job = {
+      id: "job-2",
+      sourceId: source.id,
+      sourceTitle: source.name,
+      preset,
+      modelId: "qwen3-local",
+      thinkingLevel: "off",
+      libraryId: "",
+      selectionStart: 1,
+      selectionEnd: 3,
+      selectedChapterOrders: [1, 2, 3],
+      inputBudget: 4_690,
+      batches: [],
+      batchIndex: 0,
+      notes: [
+        {
+          id: "note-1",
+          label: "第 1 章",
+          chapterStart: 1,
+          chapterEnd: 1,
+          text: "一".repeat(2_800)
+        },
+        {
+          id: "note-2",
+          label: "第 2 章",
+          chapterStart: 2,
+          chapterEnd: 2,
+          text: "二".repeat(2_300)
+        },
+        {
+          id: "note-3",
+          label: "第 3 章",
+          chapterStart: 3,
+          chapterEnd: 3,
+          text: "三".repeat(2_700)
+        }
+      ],
+      reductionRounds: 20
+    } as LongBookAnalysisJob;
+    const taskItem = item("plot-structure", [1, 2, 3]);
+    const responseLimits: Array<number | undefined> = [];
+
+    await runAnalysisItem({
+      item: taskItem,
+      preset,
+      source,
+      options: parseOptions([
+        "run",
+        "--source",
+        "source.txt",
+        "--workspace",
+        "workspace",
+        "--model",
+        "qwen3-local"
+      ]),
+      runtime: {} as AgentProviderRuntimeConfig,
+      createJob: () => job,
+      checkpoint,
+      runUnit: async (input) => {
+        responseLimits.push(input.responseMaxTokens);
+        if (input.phase === "final") {
+          return { title: "剧情结构", body: "# 最终结果" };
+        }
+        return input.responseMaxTokens ? "压缩笔记" : "归并笔记";
+      },
+      save: async () => {},
+      log: () => {}
+    });
+
+    expect(responseLimits.slice(0, 3)).toEqual([
+      FORCED_COMPACTION_RESPONSE_MAX_TOKENS,
+      FORCED_COMPACTION_RESPONSE_MAX_TOKENS,
+      FORCED_COMPACTION_RESPONSE_MAX_TOKENS
+    ]);
+    expect(taskItem.status).toBe("completed");
+    expect(taskItem.result).toEqual({ title: "剧情结构", body: "# 最终结果" });
   });
 });
