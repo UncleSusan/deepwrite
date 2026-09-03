@@ -32,6 +32,7 @@ describe("headless book analysis options", () => {
     const runtime = {
       maxTokens: 4_096
     } as AgentProviderRuntimeConfig;
+    expect(REDUCTION_OUTPUT_MAX_TOKENS).toBe(1_600);
     expect(runtimeForAnalysisPhase(runtime, "batch").maxTokens).toBe(4_096);
     expect(runtimeForAnalysisPhase(runtime, "final").maxTokens).toBe(4_096);
     expect(runtimeForAnalysisPhase(runtime, "reduce").maxTokens).toBe(

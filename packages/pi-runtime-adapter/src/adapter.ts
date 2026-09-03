@@ -920,7 +920,6 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
         });
         cleanup();
       }, this.idleTimeoutMs);
-      idleTimeout.unref();
     };
 
     if (!settled) {

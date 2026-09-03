@@ -20,7 +20,10 @@ import { restoreAnalysisPipeline } from "../../../apps/desktop/src/renderer/src/
 import type { LongBookAnalysisJob } from "../../../apps/desktop/src/renderer/src/extras/long-book-analysis/analysis-pipeline-types";
 import type { RunnerOptions } from "./options";
 
-export const REDUCTION_OUTPUT_MAX_TOKENS = 1_200;
+// The note itself targets roughly 1,200 tokens. Reserve room for the required
+// function-call envelope so Ollama can finish serializing it.
+export const REDUCTION_OUTPUT_MAX_TOKENS = 1_600;
+export const HEADLESS_ANALYSIS_IDLE_TIMEOUT_MS = 120_000;
 
 export function runtimeForAnalysisPhase(
   runtime: AgentProviderRuntimeConfig,
@@ -64,7 +67,9 @@ export async function runAnalysisItem(input: {
   save(): Promise<void>;
   log(message: string): void;
 }): Promise<void> {
-  const adapter = new PiAgentRuntimeAdapter();
+  const adapter = new PiAgentRuntimeAdapter({
+    idleTimeoutMs: HEADLESS_ANALYSIS_IDLE_TIMEOUT_MS
+  });
   const restored = input.item.checkpoint
     ? restoreAnalysisPipeline({
         source: input.source,
