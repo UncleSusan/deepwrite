@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   Agent,
   type AgentEvent,
@@ -93,6 +93,22 @@ describe("agent turn retry coordinator", () => {
     controller.abort();
 
     await expect(waiting).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("keeps retry backoff referenced for headless runners", async () => {
+    const probe = setTimeout(() => undefined, 1);
+    const unref = vi.spyOn(
+      Object.getPrototypeOf(probe) as { unref(): unknown },
+      "unref"
+    );
+    clearTimeout(probe);
+    const controller = new AbortController();
+    const waiting = sleepForAgentTurnRetry(30_000, controller.signal);
+    controller.abort();
+
+    await expect(waiting).rejects.toMatchObject({ name: "AbortError" });
+    expect(unref).not.toHaveBeenCalled();
+    unref.mockRestore();
   });
 
   it("retries a transient provider failure under one logical turn id", async () => {

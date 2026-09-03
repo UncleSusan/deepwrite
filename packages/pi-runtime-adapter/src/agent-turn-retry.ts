@@ -110,7 +110,7 @@ function createAbortError(): Error {
   return error;
 }
 
-/** Waits without leaving a timer alive after cancellation. */
+/** Waits for a retry backoff and responds immediately to cancellation. */
 export async function sleepForAgentTurnRetry(
   delayMs: number,
   signal?: AbortSignal
@@ -127,7 +127,6 @@ export async function sleepForAgentTurnRetry(
       signal?.removeEventListener("abort", onAbort);
       resolve();
     }, delayMs);
-    timeout.unref?.();
 
     const onAbort = (): void => {
       clearTimeout(timeout);
