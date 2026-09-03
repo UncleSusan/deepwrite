@@ -97,13 +97,16 @@ function buildWorkspaceAgentSystemPrompt(
       renderLongBookAnalysisSystemPrompt(
         longBookAnalysisProfile,
         longBookAnalysisContext,
-        input.longBookAnalysisOutputMode
+        input.longBookAnalysisOutputMode,
+        input.longBookAnalysisInputMode
       ).trim(),
       "",
       "【DeepWrite 长篇拆书工具边界】",
-      input.longBookAnalysisOutputMode === "text"
-        ? "只能使用本轮列出的章节或中间笔记 list/read/search 工具。完成分析后直接输出结果正文；不得调用未列出的写入工具，也不得输出 JSON 包装。"
-        : "只能使用本轮列出的章节或中间笔记 list/read/search 工具，以及当前阶段唯一允许的 write_analysis_note 或 write_analysis_result。写入工具只更新本次任务的内存笔记或结果预览，不会修改源文件，也不会直接写入资料库。"
+      input.longBookAnalysisInputMode === "inline"
+        ? "本轮输入已经直接提供，当前不提供任何工具。完成分析后直接输出结果正文；不得输出 JSON 包装。"
+        : input.longBookAnalysisOutputMode === "text"
+          ? "只能使用本轮列出的章节或中间笔记 list/read/search 工具。完成分析后直接输出结果正文；不得调用未列出的写入工具，也不得输出 JSON 包装。"
+          : "只能使用本轮列出的章节或中间笔记 list/read/search 工具，以及当前阶段唯一允许的 write_analysis_note 或 write_analysis_result。写入工具只更新本次任务的内存笔记或结果预览，不会修改源文件，也不会直接写入资料库。"
     ].join("\n");
   }
   const libraryProfile = input.libraryAgentProfile;

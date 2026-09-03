@@ -116,5 +116,7 @@ describe("headless book-analysis task estimates", () => {
       })
     ).resolves.toBe("归并后的结构化笔记。");
     expect(calls[0]?.longBookAnalysisOutputMode).toBe("text");
+    expect(calls[0]?.longBookAnalysisInputMode).toBe("inline");
+    expect(String(calls[0]?.prompt)).toContain("原始笔记");
   });
 });

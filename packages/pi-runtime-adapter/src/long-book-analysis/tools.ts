@@ -214,8 +214,10 @@ function buildResultTool(context: LongBookAnalysisRuntimeContext): AgentTool {
 
 export function buildLongBookAnalysisTools(
   context: LongBookAnalysisRuntimeContext,
-  outputMode: "tool" | "text" = "tool"
+  outputMode: "tool" | "text" = "tool",
+  inputMode: "tools" | "inline" = "tools"
 ): AgentTool[] {
+  if (inputMode === "inline") return [];
   const readTools = [
     buildListTool(context),
     buildReadTool(context),

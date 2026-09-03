@@ -176,6 +176,24 @@ type RunUnitInput = {
   | { phase: "reduce" | "final"; notes: LongBookAnalysisNote[] }
 );
 
+function inlineAnalysisInputs(input: RunUnitInput): string {
+  const items =
+    input.phase === "batch"
+      ? input.segments.map((segment) => ({
+          label: `第 ${segment.chapterOrder} 章 ${segment.chapterTitle}`,
+          text: segment.text
+        }))
+      : input.notes.map((note) => ({
+          label: `${note.label}（第 ${note.chapterStart}-${note.chapterEnd} 章）`,
+          text: note.text
+        }));
+  return items
+    .map(
+      ({ label, text }, index) => `## 输入 ${index + 1}：${label}\n\n${text}`
+    )
+    .join("\n\n---\n\n");
+}
+
 export async function runUnit(
   input: RunUnitInput
 ): Promise<string | LongBookAnalysisResult> {
@@ -194,12 +212,13 @@ export async function runUnit(
       : input.phase === "reduce"
         ? { ...base, phase: "reduce", notes: input.notes }
         : { ...base, phase: "final", notes: input.notes };
-  const message =
+  const instruction =
     input.phase === "batch"
       ? "Analyze the current chapter batch and write a structured intermediate note."
       : input.phase === "reduce"
         ? "Merge the supplied notes into one evidence-dense note. It must be materially shorter than the inputs and fit within the reduction output limit."
         : "Generate the final editable Markdown analysis result from the merged notes.";
+  const message = `${instruction}\n\n${inlineAnalysisInputs(input)}`;
   let output: string | LongBookAnalysisResult | undefined;
   for await (const event of input.adapter.start({
     runId: createId("headless_analysis_run"),
@@ -208,6 +227,7 @@ export async function runUnit(
     runtimeConfig: runtimeForAnalysisPhase(input.runtime, input.phase),
     thinkingLevel: "off",
     longBookAnalysisOutputMode: "text",
+    longBookAnalysisInputMode: "inline",
     ...(input.job.temperature === undefined
       ? {}
       : { temperature: input.job.temperature }),

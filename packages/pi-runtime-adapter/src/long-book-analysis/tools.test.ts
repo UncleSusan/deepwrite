@@ -108,6 +108,12 @@ describe("long-book analysis tools", () => {
     ]);
   });
 
+  it("does not expose tools when the current input is inlined", () => {
+    expect(
+      buildLongBookAnalysisTools(context("reduce"), "text", "inline")
+    ).toEqual([]);
+  });
+
   it("lists and reads chapter inputs without embedding them in the prompt", async () => {
     const tools = buildLongBookAnalysisTools(context("batch"));
     expect(

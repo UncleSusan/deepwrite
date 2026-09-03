@@ -561,7 +561,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
             : longBookAnalysis && input.longBookAnalysisProfile
               ? buildLongBookAnalysisTools(
                   longBookAnalysis,
-                  input.longBookAnalysisOutputMode
+                  input.longBookAnalysisOutputMode,
+                  input.longBookAnalysisInputMode
                 )
               : libraryWorkspace && input.libraryAgentProfile
                 ? buildLibraryAgentTools({

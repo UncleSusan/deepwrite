@@ -57,6 +57,11 @@ export interface AgentRunInput {
    * truncate long JSON tool-call arguments.
    */
   longBookAnalysisOutputMode?: "tool" | "text";
+  /**
+   * Keep desktop analysis inputs behind scoped tools. The headless runner can
+   * inline its already size-bounded inputs for providers with tool-use issues.
+   */
+  longBookAnalysisInputMode?: "tools" | "inline";
   workspaceContext?: WorkspaceRuntimeContext;
   /**
    * Narrow Agent Utility -> Core query bridge for the active long-form book.
