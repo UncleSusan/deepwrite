@@ -278,7 +278,8 @@ function toolWithParameters(
 
 async function captureToolPayload(
   config: AgentProviderRuntimeConfig,
-  tool: AgentTool
+  tool: AgentTool,
+  maxTokens?: number
 ): Promise<Record<string, unknown>> {
   const { model, streamFn } = buildProviderRuntime(config, 0.7, "off");
   let capturedPayload: unknown;
@@ -292,6 +293,7 @@ async function captureToolPayload(
       tools: [tool]
     },
     {
+      ...(maxTokens === undefined ? {} : { maxTokens }),
       onPayload: (payload) => {
         capturedPayload = payload;
         throw new Error("payload captured");

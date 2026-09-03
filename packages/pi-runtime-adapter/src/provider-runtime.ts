@@ -82,7 +82,11 @@ function resolveOpenAICompletionsCompat(
 
   const provider = config.provider.toLowerCase();
   const baseUrl = config.baseUrl.toLowerCase();
-  if (
+  if (isOllamaProviderName(config.provider)) {
+    // Ollama's OpenAI-compatible endpoint accepts max_tokens, not the newer
+    // max_completion_tokens field used by most other OpenAI-compatible APIs.
+    compat.maxTokensField = "max_tokens";
+  } else if (
     provider === "qwen" ||
     provider === "dashscope" ||
     (baseUrl.includes("dashscope") && baseUrl.includes("aliyuncs.com"))

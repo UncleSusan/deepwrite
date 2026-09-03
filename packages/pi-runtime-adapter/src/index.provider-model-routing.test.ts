@@ -418,7 +418,9 @@ describe("DeepWrite Pi runtime adapter: provider-model-routing", () => {
       apiKey: ""
     };
     const tool = ollamaGrammarRegressionTool();
-    const ollamaPayload = await captureToolPayload(baseConfig, tool);
+    const ollamaPayload = await captureToolPayload(baseConfig, tool, 1_200);
+    expect(ollamaPayload).toMatchObject({ max_tokens: 1_200 });
+    expect(ollamaPayload).not.toHaveProperty("max_completion_tokens");
     const ollamaParameters = (
       ollamaPayload.tools as Array<{
         function: { parameters: Record<string, unknown> };
