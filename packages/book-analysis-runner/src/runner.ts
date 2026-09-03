@@ -28,7 +28,7 @@ import {
   groupAnalysisSegments
 } from "../../../apps/desktop/src/renderer/src/extras/long-book-analysis/batching";
 import type { LongBookAnalysisJob } from "../../../apps/desktop/src/renderer/src/extras/long-book-analysis/analysis-pipeline-types";
-import { runAnalysisItem } from "./execute-item";
+import { runAnalysisItem, runtimeForAnalysisPhase } from "./execute-item";
 import type { RunnerOptions } from "./options";
 
 const SOURCE_FILE = "source.json";
@@ -198,14 +198,14 @@ export async function runUnit(
     input.phase === "batch"
       ? "Analyze the current chapter batch and write a structured intermediate note."
       : input.phase === "reduce"
-        ? "Merge the supplied intermediate notes and write one compressed structured note."
+        ? "Merge the supplied notes into one evidence-dense note. It must be materially shorter than the inputs and fit within the reduction output limit."
         : "Generate the final editable Markdown analysis result from the merged notes.";
   let output: string | LongBookAnalysisResult | undefined;
   for await (const event of input.adapter.start({
     runId: createId("headless_analysis_run"),
     sessionId: createId("headless_analysis_session"),
     prompt: message,
-    runtimeConfig: input.runtime,
+    runtimeConfig: runtimeForAnalysisPhase(input.runtime, input.phase),
     thinkingLevel: "off",
     ...(input.job.temperature === undefined
       ? {}
@@ -240,6 +240,27 @@ function createTask(
   options: RunnerOptions
 ): LongBookAnalysisTaskSnapshot {
   const now = new Date().toISOString();
+  const items = DEFAULT_PRESETS.map((preset) => ({
+    presetId: preset.id,
+    presetName: preset.name,
+    scopeMode:
+      options.scopeMode === "full" &&
+      preset.id === "style" &&
+      !options.styleFullText
+        ? "sampled"
+        : options.scopeMode,
+    chapterOrders: completeAnalysisChapterOrders({
+      chapters: source.chapters,
+      scopeMode: options.scopeMode,
+      presetId: preset.id,
+      styleFullText: options.styleFullText
+    }),
+    status: "pending" as const,
+    completedUnits: 0,
+    estimatedUnits: 1,
+    targetLibraryId: ""
+  }));
+  initializeTaskItemEstimates(source, options, items);
   return LongBookAnalysisTaskSnapshotSchema.parse({
     version: 1,
     id: createId("headless_complete_book_analysis"),
@@ -251,29 +272,26 @@ function createTask(
     thinkingLevel: "off",
     temperature: options.temperature,
     status: "pending",
-    items: DEFAULT_PRESETS.map((preset) => ({
-      presetId: preset.id,
-      presetName: preset.name,
-      scopeMode:
-        options.scopeMode === "full" &&
-        preset.id === "style" &&
-        !options.styleFullText
-          ? "sampled"
-          : options.scopeMode,
-      chapterOrders: completeAnalysisChapterOrders({
-        chapters: source.chapters,
-        scopeMode: options.scopeMode,
-        presetId: preset.id,
-        styleFullText: options.styleFullText
-      }),
-      status: "pending",
-      completedUnits: 0,
-      estimatedUnits: 1,
-      targetLibraryId: ""
-    })),
+    items,
     createdAt: now,
     updatedAt: now
   });
+}
+
+export function initializeTaskItemEstimates(
+  source: LongBookAnalysisSource,
+  options: RunnerOptions,
+  items: LongBookAnalysisTaskItem[]
+): void {
+  for (const item of items) {
+    if (item.status === "completed") continue;
+    const preset = DEFAULT_PRESETS.find(
+      (candidate) => candidate.id === item.presetId
+    );
+    if (!preset) continue;
+    const batches = createJob({ source, preset, item, options }).batches;
+    item.estimatedUnits = Math.max(item.estimatedUnits, batches.length + 1);
+  }
 }
 
 export async function runHeadlessBookAnalysis(
@@ -300,6 +318,7 @@ export async function runHeadlessBookAnalysis(
     task.updatedAt = new Date().toISOString();
     await atomicJson(taskPath, task);
   };
+  initializeTaskItemEstimates(source, options, task.items);
   task.status = "running";
   await save();
   for (const presetId of LONG_BOOK_ANALYSIS_COMPLETE_PRESET_IDS) {
@@ -310,6 +329,8 @@ export async function runHeadlessBookAnalysis(
     const preset = DEFAULT_PRESETS.find(
       (candidate) => candidate.id === presetId
     )!;
+    task.activePresetId = presetId;
+    await save();
     try {
       await runAnalysisItem({
         item,
@@ -334,6 +355,7 @@ export async function runHeadlessBookAnalysis(
       throw error;
     }
   }
+  delete task.activePresetId;
   task.status = "completed";
   await save();
   const archive =

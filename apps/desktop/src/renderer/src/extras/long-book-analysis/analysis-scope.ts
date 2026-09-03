@@ -42,6 +42,7 @@ export function sampledChapterOrders(
     volumes.set(chapter.volume, volume);
   }
   for (const volume of volumes.values()) {
+    if (volume.length < 2) continue;
     addWindow(selected, volume, 0, 1);
     addWindow(selected, volume, Math.floor(volume.length / 2), 1);
     addWindow(selected, volume, volume.length - 1, 1);

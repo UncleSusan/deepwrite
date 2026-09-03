@@ -62,6 +62,8 @@ node packages/book-analysis-runner/dist/cli.mjs run \
   --resume
 ```
 
+若早期运行器因 `Intermediate notes could not be reduced within eight rounds` 停止，更新到包含归并收敛修复的分支版本、重新执行 `pnpm book-analysis:build` 后，直接使用同一条 `--resume` 命令即可；不要删除工作目录或重新分析已完成批次。
+
 全部五项成功后，工作目录会生成 `result.deepwrite-book-analysis.json`。它不包含原文快照、Ollama 地址之外的凭据或 API Key。下载到 Windows：
 
 ```powershell

@@ -59,4 +59,12 @@ describe("complete long-book analysis scope", () => {
       })
     ).toHaveLength(120);
   });
+
+  it("does not expand sampled scope when every chapter has a unique folder", () => {
+    const uniquelyGrouped = chapters.map((chapter) => ({
+      ...chapter,
+      volume: `章节目录 ${chapter.order}`
+    }));
+    expect(sampledChapterOrders(uniquelyGrouped)).toHaveLength(31);
+  });
 });

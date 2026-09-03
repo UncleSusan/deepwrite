@@ -10,14 +10,31 @@ import {
 } from "@deepwrite/contracts";
 import { PiAgentRuntimeAdapter } from "@deepwrite/pi-runtime-adapter";
 import {
-  groupAnalysisNotes,
-  splitAnalysisNotesForBudget
-} from "../../../apps/desktop/src/renderer/src/extras/long-book-analysis/batching";
+  assertAnalysisReductionProgress,
+  createAnalysisReductionState,
+  MAX_ANALYSIS_REDUCTION_ROUNDS,
+  needsAnalysisReduction
+} from "../../../apps/desktop/src/renderer/src/extras/long-book-analysis/analysis-reducer";
 import { createAnalysisNote } from "../../../apps/desktop/src/renderer/src/extras/long-book-analysis/analysis-pipeline-helpers";
 import { restoreAnalysisPipeline } from "../../../apps/desktop/src/renderer/src/extras/long-book-analysis/analysis-pipeline-checkpoint";
-import { createAnalysisReductionState } from "../../../apps/desktop/src/renderer/src/extras/long-book-analysis/analysis-reducer";
 import type { LongBookAnalysisJob } from "../../../apps/desktop/src/renderer/src/extras/long-book-analysis/analysis-pipeline-types";
 import type { RunnerOptions } from "./options";
+
+export const REDUCTION_OUTPUT_MAX_TOKENS = 1_200;
+
+export function runtimeForAnalysisPhase(
+  runtime: AgentProviderRuntimeConfig,
+  phase: "batch" | "reduce" | "final"
+): AgentProviderRuntimeConfig {
+  if (phase !== "reduce") return runtime;
+  return {
+    ...runtime,
+    maxTokens: Math.min(
+      runtime.maxTokens ?? REDUCTION_OUTPUT_MAX_TOKENS,
+      REDUCTION_OUTPUT_MAX_TOKENS
+    )
+  };
+}
 
 type RunUnit = (
   input: {
@@ -57,6 +74,7 @@ export async function runAnalysisItem(input: {
     : undefined;
   const job = restored?.job ?? input.createJob();
   input.item.status = "running";
+  delete input.item.error;
   input.item.estimatedUnits = Math.max(
     input.item.estimatedUnits,
     restored?.estimatedUnits ?? job.batches.length + 1
@@ -91,20 +109,16 @@ export async function runAnalysisItem(input: {
     input.item.checkpoint = input.checkpoint(job, input.item, "batch");
     await input.save();
   }
-  while (job.notes.length > 1) {
+  while (needsAnalysisReduction(job.notes, job.inputBudget)) {
     if (!job.reduction) {
-      job.reductionRounds += 1;
-      if (job.reductionRounds > 8) {
+      if (job.reductionRounds >= MAX_ANALYSIS_REDUCTION_ROUNDS) {
         throw new Error(
-          "Intermediate notes could not be reduced within eight rounds."
+          "Intermediate notes did not converge within 20 reduction rounds."
         );
       }
-      const groups = groupAnalysisNotes(
-        splitAnalysisNotesForBudget(job.notes, job.inputBudget),
-        job.inputBudget
-      );
+      job.reductionRounds += 1;
       job.reduction = createAnalysisReductionState(job.notes, job.inputBudget);
-      input.item.estimatedUnits += groups.filter(
+      input.item.estimatedUnits += job.reduction.groups.filter(
         (group) => group.length > 1
       ).length;
     }
@@ -140,6 +154,13 @@ export async function runAnalysisItem(input: {
       reduction.groupIndex += 1;
       input.item.checkpoint = input.checkpoint(job, input.item, "reduce");
       await input.save();
+    }
+    const previousNotes = job.notes;
+    try {
+      assertAnalysisReductionProgress(previousNotes, reduction.output);
+    } catch (error: unknown) {
+      delete job.reduction;
+      throw error;
     }
     job.notes = reduction.output;
     delete job.reduction;

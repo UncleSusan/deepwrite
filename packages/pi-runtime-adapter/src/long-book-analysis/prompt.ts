@@ -16,6 +16,7 @@ function phaseRequirements(context: LongBookAnalysisRuntimeContext): string {
     return [
       "当前是中间笔记归并阶段。",
       "必须读取全部输入笔记，合并相同结论、保留差异和章节证据，并压缩重复内容。",
+      "归并笔记必须显著短于全部输入；只保留后续总报告必需的结论、证据范围、差异和未知项，控制在约 1200 个 token 以内。",
       "完成后必须且只能调用一次 write_analysis_note。不要生成正式素材或技能。"
     ].join("\n");
   }
