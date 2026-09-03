@@ -20,9 +20,9 @@ import { restoreAnalysisPipeline } from "../../../apps/desktop/src/renderer/src/
 import type { LongBookAnalysisJob } from "../../../apps/desktop/src/renderer/src/extras/long-book-analysis/analysis-pipeline-types";
 import type { RunnerOptions } from "./options";
 
-// The note itself targets roughly 1,200 tokens. Reserve room for the required
-// function-call envelope so Ollama can finish serializing it.
-export const REDUCTION_OUTPUT_MAX_TOKENS = 1_600;
+// The note itself targets roughly 1,200 tokens. The response needs additional
+// room for the required function-call envelope and JSON escaping.
+export const REDUCTION_RESPONSE_MAX_TOKENS = 2_400;
 export const HEADLESS_ANALYSIS_IDLE_TIMEOUT_MS = 120_000;
 
 export function runtimeForAnalysisPhase(
@@ -33,8 +33,8 @@ export function runtimeForAnalysisPhase(
   return {
     ...runtime,
     maxTokens: Math.min(
-      runtime.maxTokens ?? REDUCTION_OUTPUT_MAX_TOKENS,
-      REDUCTION_OUTPUT_MAX_TOKENS
+      runtime.maxTokens ?? REDUCTION_RESPONSE_MAX_TOKENS,
+      REDUCTION_RESPONSE_MAX_TOKENS
     )
   };
 }
