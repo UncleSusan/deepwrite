@@ -559,7 +559,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntime {
                 input.writeApprovalMode ?? "request-approval"
               )
             : longBookAnalysis && input.longBookAnalysisProfile
-              ? buildLongBookAnalysisTools(longBookAnalysis)
+              ? buildLongBookAnalysisTools(
+                  longBookAnalysis,
+                  input.longBookAnalysisOutputMode
+                )
               : libraryWorkspace && input.libraryAgentProfile
                 ? buildLibraryAgentTools({
                     workspace: libraryWorkspace,

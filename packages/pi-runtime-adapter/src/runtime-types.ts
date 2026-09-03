@@ -51,6 +51,12 @@ export interface AgentRunInput {
   libraryAgentProfile?: LibraryAgentProfile;
   learningImitationProfile?: LearningImitationAgentProfile;
   longBookAnalysisProfile?: LongBookAnalysisAgentProfile;
+  /**
+   * The desktop workflow persists analysis through scoped tool calls. The
+   * headless runner can request ordinary text instead for providers that
+   * truncate long JSON tool-call arguments.
+   */
+  longBookAnalysisOutputMode?: "tool" | "text";
   workspaceContext?: WorkspaceRuntimeContext;
   /**
    * Narrow Agent Utility -> Core query bridge for the active long-form book.

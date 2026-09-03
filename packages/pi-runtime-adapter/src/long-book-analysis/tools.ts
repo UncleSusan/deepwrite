@@ -213,12 +213,17 @@ function buildResultTool(context: LongBookAnalysisRuntimeContext): AgentTool {
 }
 
 export function buildLongBookAnalysisTools(
-  context: LongBookAnalysisRuntimeContext
+  context: LongBookAnalysisRuntimeContext,
+  outputMode: "tool" | "text" = "tool"
 ): AgentTool[] {
-  return [
+  const readTools = [
     buildListTool(context),
     buildReadTool(context),
-    buildSearchTool(context),
+    buildSearchTool(context)
+  ];
+  if (outputMode === "text") return readTools;
+  return [
+    ...readTools,
     context.phase === "final"
       ? buildResultTool(context)
       : buildNoteTool(context)

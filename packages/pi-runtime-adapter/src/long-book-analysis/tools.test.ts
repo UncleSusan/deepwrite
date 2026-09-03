@@ -96,6 +96,18 @@ describe("long-book analysis tools", () => {
     ]);
   });
 
+  it("keeps input tools but omits long JSON writers in text output mode", () => {
+    expect(
+      buildLongBookAnalysisTools(context("reduce"), "text").map(
+        (item) => item.name
+      )
+    ).toEqual([
+      "list_analysis_inputs",
+      "read_analysis_input",
+      "search_analysis_inputs"
+    ]);
+  });
+
   it("lists and reads chapter inputs without embedding them in the prompt", async () => {
     const tools = buildLongBookAnalysisTools(context("batch"));
     expect(

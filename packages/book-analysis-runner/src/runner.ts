@@ -207,6 +207,7 @@ export async function runUnit(
     prompt: message,
     runtimeConfig: runtimeForAnalysisPhase(input.runtime, input.phase),
     thinkingLevel: "off",
+    longBookAnalysisOutputMode: "text",
     ...(input.job.temperature === undefined
       ? {}
       : { temperature: input.job.temperature }),
@@ -225,6 +226,14 @@ export async function runUnit(
       event.payload.unitId === unitId
     ) {
       output = event.payload.result;
+    }
+    if (event.type === "agent.completed") {
+      const text = event.payload.content.trim();
+      if (input.phase === "final") {
+        output = { title: input.job.preset.name, body: text };
+      } else if (text) {
+        output = text;
+      }
     }
     if (event.type === "agent.error") throw new Error(event.payload.message);
   }
