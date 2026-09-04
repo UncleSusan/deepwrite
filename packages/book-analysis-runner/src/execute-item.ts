@@ -23,6 +23,7 @@ import type { RunnerOptions } from "./options";
 // room for the required function-call envelope and JSON escaping.
 export const REDUCTION_RESPONSE_MAX_TOKENS = 2_400;
 export const FORCED_COMPACTION_RESPONSE_MAX_TOKENS = 900;
+const MIN_COMPACTION_RESPONSE_MAX_TOKENS = 256;
 export const HEADLESS_ANALYSIS_IDLE_TIMEOUT_MS = 120_000;
 
 function needsHeadlessReduction(
@@ -57,6 +58,20 @@ function assertHeadlessReductionProgress(
 
 function compactedNoteLabel(note: LongBookAnalysisNote): string {
   return `Chapters ${note.chapterStart}-${note.chapterEnd} compacted note`;
+}
+
+function compactionResponseMaxTokens(
+  notes: readonly LongBookAnalysisNote[],
+  maximum: number
+): number {
+  const inputTokens = notes.reduce(
+    (total, note) => total + estimateAnalysisTokens(note.text),
+    0
+  );
+  return Math.min(
+    maximum,
+    Math.max(MIN_COMPACTION_RESPONSE_MAX_TOKENS, Math.floor(inputTokens * 0.5))
+  );
 }
 
 export function runtimeForAnalysisPhase(
@@ -136,7 +151,10 @@ export async function runAnalysisItem(input: {
         job,
         phase: "reduce",
         notes: [note],
-        responseMaxTokens: FORCED_COMPACTION_RESPONSE_MAX_TOKENS
+        responseMaxTokens: compactionResponseMaxTokens(
+          [note],
+          FORCED_COMPACTION_RESPONSE_MAX_TOKENS
+        )
       });
       if (typeof text !== "string") {
         throw new Error("Forced compaction must return an intermediate note.");
@@ -206,7 +224,11 @@ export async function runAnalysisItem(input: {
           runtime: input.runtime,
           job,
           phase: "reduce",
-          notes: group
+          notes: group,
+          responseMaxTokens: compactionResponseMaxTokens(
+            group,
+            REDUCTION_RESPONSE_MAX_TOKENS
+          )
         });
         if (typeof text !== "string") {
           throw new Error("A reduction must return an intermediate note.");

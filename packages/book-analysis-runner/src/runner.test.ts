@@ -281,23 +281,16 @@ describe("headless book-analysis task estimates", () => {
         if (input.phase === "final") {
           return { title: "人物", body: "# 最终结果" };
         }
-        return input.responseMaxTokens
-          ? "压缩笔记"
-          : "notes" in input
-            ? input.notes.map((note) => note.text).join("")
-            : "";
+        if (input.phase === "reduce" && input.notes.length > 1) {
+          return input.notes.map((note) => note.text).join("");
+        }
+        return "压缩笔记";
       },
       save: async () => {},
       log: () => {}
     });
 
-    expect(calls).toEqual([
-      undefined,
-      FORCED_COMPACTION_RESPONSE_MAX_TOKENS,
-      FORCED_COMPACTION_RESPONSE_MAX_TOKENS,
-      FORCED_COMPACTION_RESPONSE_MAX_TOKENS,
-      undefined
-    ]);
+    expect(calls).toEqual([2_250, 750, 750, 750, undefined]);
     expect(taskItem.status).toBe("completed");
   });
 
