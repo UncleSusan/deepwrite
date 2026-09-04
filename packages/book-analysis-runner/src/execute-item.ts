@@ -10,11 +10,10 @@ import {
 } from "@deepwrite/contracts";
 import { PiAgentRuntimeAdapter } from "@deepwrite/pi-runtime-adapter";
 import {
-  assertAnalysisReductionProgress,
   createAnalysisReductionState,
-  MAX_ANALYSIS_REDUCTION_ROUNDS,
-  needsAnalysisReduction
+  MAX_ANALYSIS_REDUCTION_ROUNDS
 } from "../../../apps/desktop/src/renderer/src/extras/long-book-analysis/analysis-reducer";
+import { estimateAnalysisTokens } from "../../../apps/desktop/src/renderer/src/extras/long-book-analysis/batching";
 import { createAnalysisNote } from "../../../apps/desktop/src/renderer/src/extras/long-book-analysis/analysis-pipeline-helpers";
 import { restoreAnalysisPipeline } from "../../../apps/desktop/src/renderer/src/extras/long-book-analysis/analysis-pipeline-checkpoint";
 import type { LongBookAnalysisJob } from "../../../apps/desktop/src/renderer/src/extras/long-book-analysis/analysis-pipeline-types";
@@ -25,6 +24,36 @@ import type { RunnerOptions } from "./options";
 export const REDUCTION_RESPONSE_MAX_TOKENS = 2_400;
 export const FORCED_COMPACTION_RESPONSE_MAX_TOKENS = 900;
 export const HEADLESS_ANALYSIS_IDLE_TIMEOUT_MS = 120_000;
+
+function needsHeadlessReduction(
+  notes: readonly LongBookAnalysisNote[],
+  inputBudget: number
+): boolean {
+  return (
+    notes.length > 0 &&
+    notes.reduce(
+      (total, note) => total + estimateAnalysisTokens(note.text),
+      0
+    ) >
+      inputBudget * 0.9
+  );
+}
+
+function assertHeadlessReductionProgress(
+  previous: readonly LongBookAnalysisNote[],
+  next: readonly LongBookAnalysisNote[]
+): void {
+  const previousTokens = previous.reduce(
+    (total, note) => total + estimateAnalysisTokens(note.text),
+    0
+  );
+  const nextTokens = next.reduce(
+    (total, note) => total + estimateAnalysisTokens(note.text),
+    0
+  );
+  if (nextTokens < previousTokens) return;
+  throw new Error("Headless reduction did not reduce estimated input tokens.");
+}
 
 export function runtimeForAnalysisPhase(
   runtime: AgentProviderRuntimeConfig,
@@ -151,7 +180,7 @@ export async function runAnalysisItem(input: {
     input.item.checkpoint = input.checkpoint(job, input.item, "batch");
     await input.save();
   }
-  while (needsAnalysisReduction(job.notes, job.inputBudget)) {
+  while (needsHeadlessReduction(job.notes, job.inputBudget)) {
     if (!job.reduction) {
       if (job.reductionRounds >= MAX_ANALYSIS_REDUCTION_ROUNDS) {
         await forceCompactNotes();
@@ -198,10 +227,11 @@ export async function runAnalysisItem(input: {
     }
     const previousNotes = job.notes;
     try {
-      assertAnalysisReductionProgress(previousNotes, reduction.output);
-    } catch (error: unknown) {
+      assertHeadlessReductionProgress(previousNotes, reduction.output);
+    } catch {
       delete job.reduction;
-      throw error;
+      await forceCompactNotes();
+      continue;
     }
     job.notes = reduction.output;
     delete job.reduction;

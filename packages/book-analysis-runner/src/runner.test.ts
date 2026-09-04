@@ -209,4 +209,95 @@ describe("headless book-analysis task estimates", () => {
     expect(taskItem.status).toBe("completed");
     expect(taskItem.result).toEqual({ title: "剧情结构", body: "# 最终结果" });
   });
+
+  it("force-compacts when a reduction response does not shrink its inputs", async () => {
+    const preset = {
+      id: "character",
+      name: "人物",
+      description: "测试",
+      systemPrompt: "测试",
+      output: { domain: "material", kind: "character", stageId: "character" }
+    } as const;
+    const job = {
+      id: "job-3",
+      sourceId: source.id,
+      sourceTitle: source.name,
+      preset,
+      modelId: "qwen3-local",
+      thinkingLevel: "off",
+      libraryId: "",
+      selectionStart: 1,
+      selectionEnd: 3,
+      selectedChapterOrders: [1, 2, 3],
+      inputBudget: 4_690,
+      batches: [],
+      batchIndex: 0,
+      notes: [
+        {
+          id: "note-1",
+          label: "第 1 章",
+          chapterStart: 1,
+          chapterEnd: 1,
+          text: "一".repeat(1_000)
+        },
+        {
+          id: "note-2",
+          label: "第 2 章",
+          chapterStart: 2,
+          chapterEnd: 2,
+          text: "二".repeat(1_000)
+        },
+        {
+          id: "note-3",
+          label: "第 3 章",
+          chapterStart: 3,
+          chapterEnd: 3,
+          text: "三".repeat(1_000)
+        }
+      ],
+      reductionRounds: 0
+    } as LongBookAnalysisJob;
+    const taskItem = item("character", [1, 2, 3]);
+    const calls: Array<number | undefined> = [];
+
+    await runAnalysisItem({
+      item: taskItem,
+      preset,
+      source,
+      options: parseOptions([
+        "run",
+        "--source",
+        "source.txt",
+        "--workspace",
+        "workspace",
+        "--model",
+        "qwen3-local"
+      ]),
+      runtime: {} as AgentProviderRuntimeConfig,
+      createJob: () => job,
+      checkpoint,
+      runUnit: async (input) => {
+        calls.push(input.responseMaxTokens);
+        if (input.phase === "final") {
+          return { title: "人物", body: "# 最终结果" };
+        }
+        return input.responseMaxTokens
+          ? "压缩笔记"
+          : "notes" in input
+            ? input.notes.map((note) => note.text).join("")
+            : "";
+      },
+      save: async () => {},
+      log: () => {}
+    });
+
+    expect(calls).toEqual([
+      undefined,
+      FORCED_COMPACTION_RESPONSE_MAX_TOKENS,
+      FORCED_COMPACTION_RESPONSE_MAX_TOKENS,
+      FORCED_COMPACTION_RESPONSE_MAX_TOKENS,
+      undefined
+    ]);
+    expect(taskItem.status).toBe("completed");
+  });
 });
