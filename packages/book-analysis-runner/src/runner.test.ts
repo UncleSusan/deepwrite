@@ -300,4 +300,67 @@ describe("headless book-analysis task estimates", () => {
     ]);
     expect(taskItem.status).toBe("completed");
   });
+
+  it("uses a stable label when force-compacting an already long note label", async () => {
+    const preset = {
+      id: "character",
+      name: "人物",
+      description: "测试",
+      systemPrompt: "测试",
+      output: { domain: "material", kind: "character", stageId: "character" }
+    } as const;
+    const job = {
+      id: "job-4",
+      sourceId: source.id,
+      sourceTitle: source.name,
+      preset,
+      modelId: "qwen3-local",
+      thinkingLevel: "off",
+      libraryId: "",
+      selectionStart: 1,
+      selectionEnd: 2,
+      selectedChapterOrders: [1, 2],
+      inputBudget: 4_690,
+      batches: [],
+      batchIndex: 0,
+      notes: [
+        {
+          id: "note-1",
+          label: "已压缩笔记 ".repeat(40),
+          chapterStart: 1,
+          chapterEnd: 2,
+          text: "一".repeat(4_000)
+        }
+      ],
+      reductionRounds: 20
+    } as LongBookAnalysisJob;
+    const taskItem = item("character", [1, 2]);
+
+    await runAnalysisItem({
+      item: taskItem,
+      preset,
+      source,
+      options: parseOptions([
+        "run",
+        "--source",
+        "source.txt",
+        "--workspace",
+        "workspace",
+        "--model",
+        "qwen3-local"
+      ]),
+      runtime: {} as AgentProviderRuntimeConfig,
+      createJob: () => job,
+      checkpoint,
+      runUnit: async (input) =>
+        input.phase === "final"
+          ? { title: "人物", body: "# 最终结果" }
+          : "压缩笔记",
+      save: async () => {},
+      log: () => {}
+    });
+
+    expect(job.notes[0]?.label).toBe("Chapters 1-2 compacted note");
+    expect(job.notes[0]?.label.length).toBeLessThanOrEqual(256);
+  });
 });

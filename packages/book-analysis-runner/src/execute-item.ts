@@ -55,6 +55,10 @@ function assertHeadlessReductionProgress(
   throw new Error("Headless reduction did not reduce estimated input tokens.");
 }
 
+function compactedNoteLabel(note: LongBookAnalysisNote): string {
+  return `Chapters ${note.chapterStart}-${note.chapterEnd} compacted note`;
+}
+
 export function runtimeForAnalysisPhase(
   runtime: AgentProviderRuntimeConfig,
   phase: "batch" | "reduce" | "final",
@@ -140,7 +144,7 @@ export async function runAnalysisItem(input: {
       job.notes.push(
         createAnalysisNote(
           text,
-          `${note.label} compacted note`,
+          compactedNoteLabel(note),
           note.chapterStart,
           note.chapterEnd
         )
